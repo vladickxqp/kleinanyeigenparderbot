@@ -101,3 +101,42 @@ def deliver_notifications(
     telegram_id: int, listing_ids: list[int], lang: str = "de"
 ) -> int:
     return asyncio.run(notify_user_about_listings(telegram_id, listing_ids, lang))
+
+
+# --- Admin health alerts ------------------------------------------------------
+@celery_app.task(name="app.worker.tasks.flush_health_alerts")
+def flush_health_alerts() -> int:
+    """Deliver queued health alerts to all configured bot admins."""
+    return asyncio.run(_flush_health_alerts())
+
+
+async def _flush_health_alerts() -> int:
+    from app.services import health
+
+    admin_ids = settings.admin_ids
+    if not admin_ids or not settings.bot_token:
+        return 0
+    messages = await health.pop_alerts()
+    if not messages:
+        return 0
+
+    from aiogram import Bot
+    from aiogram.client.default import DefaultBotProperties
+    from aiogram.enums import ParseMode
+
+    bot = Bot(
+        token=settings.bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+    sent = 0
+    try:
+        for message in messages:
+            for admin_id in admin_ids:
+                try:
+                    await bot.send_message(admin_id, message)
+                    sent += 1
+                except Exception as exc:  # noqa: BLE001 - one admin must not block others
+                    logger.warning("Health alert to {} failed: {}", admin_id, exc)
+    finally:
+        await bot.session.close()
+    return sent

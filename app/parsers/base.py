@@ -63,6 +63,7 @@ class BaseParser(ABC):
             results = await self.search(query)
         except Exception as exc:  # noqa: BLE001 - one bad site must not kill the run
             logger.exception("[{}] search failed: {}", self.site.value, exc)
+            await self._report_health(ok=False)
             return []
         logger.info(
             "[{}] found {} listing(s) for {!r}",
@@ -70,7 +71,17 @@ class BaseParser(ABC):
             len(results),
             query.keywords,
         )
+        await self._report_health(ok=True)
         return results
+
+    async def _report_health(self, *, ok: bool) -> None:
+        """Feed the admin-alerting failure counter (never raises)."""
+        try:
+            from app.services import health  # lazy: avoid import cycles
+
+            await health.record_parser_result(self.site.value, ok=ok)
+        except Exception:  # noqa: BLE001
+            pass
 
     # --- HTTP helpers -------------------------------------------------------
     def _headers(self) -> dict[str, str]:

@@ -17,3 +17,17 @@ class RuleWizard(StatesGroup):
     radius = State()
     sites = State()
     interval = State()
+
+
+class EditWizard(StatesGroup):
+    """Edit a single field of an existing rule (rule id kept in FSM data)."""
+
+    name = State()
+    keywords = State()
+    category = State()
+    price = State()
+    exclude = State()
+    location = State()
+    radius = State()
+    interval = State()
+    min_score = State()

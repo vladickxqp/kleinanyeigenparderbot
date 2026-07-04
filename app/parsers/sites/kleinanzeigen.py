@@ -108,6 +108,17 @@ class KleinanzeigenParser(BaseParser):
             logger.info("[kleinanzeigen] resolved {!r} -> location id {}", term, loc_id)
         else:
             logger.info("[kleinanzeigen] no location id for {!r}; searching nationwide", term)
+            try:
+                from app.services import health  # lazy: avoid import cycles
+
+                await health.report(
+                    f"loc:{term}",
+                    f"⚠️ Kleinanzeigen: Ort <b>{term}</b> konnte nicht aufgelöst "
+                    "werden — die Umkreissuche ist inaktiv, es wird "
+                    "deutschlandweit gesucht! PLZ in der Suchregel prüfen.",
+                )
+            except Exception:  # noqa: BLE001
+                pass
         return loc_id or None
 
     @staticmethod

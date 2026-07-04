@@ -37,14 +37,28 @@ class SearchQuery(BaseModel):
         return not any(bad.lower() in haystack for bad in self.exclude_keywords)
 
     def contains_all_keywords(self, *texts: str | None) -> bool:
-        """True if every whitespace-separated query token appears in the texts.
+        """True if the query tokens appear in the texts (brand-tolerant).
 
         Marketplace search is fuzzy ("iPhone 17 Pro" also returns plain
-        "iPhone 17" items); this enforces that all tokens are present.
+        "iPhone 17" items), so all tokens must be present — EXCEPT that for
+        queries with 3+ tokens the FIRST token (usually the brand) may be
+        missing. Sellers often title listings "Model 3 Performance" without
+        "Tesla"; those must still match a "tesla model 3" search. Trailing
+        qualifiers stay mandatory: "iphone 17 pro" will not match a plain
+        "iPhone 17", because "pro" is not the first token.
+
+        Variants with EXTRA words always match: "Tesla Model 3 Long Range"
+        contains every token of "tesla model 3".
         """
         haystack = " ".join(t.lower() for t in texts if t)
         tokens = [tok for tok in self.keywords.lower().split() if tok]
-        return all(tok in haystack for tok in tokens)
+        if not tokens:
+            return True
+        missing = [tok for tok in tokens if tok not in haystack]
+        if not missing:
+            return True
+        # Allow only the leading (brand) token to be absent on longer queries.
+        return len(tokens) >= 3 and missing == [tokens[0]]
 
 
 class ParsedListing(BaseModel):

@@ -45,6 +45,30 @@ def test_all_keywords_must_be_present():
     assert is_relevant(q, _item("iPhone 17 128GB", 700.0)) is False
 
 
+# --- Variant matching: "tesla model 3" must find Performance/Long Range --------
+def test_variants_with_extra_words_match():
+    q = SearchQuery(keywords="tesla model 3")
+    assert is_relevant(q, _item("Tesla Model 3 Performance", 32000.0)) is True
+    assert is_relevant(q, _item("Tesla Model 3 Long Range AWD", 32000.0)) is True
+
+
+def test_missing_brand_in_title_still_matches():
+    # Sellers often omit the brand: "Model 3 Performance, Bj. 2022".
+    q = SearchQuery(keywords="tesla model 3")
+    assert is_relevant(q, _item("Model 3 Performance, Bj. 2022", 30000.0)) is True
+
+
+def test_missing_model_token_does_not_match():
+    q = SearchQuery(keywords="tesla model 3")
+    # "Model S" is a different car — the "3" is mandatory.
+    assert is_relevant(q, _item("Tesla Model S 2021", 35000.0)) is False
+
+
+def test_two_token_queries_stay_strict():
+    q = SearchQuery(keywords="rtx 4090")
+    assert is_relevant(q, _item("RTX 3090 24GB", 800.0)) is False
+
+
 def test_wanted_ads_are_filtered():
     q = SearchQuery(keywords="iphone 17 pro")
     assert is_relevant(q, _item("Suche iPhone 17 Pro", 1.0)) is False

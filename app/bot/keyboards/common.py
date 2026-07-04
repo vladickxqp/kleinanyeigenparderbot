@@ -54,10 +54,32 @@ def rules_list_keyboard(rules: Sequence[SearchRule], lang: str) -> InlineKeyboar
 def rule_actions_keyboard(rule: SearchRule, lang: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="▶️ Jetzt suchen", callback_data=f"rule:run:{rule.id}")
+    kb.button(text=t("btn.edit", lang), callback_data=f"rule:edit:{rule.id}")
     kb.button(text=t("btn.toggle", lang), callback_data=f"rule:toggle:{rule.id}")
     kb.button(text=t("btn.delete", lang), callback_data=f"rule:delete:{rule.id}")
     kb.button(text=t("btn.back", lang), callback_data="menu:rules")
-    kb.adjust(1, 2, 1)
+    kb.adjust(1, 1, 2, 1)
+    return kb.as_markup()
+
+
+def rule_edit_keyboard(rule: SearchRule, lang: str) -> InlineKeyboardMarkup:
+    """One button per editable field of a rule."""
+    rid = rule.id
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📝 Name", callback_data=f"edit:name:{rid}")
+    kb.button(text="🔎 Suchwörter", callback_data=f"edit:keywords:{rid}")
+    kb.button(text="📂 Kategorie", callback_data=f"edit:category:{rid}")
+    kb.button(text="💶 Preis", callback_data=f"edit:price:{rid}")
+    kb.button(text="🚫 Ausschluss", callback_data=f"edit:exclude:{rid}")
+    kb.button(text="📍 Ort", callback_data=f"edit:location:{rid}")
+    kb.button(text="⏱ Intervall", callback_data=f"edit:interval:{rid}")
+    kb.button(text="🎯 Min-Score", callback_data=f"edit:minscore:{rid}")
+    kb.adjust(2, 2, 2, 2)
+    kb.row(
+        InlineKeyboardButton(
+            text=t("btn.back", lang), callback_data=f"rule:open:{rid}"
+        )
+    )
     return kb.as_markup()
 
 

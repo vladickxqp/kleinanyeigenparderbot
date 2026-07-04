@@ -1,5 +1,5 @@
 """FSM state groups for the bot."""
 
-from app.bot.states.rule_wizard import RuleWizard
+from app.bot.states.rule_wizard import EditWizard, RuleWizard
 
-__all__ = ["RuleWizard"]
+__all__ = ["EditWizard", "RuleWizard"]

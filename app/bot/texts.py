@@ -53,6 +53,30 @@ _TEXTS: dict[str, dict[str, str]] = {
                    "ru": "🗑 Удалить", "uk": "🗑 Видалити"},
     "btn.toggle": {"de": "⏯ An/Aus", "en": "⏯ On/Off",
                    "ru": "⏯ Вкл/Выкл", "uk": "⏯ Увімк/Вимк"},
+    "btn.edit": {"de": "✏️ Bearbeiten", "en": "✏️ Edit",
+                 "ru": "✏️ Изменить", "uk": "✏️ Змінити"},
+    "edit.menu": {
+        "de": "✏️ <b>{name}</b> bearbeiten — was soll geändert werden?",
+        "en": "✏️ Edit <b>{name}</b> — what do you want to change?",
+        "ru": "✏️ Изменить <b>{name}</b> — что поменять?",
+        "uk": "✏️ Змінити <b>{name}</b> — що поміняти?",
+    },
+    "edit.saved": {
+        "de": "✅ Gespeichert!",
+        "en": "✅ Saved!",
+        "ru": "✅ Сохранено!",
+        "uk": "✅ Збережено!",
+    },
+    "edit.ask_minscore": {
+        "de": "🎯 Ab welchem Deal-Score benachrichtigen? (0–100 senden; "
+        "0 = jedes neue Angebot, 70 = nur gute Deals)",
+        "en": "🎯 Notify from which deal score? (send 0–100; "
+        "0 = every new listing, 70 = only good deals)",
+        "ru": "🎯 С какого балла уведомлять? (пришли 0–100; "
+        "0 = каждое новое объявление, 70 = только выгодные)",
+        "uk": "🎯 З якого балу сповіщати? (надішли 0–100; "
+        "0 = кожне нове оголошення, 70 = лише вигідні)",
+    },
     "rule.ask_name": {
         "de": "Wie soll die Suche heißen? (z. B. <i>RTX 4090 bis 1300€</i>)",
         "en": "Name your search (e.g. <i>RTX 4090 under 1300€</i>)",

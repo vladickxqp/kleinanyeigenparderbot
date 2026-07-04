@@ -33,4 +33,8 @@ celery_app.conf.beat_schedule = {
         "task": "app.worker.tasks.dispatch_due_searches",
         "schedule": 20.0,  # seconds; per-rule interval is enforced inside the task
     },
+    "flush-health-alerts": {
+        "task": "app.worker.tasks.flush_health_alerts",
+        "schedule": 60.0,  # deliver queued admin alerts once a minute
+    },
 }

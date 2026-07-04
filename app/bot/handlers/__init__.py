@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from aiogram import Router
 
-from app.bot.handlers import listings, menu, rules, settings, start
+from app.bot.handlers import edit_rule, listings, menu, rules, settings, start
 
 
 def build_router() -> Router:
@@ -12,6 +12,7 @@ def build_router() -> Router:
     root = Router(name="root")
     root.include_router(start.router)
     root.include_router(rules.router)
+    root.include_router(edit_rule.router)
     root.include_router(settings.router)
     root.include_router(listings.router)
     root.include_router(menu.router)  # generic menu callbacks last
