@@ -1,0 +1,72 @@
+"""Tests for the Kleinanzeigen HTML parser using a static fixture snippet."""
+
+from __future__ import annotations
+
+from app.parsers.schemas import SearchQuery
+from app.parsers.sites.kleinanzeigen import KleinanzeigenParser
+
+# Minimal but representative slice of a Kleinanzeigen search results page.
+SAMPLE_HTML = """
+<ul id="srchrslt-adtable">
+  <li class="ad-listitem">
+    <article class="aditem" data-adid="123456789"
+             data-href="/s-anzeige/rtx-4090/123456789-225-1234">
+      <div class="aditem-image">
+        <img src="https://img.kleinanzeigen.de/rtx.jpg" srcset="" />
+      </div>
+      <div class="aditem-main">
+        <div class="aditem-main--top">
+          <div class="aditem-main--top--left">10115 Berlin - Mitte</div>
+        </div>
+        <div class="aditem-main--middle">
+          <h2 class="text-module-begin">
+            <a class="ellipsis" href="/s-anzeige/rtx-4090/123456789-225-1234">
+              Nvidia RTX 4090 Founders Edition
+            </a>
+          </h2>
+          <p class="aditem-main--middle--description">
+            Neuwertig, kaum benutzt, mit Rechnung.
+          </p>
+          <div class="aditem-main--middle--price-shipping">
+            <p class="aditem-main--middle--price-shipping--price">1.150 € VB</p>
+            <span class="aditem-main--middle--price-shipping--shipping">
+              Versand möglich
+            </span>
+          </div>
+        </div>
+      </div>
+    </article>
+  </li>
+</ul>
+"""
+
+
+def test_parse_results_extracts_expected_fields():
+    parser = KleinanzeigenParser()
+    query = SearchQuery(keywords="rtx 4090")
+    listings = parser._parse_results(SAMPLE_HTML, query)
+
+    assert len(listings) == 1
+    item = listings[0]
+    assert item.external_id == "123456789"
+    assert "RTX 4090" in item.title
+    assert item.price == 1150.0
+    assert item.location == "10115 Berlin - Mitte"
+    assert str(item.url).startswith("https://www.kleinanzeigen.de/")
+    assert item.image_url is not None
+    assert item.shipping_cost == 0.0  # "Versand möglich" detected
+
+
+def test_price_parser_handles_variants():
+    parser = KleinanzeigenParser()
+    assert parser._parse_price("1.300 €") == 1300.0
+    assert parser._parse_price("950 € VB") == 950.0
+    assert parser._parse_price("Zu verschenken") is None
+    assert parser._parse_price(None) is None
+
+
+def test_build_url_encodes_price_and_keywords():
+    parser = KleinanzeigenParser()
+    url = parser._build_url(SearchQuery(keywords="rtx 4090", max_price=1300))
+    assert "preis::1300" in url
+    assert "rtx" in url.lower()

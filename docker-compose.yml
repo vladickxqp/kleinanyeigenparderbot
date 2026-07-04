@@ -1,0 +1,104 @@
+# One-command stack: postgres + redis + api + bot + worker + beat.
+#   cp .env.example .env   (set BOT_TOKEN etc.)
+#   docker compose up -d --build
+
+x-app-env: &app-env
+  env_file: .env
+
+x-app-build: &app-build
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-parserbot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-parserbot}
+      TZ: ${TZ:-Europe/Berlin}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-parserbot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    <<: [*app-build, *app-env]
+    restart: unless-stopped
+    entrypoint: ["bash", "docker/entrypoint.sh"]
+    command:
+      ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  bot:
+    <<: [*app-build, *app-env]
+    restart: unless-stopped
+    command: ["python", "-m", "app.bot"]
+    depends_on:
+      api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  worker:
+    <<: [*app-build, *app-env]
+    restart: unless-stopped
+    command:
+      ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info",
+       "--concurrency=4"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  beat:
+    <<: [*app-build, *app-env]
+    restart: unless-stopped
+    command:
+      ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  pgdata:
+  redisdata:

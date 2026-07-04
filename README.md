@@ -1,756 +1,174 @@
-# kleinanyeigenparderbot
-tg bot kl
-Use this token to access the HTTP API:
-8851476050:AAEwSeYwzSUT4O-1OHTNwMsTE9ui4dQnYes
+# 🛒 Kleinanzeigen Parser Bot
 
+An extensible, production-oriented **Telegram bot** that continuously hunts for the
+best deals across many online marketplaces (Kleinanzeigen, and — via pluggable
+parsers — eBay, Amazon, Idealo, and more). It parses listings, analyses prices,
+filters by your rules, deduplicates results and pushes beautifully formatted deal
+cards straight to Telegram.
 
-
-
-
-
-
-
-
-
-# ROLE
-
-Ты не просто помощник. Ты команда из Senior Python Developer, Telegram Bot Developer, Backend Architect, DevOps Engineer, UI/UX Designer, Security Engineer и Database Engineer.
-
-Твоя задача — разработать полностью готовый production-проект Telegram Parser Bot.
-
-Ты НЕ имеешь права писать демо-код.
-
-Ты должен создать полноценный проект.
-
-Если ответ не помещается в одно сообщение — продолжай автоматически в следующих сообщениях пока проект не будет полностью закончен.
-
-Никогда не сокращай код.
-
-Не используй "...".
-
-Не пропускай файлы.
-
-Создай полноценную архитектуру.
+> ⚠️ **Security note:** never commit real secrets. The Telegram bot token, database
+> passwords and JWT secret all live in `.env` (git-ignored). If a token was ever
+> committed, revoke it via [@BotFather](https://t.me/BotFather) → `/revoke`.
 
 ---
 
-# ЦЕЛЬ ПРОЕКТА
+## ✨ Features (target scope)
 
-Создать максимально мощного Telegram-бота для поиска выгодных предложений.
-
-Бот должен самостоятельно искать товары по множеству сайтов, анализировать цены, фильтровать результаты и отправлять только действительно выгодные предложения.
-
-Проект должен быть максимально расширяемым.
-
-Я хочу иметь возможность позже добавить еще хоть 100 сайтов без переписывания архитектуры.
-
----
-
-# СТЕК
-
-Использовать только современные технологии.
-
-Python 3.13
-
-Aiogram 3.x
-
-FastAPI
-
-SQLAlchemy
-
-Alembic
-
-PostgreSQL
-
-Redis
-
-Celery
-
-Playwright
-
-BeautifulSoup
-
-httpx
-
-Pydantic
-
-Docker
-
-Docker Compose
-
-Nginx
-
-JWT
-
-APScheduler
-
-Loguru
-
-Prometheus
-
-Grafana
-
-Pytest
-
-GitHub Actions
+- **Telegram bot** (aiogram 3): menu, inline & reply keyboards, FSM wizards, per-user
+  search rules, favourites, history, statistics, blacklist/whitelist, multi-language.
+- **Pluggable parsers**: every marketplace is a self-contained module registered in a
+  central registry — add a new site without touching the core.
+- **Flexible search rules**: keywords, exclude-words, price range, condition, location,
+  radius, seller rating, category, brand, and arbitrary extra filters.
+- **Price intelligence**: price history, average/min/max, discount %, anomaly detection
+  ("possible seller mistake"), optional AI scoring (0–100) and resale/ROI mode.
+- **Deduplication**: never send the same offer twice, even across different parsers.
+- **Web admin panel** (React + Tailwind, later phase): dashboard, charts, logs, users,
+  parsers, task queue, settings — everything configurable via the web.
+- **Ops**: Docker Compose one-command startup, Celery workers, Redis cache/queue,
+  Postgres, Prometheus + Grafana monitoring, structured logging (loguru).
 
 ---
 
-# АРХИТЕКТУРА
+## 🧱 Architecture
 
-Создай архитектуру уровня Enterprise.
+The project is a single Python package (`app/`) split into clear layers. This is
+cleaner and more testable than scattering top-level folders, while still matching the
+conceptual structure (bot / backend / parsers / …).
 
-Пример:
+```
+kleinanyeigenparderbot/
+├── app/
+│   ├── config/          # pydantic-settings config, logging setup
+│   ├── database/        # SQLAlchemy async engine, models, repositories
+│   │   └── models/
+│   ├── parsers/         # BaseParser + registry + one module per site
+│   │   └── sites/
+│   ├── services/        # business logic: deal analysis, dedup, price stats
+│   ├── bot/             # aiogram: handlers, keyboards, states, middlewares
+│   │   ├── handlers/
+│   │   ├── keyboards/
+│   │   ├── states/
+│   │   └── middlewares/
+│   ├── worker/          # Celery app + periodic scraping tasks
+│   └── api/             # FastAPI backend for the admin panel
+│       └── routers/
+├── migrations/          # Alembic migrations
+├── docker/              # Dockerfiles
+├── tests/
+├── docker-compose.yml
+├── requirements.txt
+└── .env.example
+```
 
-project/
+### Data flow
 
-bot/
-
-backend/
-
-parsers/
-
-database/
-
-config/
-
-docker/
-
-frontend/
-
-api/
-
-services/
-
-scheduler/
-
-workers/
-
-middlewares/
-
-handlers/
-
-filters/
-
-models/
-
-utils/
-
-logs/
-
-tests/
-
-admin/
-
----
-
-# ОСНОВНЫЕ ВОЗМОЖНОСТИ
-
-## 1 Telegram Bot
-
-Красивое меню.
-
-Inline Keyboard.
-
-Reply Keyboard.
-
-FSM.
-
-Настройки пользователя.
-
-Профиль.
-
-Подписки.
-
-Уведомления.
-
-История.
-
-Статистика.
-
-Черный список.
-
-Белый список.
-
-Категории.
-
-Избранное.
-
-Поиск.
+```
+User → Telegram → Bot (FSM) → creates SearchRule in Postgres
+                                         │
+Celery Beat ── every N seconds ──────────┘
+     │
+     ▼
+Worker picks due rules → ParserRegistry runs matching site parsers
+     │
+     ▼
+Raw listings → dedup + price analysis + deal scoring
+     │
+     ▼
+New good deals → formatted card → sent to the user in Telegram
+```
 
 ---
 
-## 2 Панель управления
+## 🚀 Quick start (Docker)
 
-Хочу полноценный WEB интерфейс.
+```bash
+cp .env.example .env
+# 1) put your @BotFather token into BOT_TOKEN
+# 2) set POSTGRES_PASSWORD / JWT_SECRET_KEY
+# 3) (optional) enable the admin panel login — see "Admin panel" below
+docker compose up -d --build
+docker compose logs -f bot
+```
 
-Не простую страницу.
+Services after `up`:
 
-А красивую современную админку.
+| Service    | URL / Port                     | Purpose                        |
+|------------|--------------------------------|--------------------------------|
+| Bot        | (Telegram)                     | the Telegram bot itself        |
+| API        | http://localhost:8000/docs     | admin backend + Swagger        |
+| Admin panel| http://localhost:8080          | React dashboard (nginx)        |
+| Metrics    | http://localhost:8000/metrics  | Prometheus metrics             |
 
-Лучше React + Tailwind.
+The `api` service auto-creates the database tables on first boot (or applies
+Alembic migrations if any exist — see `docker/entrypoint.sh`).
 
-Темная тема.
+### Admin panel login
 
-Светлая тема.
+The admin API bootstraps a single admin from environment variables. Generate a
+password hash and add it to `.env` (or the `api`/`frontend` environment):
 
-Dashboard.
+```bash
+docker compose run --rm api python -c \
+  "from app.api.security import hash_password; print(hash_password('YOUR_PASSWORD'))"
+# then set in .env:
+#   ADMIN_USERNAME=admin
+#   ADMIN_PASSWORD_HASH=<the printed hash>
+```
 
-Красивые карточки.
+## 🧑‍💻 Local development (without Docker)
 
-Графики.
+```bash
+python3.13 -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt
+playwright install chromium
+cp .env.example .env      # fill in BOT_TOKEN and DB/redis pointing at localhost
+alembic upgrade head
+python -m app.bot         # start the Telegram bot
+python -m app.worker      # (separate shell) start a Celery worker + beat
+uvicorn app.api.main:app --reload   # (separate shell) start the admin API
+```
 
-Логи.
+### Admin panel (frontend)
 
-Статистика.
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173 (proxies /api to :8000)
+npm run build      # production build into frontend/dist
+```
 
-Пользователи.
-
-Категории.
-
-Парсеры.
-
-Очередь задач.
-
-Ошибки.
-
-Настройки.
-
-Все должно изменяться через WEB.
-
----
-
-## 3 Настройки парсинга
-
-Можно создать любое количество правил.
-
-Например
-
-Искать:
-
-RTX 4090
-
-Цена до:
-
-1300€
-
-Только новые
-
-Только Германия
-
-Доставка Amazon
-
-Продавец Amazon
-
-Без аукционов
-
-Без восстановленных
-
-Минимальный рейтинг продавца
-
-Минимальный рейтинг товара
-
-Максимальная стоимость доставки
-
-Максимальное расстояние
-
-Любые ключевые слова
-
-Исключающие слова
-
-Любые категории
-
-Производитель
-
-Бренд
-
-Размер
-
-Цвет
-
-Состояние
-
-Любые дополнительные фильтры
+Stack: React 18 + TypeScript + Vite + Tailwind + Recharts. Dark/light theme,
+dashboard with charts, and pages for search rules, listings and parsers.
 
 ---
 
-## 4 Поддерживаемые сайты
+## ➕ Adding a new marketplace parser
 
-Архитектура должна позволять легко добавлять новые сайты.
+1. Create `app/parsers/sites/<site>.py`.
+2. Subclass `BaseParser`, set `site = SiteName.<SITE>` and implement `search()`.
+3. Decorate the class with `@register_parser` — that's it, the scheduler will use it.
 
-Каждый сайт должен быть отдельным модулем.
-
-Например
-
-Amazon
-
-eBay
-
-Kleinanzeigen
-
-Idealo
-
-MediaMarkt
-
-Saturn
-
-Otto
-
-Kaufland
-
-AliExpress
-
-Temu
-
-Notebooksbilliger
-
-Mindfactory
-
-Cyberport
-
-Alternate
-
-Computeruniverse
-
-и любые другие.
+See `app/parsers/sites/kleinanzeigen.py` for a complete reference implementation.
 
 ---
 
-## 5 Интервал поиска
+## ⚙️ Configuration
 
-Настраивается.
-
-10 секунд
-
-30 секунд
-
-1 минута
-
-5 минут
-
-10 минут
-
-30 минут
-
-1 час
-
-Каждый пользователь отдельно.
+All configuration is environment-based (see `.env.example` for the full list).
+Secrets are read once at startup through `app/config/settings.py` and are never logged.
 
 ---
 
-## 6 Категории
+## 🧪 Tests
 
-Телефоны
-
-Ноутбуки
-
-Видеокарты
-
-Процессоры
-
-Автомобили
-
-Мотоциклы
-
-Электроника
-
-Игры
-
-Консоли
-
-Одежда
-
-Любые категории.
+```bash
+pytest
+```
 
 ---
 
-## 7 Уведомления
+## 📄 License
 
-Отправлять:
-
-в Telegram
-
-в канал
-
-в группу
-
-личные сообщения
-
-через API
-
-Webhook
-
-Email
-
-Push
-
----
-
-## 8 Отправка сообщений
-
-Красиво оформленные карточки.
-
-Фото товара.
-
-Цена.
-
-Старая цена.
-
-Скидка.
-
-Процент скидки.
-
-Экономия.
-
-Описание.
-
-Ссылка.
-
-Кнопка Купить.
-
-Кнопка Открыть.
-
-Кнопка Добавить в избранное.
-
-Кнопка Игнорировать.
-
-Кнопка Следить за ценой.
-
----
-
-## 9 Анализ цен
-
-Бот должен понимать:
-
-насколько цена выгодная
-
-историю цены
-
-среднюю цену
-
-минимальную цену
-
-максимальную цену
-
-примерную рыночную цену
-
-процент скидки
-
-аномально низкую цену
-
-возможную ошибку продавца
-
-подозрительно дешевые товары
-
----
-
-## 10 История цен
-
-Хранить историю.
-
-Строить графики.
-
-Показывать изменение цены.
-
-Показывать минимумы.
-
-Показывать максимумы.
-
----
-
-## 11 Поиск дубликатов
-
-Не отправлять одинаковые предложения.
-
-## 12 Искусственный интеллект
-
-Использовать AI для анализа.
-
-Определять:
-
-стоит ли покупать
-
-редкость товара
-
-насколько предложение выгодное
-
-вероятность перепродажи
-
-примерную прибыль
-
-оценку от 1 до 100
-
----
-
-## 13 Режим перепродажи
-
-Отдельный режим.
-
-Например:
-
-Купить за 500€
-
-Средняя цена 850€
-
-Прибыль:
-
-350€
-
-Показывать ROI.
-
----
-
-## 14 Пользователи
-
-Регистрация.
-
-Авторизация.
-
-Роли.
-
-Администратор.
-
-Модератор.
-
-Пользователь.
-
-VIP.
-
-Premium.
-
----
-
-## 15 Подписки
-
-Бесплатная.
-
-Premium.
-
-Ultimate.
-
-Лимиты.
-
----
-
-## 16 Безопасность
-
-JWT.
-
-Шифрование.
-
-Rate Limit.
-
-Captcha.
-
-Защита API.
-
-Защита от спама.
-
-Проверка IP.
-
-Blacklist.
-
-Whitelist.
-
----
-
-## 17 Логи
-
-Полная система логирования.
-
-Ошибки.
-
-Парсинг.
-
-Запросы.
-
-Авторизация.
-
-Все действия.
-
----
-
-## 18 Мониторинг
-
-Prometheus.
-
-Grafana.
-
-Health Check.
-
----
-
-## 19 Docker
-
-Полностью готовый Docker Compose.
-
-Одной командой:
-
-docker compose up -d
-
-Должно запускаться всё.
-
----
-
-## 20 Документация
-
-README.md
-
-Установка
-
-Настройка
-
-ENV
-
-Docker
-
-FAQ
-
-Структура проекта
-
-Добавление нового парсера
-
-Добавление новой категории
-
-Добавление нового сайта
-
-API
-
-Swagger
-
----
-
-# ПРОИЗВОДИТЕЛЬНОСТЬ
-
-Использовать:
-
-Асинхронность.
-
-Пул соединений.
-
-Кэширование Redis.
-
-Очереди Celery.
-
-Оптимизацию SQL.
-
-Повторные попытки.
-
-Обработку ошибок.
-
-Proxy поддержку.
-
-User-Agent Rotation.
-
-Cookie Management.
-
-Playwright для JS сайтов.
-
-BeautifulSoup для HTML.
-
-httpx для API сайтов.
-
----
-
-# КОД
-
-Каждый файл должен быть полностью написан.
-
-Никаких сокращений.
-
-Каждый класс полностью.
-
-Каждая функция полностью.
-
-Комментарии.
-
-Типизация.
-
-Docstrings.
-
----
-
-# ДИЗАЙН
-
-WEB интерфейс должен выглядеть современно.
-
-Максимально дорого.
-
-Стиль:
-
-Apple
-
-Stripe
-
-Linear
-
-Vercel
-
-Notion
-
-Современные анимации.
-
-Tailwind.
-
-Полностью адаптивный.
-
----
-
-# TELEGRAM
-
-Бот должен поддерживать:
-
-Inline режим.
-
-Команды.
-
-Кнопки.
-
-Меню.
-
-FSM.
-
-Webhook.
-
-Long Polling.
-
-Мультиязычность.
-
-Русский.
-
-Украинский.
-
-Немецкий.
-
-Английский.
-
----
-
-# ДОПОЛНИТЕЛЬНО
-
-Добавь любые функции которые сделают проект лучше.
-
-Если считаешь что чего-то не хватает — обязательно добавь это самостоятельно.
-
-Мне нужен максимально профессиональный коммерческий проект, который можно использовать как SaaS-продукт и в будущем продавать по подписке.
-
----
-
-# ПОРЯДОК ВЫПОЛНЕНИЯ
-
-Сначала:
-
-1. Полностью спроектируй архитектуру.
-2. Покажи дерево проекта.
-3. Объясни архитектурные решения.
-4. После этого начинай писать код.
-5. Создай абсолютно каждый файл проекта.
-6. Если сообщение заканчивается — автоматически продолжай в следующем ответе, пока проект не будет полностью завершён.
-
-Не упрощай проект. Пиши максимально качественный, масштабируемый и production-ready код.
-
-
-
-Даже если они найдены разными парсерами.
-
----
+MIT — private project, for personal use. Respect each marketplace's Terms of Service
+and robots.txt; the scrapers use polite rate-limiting by default.

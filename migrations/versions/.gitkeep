@@ -1,0 +1,3 @@
+# Generated Alembic migrations live here.
+# Create the first one against a running DB with:
+#   alembic revision --autogenerate -m "init"

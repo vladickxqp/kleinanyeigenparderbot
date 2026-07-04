@@ -1,0 +1,275 @@
+"""Search-rule management: list, open, toggle, delete, and creation wizard."""
+
+from __future__ import annotations
+
+from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
+
+from app.bot.keyboards import (
+    cancel_keyboard,
+    main_menu_keyboard,
+    rule_actions_keyboard,
+    rules_list_keyboard,
+    sites_select_keyboard,
+    skip_cancel_keyboard,
+)
+from app.bot.states import RuleWizard
+from app.bot.texts import t
+from app.config.settings import settings
+from app.database.models import SearchRule, User
+from app.parsers import registry
+from app.services.repositories import SearchRuleRepository
+from sqlalchemy.ext.asyncio import AsyncSession
+
+router = Router(name="rules")
+
+
+# --- Listing rules ----------------------------------------------------------
+@router.callback_query(F.data == "menu:rules")
+async def cb_list_rules(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str
+) -> None:
+    rules = await SearchRuleRepository(session).list_for_user(user.id)
+    if not rules:
+        await cb.message.edit_text(
+            t("rule.none", lang), reply_markup=main_menu_keyboard(lang)
+        )
+    else:
+        await cb.message.edit_text(
+            t("btn.rules", lang), reply_markup=rules_list_keyboard(rules, lang)
+        )
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("rule:open:"))
+async def cb_open_rule(
+    cb: CallbackQuery, session: AsyncSession, lang: str
+) -> None:
+    rule_id = int(cb.data.split(":")[-1])
+    rule = await SearchRuleRepository(session).get(rule_id)
+    if rule is None:
+        await cb.answer("Nicht gefunden", show_alert=True)
+        return
+    await cb.message.edit_text(_render_rule(rule), reply_markup=rule_actions_keyboard(rule, lang))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("rule:toggle:"))
+async def cb_toggle_rule(cb: CallbackQuery, session: AsyncSession, lang: str) -> None:
+    rule_id = int(cb.data.split(":")[-1])
+    repo = SearchRuleRepository(session)
+    rule = await repo.get(rule_id)
+    if rule is None:
+        await cb.answer("Nicht gefunden", show_alert=True)
+        return
+    rule.is_active = not rule.is_active
+    await session.flush()
+    await cb.message.edit_text(_render_rule(rule), reply_markup=rule_actions_keyboard(rule, lang))
+    await cb.answer("🟢 Aktiv" if rule.is_active else "⚪️ Pausiert")
+
+
+@router.callback_query(F.data.startswith("rule:delete:"))
+async def cb_delete_rule(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str
+) -> None:
+    rule_id = int(cb.data.split(":")[-1])
+    repo = SearchRuleRepository(session)
+    rule = await repo.get(rule_id)
+    if rule is not None:
+        await repo.delete(rule)
+        await session.flush()
+    rules = await repo.list_for_user(user.id)
+    if rules:
+        await cb.message.edit_text(
+            t("btn.rules", lang), reply_markup=rules_list_keyboard(rules, lang)
+        )
+    else:
+        await cb.message.edit_text(
+            t("rule.none", lang), reply_markup=main_menu_keyboard(lang)
+        )
+    await cb.answer("🗑 Gelöscht")
+
+
+# --- Creation wizard --------------------------------------------------------
+@router.callback_query(F.data == "rule:new")
+async def cb_new_rule(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
+) -> None:
+    count = await SearchRuleRepository(session).count_for_user(user.id)
+    if count >= user.max_rules:
+        await cb.answer(
+            t("rule.limit_reached", lang, max=user.max_rules), show_alert=True
+        )
+        return
+    await state.set_state(RuleWizard.name)
+    await cb.message.answer(t("rule.ask_name", lang), reply_markup=cancel_keyboard(lang))
+    await cb.answer()
+
+
+@router.callback_query(F.data == "wizard:cancel")
+async def cb_cancel(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
+    await state.clear()
+    await cb.message.answer(
+        t("common.cancelled", lang), reply_markup=main_menu_keyboard(lang)
+    )
+    await cb.answer()
+
+
+@router.message(RuleWizard.name, F.text)
+async def wiz_name(message: Message, lang: str, state: FSMContext) -> None:
+    await state.update_data(name=message.text.strip()[:128])
+    await state.set_state(RuleWizard.keywords)
+    await message.answer(t("rule.ask_keywords", lang), reply_markup=cancel_keyboard(lang))
+
+
+@router.message(RuleWizard.keywords, F.text)
+async def wiz_keywords(message: Message, lang: str, state: FSMContext) -> None:
+    await state.update_data(keywords=message.text.strip()[:256])
+    await state.set_state(RuleWizard.max_price)
+    await message.answer(
+        t("rule.ask_max_price", lang), reply_markup=skip_cancel_keyboard(lang)
+    )
+
+
+@router.message(RuleWizard.max_price, F.text)
+async def wiz_max_price(message: Message, lang: str, state: FSMContext) -> None:
+    raw = (message.text or "").replace("€", "").replace(",", ".").strip()
+    try:
+        max_price = float(raw)
+    except ValueError:
+        await message.answer("⚠️ Bitte eine Zahl senden.", reply_markup=skip_cancel_keyboard(lang))
+        return
+    await state.update_data(max_price=max_price)
+    await state.set_state(RuleWizard.exclude)
+    await message.answer(
+        t("rule.ask_exclude", lang), reply_markup=skip_cancel_keyboard(lang)
+    )
+
+
+@router.message(RuleWizard.exclude, F.text)
+async def wiz_exclude(
+    message: Message, lang: str, state: FSMContext
+) -> None:
+    excludes = [w.strip() for w in (message.text or "").split(",") if w.strip()]
+    await state.update_data(exclude=excludes)
+    await _ask_sites(message, lang, state)
+
+
+# --- Platform selection (multi-select) --------------------------------------
+@router.callback_query(RuleWizard.sites, F.data.startswith("wizsite:toggle:"))
+async def cb_site_toggle(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
+    site = cb.data.split(":")[-1]
+    data = await state.get_data()
+    selected = list(data.get("sites", []))
+    if site in selected:
+        selected.remove(site)
+    else:
+        selected.append(site)
+    await state.update_data(sites=selected)
+    await cb.message.edit_reply_markup(
+        reply_markup=sites_select_keyboard(_available_sites(), selected, lang)
+    )
+    await cb.answer()
+
+
+@router.callback_query(RuleWizard.sites, F.data == "wizsite:all")
+async def cb_site_all(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
+    await state.update_data(sites=[])
+    await cb.message.edit_reply_markup(
+        reply_markup=sites_select_keyboard(_available_sites(), [], lang)
+    )
+    await cb.answer(t("btn.all_platforms", lang))
+
+
+@router.callback_query(RuleWizard.sites, F.data == "wizsite:done")
+async def cb_site_done(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
+) -> None:
+    data = await state.get_data()
+    await _finalize(
+        cb.message,
+        user,
+        session,
+        lang,
+        state,
+        exclude=list(data.get("exclude", [])),
+        sites=list(data.get("sites", [])),
+    )
+    await cb.answer()
+
+
+# --- Skip handling for optional steps ---------------------------------------
+@router.callback_query(F.data == "wizard:skip")
+async def cb_skip(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
+) -> None:
+    current = await state.get_state()
+    if current == RuleWizard.max_price.state:
+        await state.set_state(RuleWizard.exclude)
+        await cb.message.answer(
+            t("rule.ask_exclude", lang), reply_markup=skip_cancel_keyboard(lang)
+        )
+    elif current == RuleWizard.exclude.state:
+        await state.update_data(exclude=[])
+        await _ask_sites(cb.message, lang, state)
+    await cb.answer()
+
+
+# --- Helpers ----------------------------------------------------------------
+def _available_sites() -> list[str]:
+    return [s.value for s in registry.available_sites]
+
+
+async def _ask_sites(message: Message, lang: str, state: FSMContext) -> None:
+    await state.set_state(RuleWizard.sites)
+    data = await state.get_data()
+    selected = list(data.get("sites", []))
+    await message.answer(
+        t("rule.ask_sites", lang),
+        reply_markup=sites_select_keyboard(_available_sites(), selected, lang),
+    )
+
+
+async def _finalize(
+    message: Message,
+    user: User,
+    session: AsyncSession,
+    lang: str,
+    state: FSMContext,
+    *,
+    exclude: list[str],
+    sites: list[str] | None = None,
+) -> None:
+    data = await state.get_data()
+    await state.clear()
+    rule = SearchRule(
+        user_id=user.id,
+        name=data.get("name", "Suche"),
+        keywords=data.get("keywords", ""),
+        exclude_keywords=exclude,
+        max_price=data.get("max_price"),
+        interval_seconds=settings.scraper_default_interval_seconds,
+        sites=sites or [],  # empty = all registered parsers
+    )
+    await SearchRuleRepository(session).add(rule)
+    await session.flush()
+    await message.answer(
+        t("rule.created", lang, name=rule.name), reply_markup=main_menu_keyboard(lang)
+    )
+
+
+def _render_rule(rule: SearchRule) -> str:
+    state = "🟢 aktiv" if rule.is_active else "⚪️ pausiert"
+    price = f"bis {rule.max_price:.0f} €" if rule.max_price else "beliebig"
+    excl = ", ".join(rule.exclude_keywords) if rule.exclude_keywords else "—"
+    sites = ", ".join(s.title() for s in rule.sites) if rule.sites else "alle"
+    return (
+        f"📋 <b>{rule.name}</b>  ({state})\n\n"
+        f"🔎 Suchbegriffe: <code>{rule.keywords}</code>\n"
+        f"💶 Preis: {price}\n"
+        f"🚫 Ausschluss: {excl}\n"
+        f"🏪 Plattformen: {sites}\n"
+        f"⏱ Intervall: {rule.interval_seconds}s\n"
+        f"🎯 Min. Deal-Score: {rule.min_deal_score}"
+    )

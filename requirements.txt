@@ -1,0 +1,53 @@
+# ============================================================================
+#  Runtime dependencies. Pinned to compatible minimums for Python 3.13.
+#  For local dev: pip install -r requirements.txt && playwright install chromium
+# ============================================================================
+
+# --- Telegram bot ---
+aiogram==3.13.1
+
+# --- Web API ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# --- Database ---
+SQLAlchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+psycopg2-binary==2.9.10          # sync driver for alembic offline/tools
+
+# --- Cache / queue ---
+redis==5.2.1
+celery==5.4.0
+
+# --- Scheduling ---
+APScheduler==3.11.0
+
+# --- Scraping ---
+httpx==0.28.1
+beautifulsoup4==4.12.3
+lxml==5.3.0
+playwright==1.49.1
+fake-useragent==2.0.3
+
+# --- Config / validation ---
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+
+# --- Auth / security ---
+pyjwt==2.10.1
+passlib[bcrypt]==1.7.4
+argon2-cffi==23.1.0
+
+# --- Logging / monitoring ---
+loguru==0.7.3
+prometheus-client==0.21.1
+
+# --- Optional AI scoring (Claude) ---
+anthropic==0.42.0
+
+# --- Utils ---
+orjson==3.10.13
+tenacity==9.0.0                  # retries with backoff
