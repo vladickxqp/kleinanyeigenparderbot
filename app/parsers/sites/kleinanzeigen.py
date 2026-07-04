@@ -22,6 +22,20 @@ from app.parsers.schemas import ParsedListing, SearchQuery
 
 BASE_URL = "https://www.kleinanzeigen.de"
 
+#: Category slug (as stored on SearchRule.category) -> Kleinanzeigen c-id.
+#: The final URL suffix is ``k0c<id>``; verify ids against the live site when
+#: adding new ones (wrong ids silently return other categories).
+CATEGORY_IDS: dict[str, str] = {
+    "handys": "173",          # Handy & Telefon
+    "notebooks": "278",       # Notebooks
+    "pcs": "228",             # PCs
+    "pc-zubehoer": "225",     # PC-Zubehör & Software (Grafikkarten etc.)
+    "konsolen": "279",        # Konsolen
+    "elektronik": "161",      # Elektronik (Oberkategorie)
+    "autos": "216",           # Autos
+    "fahrraeder": "217",      # Fahrräder & Zubehör
+}
+
 
 @register_parser
 class KleinanzeigenParser(BaseParser):
@@ -31,27 +45,107 @@ class KleinanzeigenParser(BaseParser):
     label = "Kleinanzeigen"
     requires_browser = False
 
+    def __init__(self) -> None:
+        super().__init__()
+        # zip/city -> resolved Kleinanzeigen location id ("" = resolution failed)
+        self._location_cache: dict[str, str] = {}
+
     # --- URL building -------------------------------------------------------
-    def _build_url(self, query: SearchQuery, page: int = 1) -> str:
+    def _build_url(
+        self, query: SearchQuery, page: int = 1, location_id: str | None = None
+    ) -> str:
         """Construct a Kleinanzeigen search URL.
 
-        Format: ``/s-<price-segment>/<keywords>/k0`` where the price segment is
-        ``preis:MIN:MAX``. Missing bounds are left blank (``preis:100:`` etc.).
+        Format: ``/s-anzeige:angebote/<preis:MIN:MAX>/<keywords>/k0[c<cat>][l<loc>][r<km>]``
+        - ``anzeige:angebote`` hides wanted-ads (Gesuche).
+        - The trailing token combines category, location and radius filters.
         """
         keywords = quote_plus(query.keywords.strip())
-        segments = ["s"]
+        segments = ["s-anzeige:angebote"]
         if query.min_price is not None or query.max_price is not None:
             lo = int(query.min_price) if query.min_price is not None else ""
             hi = int(query.max_price) if query.max_price is not None else ""
             segments.append(f"preis:{lo}:{hi}")
         segments.append(keywords)
         page_seg = "" if page <= 1 else f"seite:{page}/"
+
+        suffix = "k0"
+        if query.category and query.category in CATEGORY_IDS:
+            suffix += f"c{CATEGORY_IDS[query.category]}"
+        if location_id:
+            suffix += f"l{location_id}"
+            if query.max_distance_km:
+                suffix += f"r{int(query.max_distance_km)}"
+
         path = "/".join(segments)
-        return f"{BASE_URL}/{path}/{page_seg}k0"
+        return f"{BASE_URL}/{path}/{page_seg}{suffix}"
+
+    # --- Location resolution --------------------------------------------------
+    async def _resolve_location_id(self, query: SearchQuery) -> str | None:
+        """Resolve a zip code / city name to Kleinanzeigen's internal l-id.
+
+        Uses the site's own autocomplete endpoint. Any failure degrades to a
+        Germany-wide search (returns None) instead of raising.
+        """
+        term = (query.zip_code or query.location or "").strip()
+        if not term:
+            return None
+        if term in self._location_cache:
+            return self._location_cache[term] or None
+
+        loc_id = ""
+        try:
+            resp = await self.fetch(
+                f"{BASE_URL}/s-ort-empfehlungen.json", params={"query": term}
+            )
+            data = resp.json()
+            loc_id = self._extract_location_id(data) or ""
+        except Exception as exc:  # noqa: BLE001 - degrade gracefully
+            logger.warning("[kleinanzeigen] location lookup failed for {!r}: {}", term, exc)
+
+        self._location_cache[term] = loc_id
+        if not loc_id:
+            logger.info("[kleinanzeigen] no location id for {!r}; searching nationwide", term)
+        return loc_id or None
+
+    @staticmethod
+    def _extract_location_id(data: object) -> str | None:
+        """Pull the first numeric location id out of the suggestions payload.
+
+        The endpoint's schema has changed over the years (dict of label->id,
+        list of objects, ...), so this scans defensively for the first integer.
+        """
+        candidates: list[str] = []
+        if isinstance(data, dict):
+            # Keys are labels ("10115 Berlin"); the id lives in the values.
+            candidates.extend(str(v) for v in data.values())
+        elif isinstance(data, list):
+            for entry in data:
+                if isinstance(entry, dict):
+                    if "id" in entry:
+                        candidates.append(str(entry["id"]))
+                    candidates.extend(
+                        str(v) for k, v in entry.items() if k != "id"
+                    )
+                else:
+                    candidates.append(str(entry))
+
+        # Prefer values that are exactly an (optionally l-prefixed) id ...
+        for text in candidates:
+            match = re.fullmatch(r"l?(\d{3,})", text.strip())
+            if match:
+                return match.group(1)
+        # ... then fall back to an embedded l-prefixed id anywhere.
+        for text in candidates:
+            match = re.search(r"l(\d{3,})", text)
+            if match:
+                return match.group(1)
+        return None
 
     # --- Main entrypoint ----------------------------------------------------
     async def search(self, query: SearchQuery) -> list[ParsedListing]:
-        url = self._build_url(query)
+        location_id = await self._resolve_location_id(query)
+        url = self._build_url(query, location_id=location_id)
         logger.debug("[kleinanzeigen] GET {}", url)
         html = await self.fetch_text(url)
         listings = self._parse_results(html, query)

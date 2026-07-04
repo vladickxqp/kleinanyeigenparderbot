@@ -10,7 +10,10 @@ class RuleWizard(StatesGroup):
 
     name = State()
     keywords = State()
+    category = State()
     max_price = State()
     exclude = State()
+    location = State()
+    radius = State()
     sites = State()
     interval = State()

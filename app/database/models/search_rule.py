@@ -72,7 +72,9 @@ class SearchRule(Base, PKMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Only notify when the deal is at least this good (0-100 heuristic/AI score).
-    min_deal_score: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    # 0 = send every new relevant listing (default); raise it to only get the
+    # statistically best deals.
+    min_deal_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # --- Relationships ------------------------------------------------------
     user: Mapped["User"] = relationship(back_populates="search_rules")

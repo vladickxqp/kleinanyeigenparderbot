@@ -70,3 +70,31 @@ def test_build_url_encodes_price_and_keywords():
     url = parser._build_url(SearchQuery(keywords="rtx 4090", max_price=1300))
     assert "preis::1300" in url
     assert "rtx" in url.lower()
+    # Wanted-ads (Gesuche) are excluded by default.
+    assert "anzeige:angebote" in url
+
+
+def test_build_url_with_category_location_radius():
+    parser = KleinanzeigenParser()
+    query = SearchQuery(
+        keywords="iphone 17 pro",
+        category="handys",
+        max_distance_km=50,
+    )
+    url = parser._build_url(query, location_id="3331")
+    assert url.endswith("k0c173l3331r50")
+
+
+def test_build_url_without_location_has_plain_suffix():
+    parser = KleinanzeigenParser()
+    url = parser._build_url(SearchQuery(keywords="iphone"))
+    assert url.endswith("k0")
+
+
+def test_extract_location_id_from_dict_and_list():
+    assert KleinanzeigenParser._extract_location_id({"10115 Berlin": "l3331"}) == "3331"
+    assert (
+        KleinanzeigenParser._extract_location_id([{"id": "9282", "name": "München"}])
+        == "9282"
+    )
+    assert KleinanzeigenParser._extract_location_id({}) is None

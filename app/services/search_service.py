@@ -21,7 +21,11 @@ from app.services import ai
 from app.services.deal_scorer import score_listing
 from app.services.dedup import filter_new_listings
 from app.services.price_analysis import PriceStats, compute_price_stats
+from app.services.relevance import filter_relevant
 from app.services.repositories import ListingRepository
+
+#: On the very first run of a rule everything is "new"; cap the flood.
+FIRST_RUN_MAX_NOTIFICATIONS = 5
 
 
 class SearchService:
@@ -39,7 +43,15 @@ class SearchService:
         if not parsed:
             return []
 
+        # Drop accessories, wanted-ads and off-topic hits BEFORE price stats,
+        # so a 15€ phone case never looks like a "steal" next to real phones.
+        parsed = filter_relevant(query, parsed)
+        if not parsed:
+            logger.debug("Rule {}: nothing relevant after filtering", rule.id)
+            return []
+
         known = await self.listings.existing_fingerprints(rule.id)
+        first_run = not known
         fresh = filter_new_listings(parsed, known)
         if not fresh:
             logger.debug("Rule {}: no new listings after dedup", rule.id)
@@ -69,6 +81,14 @@ class SearchService:
         # Only surface listings that clear the user's minimum score threshold.
         notable = [r for r in new_rows if r.deal_score >= rule.min_deal_score]
         notable.sort(key=lambda r: r.deal_score, reverse=True)
+
+        # First run seeds the baseline: send only the top few instead of
+        # flooding the user with every existing listing.
+        if first_run and len(notable) > FIRST_RUN_MAX_NOTIFICATIONS:
+            skipped = notable[FIRST_RUN_MAX_NOTIFICATIONS:]
+            for row in skipped:
+                row.notified = True  # baseline: never deliver these later
+            notable = notable[:FIRST_RUN_MAX_NOTIFICATIONS]
         return notable
 
     # --- Internals ----------------------------------------------------------

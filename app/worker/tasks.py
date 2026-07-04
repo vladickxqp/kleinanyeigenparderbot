@@ -15,6 +15,7 @@ from loguru import logger
 
 from app.bot.notifier import notify_user_about_listings
 from app.config.settings import settings
+from app.database.models import User
 from app.database.session import session_scope
 from app.services.repositories import SearchRuleRepository
 from app.services.search_service import SearchService
@@ -83,9 +84,10 @@ async def _run_search_rule(rule_id: int) -> dict:
         notable_ids = [row.id for row in notable]
 
         # Grab the owner's telegram id + language for notification.
-        await session.refresh(rule, attribute_names=["user"])
-        telegram_id = rule.user.telegram_id
-        lang = rule.user.language_code
+        owner = await session.get(User, rule.user_id)
+        if owner is not None:
+            telegram_id = owner.telegram_id
+            lang = owner.language_code
 
     if notable_ids and telegram_id is not None:
         deliver_notifications.delay(telegram_id, notable_ids, lang)

@@ -27,9 +27,13 @@ def _money(value: float | None, currency: str = "EUR") -> str:
 def format_deal_card(listing: Listing) -> str:
     """Build the HTML caption for a deal notification card."""
     badge = _VERDICT_BADGE.get(listing.deal_verdict, "")
+    # Title doubles as a clickable link so the offer is always one tap away,
+    # in addition to the "Öffnen" button below the card.
     lines: list[str] = [
         f"{badge}  •  <b>{listing.deal_score}/100</b>",
-        f"<b>{escape(listing.title)}</b>",
+        f'<b><a href="{listing.url}">{escape(listing.title)}</a></b>',
+        "",
+        f"🔗 {listing.url}",
         "",
     ]
 

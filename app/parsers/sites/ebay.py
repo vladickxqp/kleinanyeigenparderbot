@@ -20,6 +20,15 @@ from app.parsers.schemas import ParsedListing, SearchQuery
 BASE_URL = "https://www.ebay.de"
 
 
+#: Category slug (SearchRule.category) -> eBay category id (_sacat parameter).
+CATEGORY_IDS: dict[str, str] = {
+    "handys": "9355",         # Handys & Smartphones
+    "notebooks": "175672",    # Notebooks & Netbooks
+    "pc-zubehoer": "27386",   # Grafikkarten
+    "konsolen": "139971",     # Spielekonsolen
+}
+
+
 @register_parser
 class EbayParser(BaseParser):
     """Extracts offers from ebay.de search results."""
@@ -40,6 +49,8 @@ class EbayParser(BaseParser):
             params["LH_ItemCondition"] = 3000
         if query.exclude_auctions:
             params["LH_BIN"] = 1  # Buy-It-Now only
+        if query.category and query.category in CATEGORY_IDS:
+            params["_sacat"] = CATEGORY_IDS[query.category]
         return f"{BASE_URL}/sch/i.html?{urlencode(params)}"
 
     async def search(self, query: SearchQuery) -> list[ParsedListing]:

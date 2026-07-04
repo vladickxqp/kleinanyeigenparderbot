@@ -66,11 +66,47 @@ _TEXTS: dict[str, dict[str, str]] = {
         "uk": "🔎 Які ключові слова? (напр. <i>rtx 4090</i>)",
     },
     "rule.ask_max_price": {
-        "de": "💶 Maximaler Preis in €? (Zahl senden, oder überspringen)",
-        "en": "💶 Maximum price in €? (send a number, or skip)",
-        "ru": "💶 Максимальная цена в €? (пришли число или пропусти)",
-        "uk": "💶 Максимальна ціна в €? (надішли число або пропусти)",
+        "de": "💶 Preis in €?\n"
+        "z. B. <code>1200</code> (max), <code>500-1200</code> (von–bis), "
+        "<code>ab 500</code> — oder überspringen.\n"
+        "💡 Eine Von-Preis-Angabe filtert Zubehör (Hüllen, Kabel) zuverlässig raus!",
+        "en": "💶 Price in €?\n"
+        "e.g. <code>1200</code> (max), <code>500-1200</code> (range), "
+        "<code>ab 500</code> (min) — or skip.\n"
+        "💡 A minimum price reliably filters out accessories (cases, cables)!",
+        "ru": "💶 Цена в €?\n"
+        "напр. <code>1200</code> (макс), <code>500-1200</code> (диапазон), "
+        "<code>ab 500</code> (мин) — или пропусти.\n"
+        "💡 Минимальная цена надёжно отсеивает аксессуары (чехлы, кабели)!",
+        "uk": "💶 Ціна в €?\n"
+        "напр. <code>1200</code> (макс), <code>500-1200</code> (діапазон), "
+        "<code>ab 500</code> (мін) — або пропусти.\n"
+        "💡 Мінімальна ціна надійно відсіює аксесуари (чохли, кабелі)!",
     },
+    "rule.ask_category": {
+        "de": "📂 In welcher Kategorie suchen?",
+        "en": "📂 Which category to search in?",
+        "ru": "📂 В какой категории искать?",
+        "uk": "📂 У якій категорії шукати?",
+    },
+    "rule.ask_location": {
+        "de": "📍 PLZ oder Ort für die Umkreissuche? (z. B. <code>10115</code> "
+        "oder <code>Berlin</code> — gilt für Kleinanzeigen, oder überspringen)",
+        "en": "📍 ZIP code or city for radius search? (e.g. <code>10115</code> "
+        "or <code>Berlin</code> — applies to Kleinanzeigen, or skip)",
+        "ru": "📍 Индекс или город для поиска в радиусе? (напр. <code>10115</code> "
+        "или <code>Berlin</code> — для Kleinanzeigen, или пропусти)",
+        "uk": "📍 Індекс або місто для пошуку в радіусі? (напр. <code>10115</code> "
+        "або <code>Berlin</code> — для Kleinanzeigen, або пропусти)",
+    },
+    "rule.ask_radius": {
+        "de": "📏 Wie weit darf es entfernt sein?",
+        "en": "📏 How far away may it be?",
+        "ru": "📏 Насколько далеко может быть?",
+        "uk": "📏 Наскільки далеко може бути?",
+    },
+    "btn.all_categories": {"de": "🌐 Alle Kategorien", "en": "🌐 All categories",
+                           "ru": "🌐 Все категории", "uk": "🌐 Усі категорії"},
     "rule.ask_exclude": {
         "de": "🚫 Auszuschließende Wörter? Komma-getrennt (oder überspringen)",
         "en": "🚫 Words to exclude? Comma-separated (or skip)",

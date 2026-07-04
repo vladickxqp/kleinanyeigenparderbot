@@ -57,6 +57,17 @@ async def notify_user_about_listings(
     return sent
 
 
+async def send_listing_card(
+    bot: Bot, chat_id: int, listing: Listing, lang: str = "de"
+) -> bool:
+    """Deliver a single deal card using an already-running Bot instance.
+
+    Used by the in-chat "run now" action; the Celery path uses
+    :func:`notify_user_about_listings` instead.
+    """
+    return await _send_one(bot, chat_id, listing, lang)
+
+
 async def _send_one(bot: Bot, chat_id: int, listing: Listing, lang: str) -> bool:
     caption = format_deal_card(listing)
     resale = format_resale_line(listing)

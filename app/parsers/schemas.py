@@ -36,6 +36,16 @@ class SearchQuery(BaseModel):
         haystack = " ".join(t.lower() for t in texts if t)
         return not any(bad.lower() in haystack for bad in self.exclude_keywords)
 
+    def contains_all_keywords(self, *texts: str | None) -> bool:
+        """True if every whitespace-separated query token appears in the texts.
+
+        Marketplace search is fuzzy ("iPhone 17 Pro" also returns plain
+        "iPhone 17" items); this enforces that all tokens are present.
+        """
+        haystack = " ".join(t.lower() for t in texts if t)
+        tokens = [tok for tok in self.keywords.lower().split() if tok]
+        return all(tok in haystack for tok in tokens)
+
 
 class ParsedListing(BaseModel):
     """A single offer as produced by a parser (pre-persistence)."""

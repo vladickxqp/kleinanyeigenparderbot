@@ -5,12 +5,17 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
+from loguru import logger
 
 from app.bot.keyboards import (
+    CATEGORY_CHOICES,
     INTERVAL_CHOICES,
+    RADIUS_CHOICES,
     cancel_keyboard,
+    category_keyboard,
     interval_keyboard,
     main_menu_keyboard,
+    radius_keyboard,
     rule_actions_keyboard,
     rules_list_keyboard,
     sites_select_keyboard,
@@ -21,6 +26,7 @@ from app.bot.texts import t
 from app.config.settings import settings
 from app.database.models import SearchRule, User
 from app.parsers import registry
+from app.services.parsing import parse_price_range
 from app.services.repositories import SearchRuleRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,6 +61,46 @@ async def cb_open_rule(
         return
     await cb.message.edit_text(_render_rule(rule), reply_markup=rule_actions_keyboard(rule, lang))
     await cb.answer()
+
+
+@router.callback_query(F.data.startswith("rule:run:"))
+async def cb_run_rule(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str
+) -> None:
+    """Run a rule immediately and deliver the results in-chat (great for testing)."""
+    rule_id = int(cb.data.split(":")[-1])
+    rule = await SearchRuleRepository(session).get(rule_id)
+    if rule is None:
+        await cb.answer("Nicht gefunden", show_alert=True)
+        return
+    await cb.answer("🔍 Suche läuft…")
+    status = await cb.message.answer("🔍 Suche läuft, einen Moment…")
+
+    from app.bot.notifier import send_listing_card
+    from app.services.search_service import SearchService
+
+    try:
+        notable = await SearchService(session).run_rule(rule)
+    except Exception:  # noqa: BLE001 - surface a friendly error, log the rest
+        logger.exception("Manual run of rule {} failed", rule_id)
+        await status.edit_text("⚠️ Suche fehlgeschlagen — Details stehen im Log.")
+        return
+
+    sent = 0
+    for row in notable[:5]:
+        if await send_listing_card(cb.message.bot, user.telegram_id, row, lang):
+            row.notified = True
+            sent += 1
+
+    if notable:
+        await status.edit_text(
+            f"✅ Fertig: <b>{len(notable)}</b> neue Treffer, {sent} Karte(n) gesendet."
+        )
+    else:
+        await status.edit_text(
+            "😕 Keine neuen Treffer. Entweder gibt es nichts Neues, oder die "
+            "Filter sind zu streng (Preis/Ausschlusswörter prüfen)."
+        )
 
 
 @router.callback_query(F.data.startswith("rule:toggle:"))
@@ -128,21 +174,36 @@ async def wiz_name(message: Message, lang: str, state: FSMContext) -> None:
 @router.message(RuleWizard.keywords, F.text)
 async def wiz_keywords(message: Message, lang: str, state: FSMContext) -> None:
     await state.update_data(keywords=message.text.strip()[:256])
-    await state.set_state(RuleWizard.max_price)
+    await state.set_state(RuleWizard.category)
     await message.answer(
+        t("rule.ask_category", lang), reply_markup=category_keyboard(lang)
+    )
+
+
+# --- Category selection -------------------------------------------------------
+@router.callback_query(RuleWizard.category, F.data.startswith("wizcat:"))
+async def cb_category(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
+    slug = cb.data.split(":")[-1]
+    valid = {s for s, _ in CATEGORY_CHOICES}
+    await state.update_data(category=slug if slug in valid else None)
+    await state.set_state(RuleWizard.max_price)
+    await cb.message.answer(
         t("rule.ask_max_price", lang), reply_markup=skip_cancel_keyboard(lang)
     )
+    await cb.answer()
 
 
 @router.message(RuleWizard.max_price, F.text)
 async def wiz_max_price(message: Message, lang: str, state: FSMContext) -> None:
-    raw = (message.text or "").replace("€", "").replace(",", ".").strip()
-    try:
-        max_price = float(raw)
-    except ValueError:
-        await message.answer("⚠️ Bitte eine Zahl senden.", reply_markup=skip_cancel_keyboard(lang))
+    parsed = parse_price_range(message.text or "")
+    if parsed is None:
+        await message.answer(
+            "⚠️ Bitte Zahl oder Bereich senden (z. B. 1200 oder 500-1200).",
+            reply_markup=skip_cancel_keyboard(lang),
+        )
         return
-    await state.update_data(max_price=max_price)
+    min_price, max_price = parsed
+    await state.update_data(min_price=min_price, max_price=max_price)
     await state.set_state(RuleWizard.exclude)
     await message.answer(
         t("rule.ask_exclude", lang), reply_markup=skip_cancel_keyboard(lang)
@@ -155,7 +216,31 @@ async def wiz_exclude(
 ) -> None:
     excludes = [w.strip() for w in (message.text or "").split(",") if w.strip()]
     await state.update_data(exclude=excludes)
-    await _ask_sites(message, lang, state)
+    await _ask_location(message, lang, state)
+
+
+# --- Location + radius ---------------------------------------------------------
+@router.message(RuleWizard.location, F.text)
+async def wiz_location(message: Message, lang: str, state: FSMContext) -> None:
+    term = (message.text or "").strip()[:64]
+    zip_code = term if term.isdigit() and 4 <= len(term) <= 5 else None
+    await state.update_data(location=term, zip_code=zip_code)
+    await state.set_state(RuleWizard.radius)
+    await message.answer(t("rule.ask_radius", lang), reply_markup=radius_keyboard(lang))
+
+
+@router.callback_query(RuleWizard.radius, F.data.startswith("wizrad:"))
+async def cb_radius(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
+    try:
+        km = int(cb.data.split(":")[-1])
+    except ValueError:
+        await cb.answer()
+        return
+    if km not in RADIUS_CHOICES:
+        km = RADIUS_CHOICES[-1]
+    await state.update_data(max_distance_km=km)
+    await _ask_sites(cb.message, lang, state)
+    await cb.answer()
 
 
 # --- Platform selection (multi-select) --------------------------------------
@@ -233,6 +318,8 @@ async def cb_skip(
         )
     elif current == RuleWizard.exclude.state:
         await state.update_data(exclude=[])
+        await _ask_location(cb.message, lang, state)
+    elif current == RuleWizard.location.state:
         await _ask_sites(cb.message, lang, state)
     await cb.answer()
 
@@ -240,6 +327,13 @@ async def cb_skip(
 # --- Helpers ----------------------------------------------------------------
 def _available_sites() -> list[str]:
     return [s.value for s in registry.available_sites]
+
+
+async def _ask_location(message: Message, lang: str, state: FSMContext) -> None:
+    await state.set_state(RuleWizard.location)
+    await message.answer(
+        t("rule.ask_location", lang), reply_markup=skip_cancel_keyboard(lang)
+    )
 
 
 async def _ask_sites(message: Message, lang: str, state: FSMContext) -> None:
@@ -270,7 +364,12 @@ async def _finalize(
         name=data.get("name", "Suche"),
         keywords=data.get("keywords", ""),
         exclude_keywords=exclude,
+        category=data.get("category"),
+        min_price=data.get("min_price"),
         max_price=data.get("max_price"),
+        location=data.get("location"),
+        zip_code=data.get("zip_code"),
+        max_distance_km=data.get("max_distance_km"),
         interval_seconds=interval_seconds or settings.scraper_default_interval_seconds,
         sites=sites or [],  # empty = all registered parsers
     )
@@ -288,16 +387,37 @@ def _interval_label(seconds: int) -> str:
     return f"{seconds}s"
 
 
+def _category_label(slug: str | None) -> str:
+    for s, label in CATEGORY_CHOICES:
+        if s == slug:
+            return label
+    return "alle"
+
+
 def _render_rule(rule: SearchRule) -> str:
     state = "🟢 aktiv" if rule.is_active else "⚪️ pausiert"
-    price = f"bis {rule.max_price:.0f} €" if rule.max_price else "beliebig"
+    if rule.min_price and rule.max_price:
+        price = f"{rule.min_price:.0f}–{rule.max_price:.0f} €"
+    elif rule.min_price:
+        price = f"ab {rule.min_price:.0f} €"
+    elif rule.max_price:
+        price = f"bis {rule.max_price:.0f} €"
+    else:
+        price = "beliebig"
     excl = ", ".join(rule.exclude_keywords) if rule.exclude_keywords else "—"
     sites = ", ".join(s.title() for s in rule.sites) if rule.sites else "alle"
+    ort = "überall"
+    if rule.location:
+        ort = rule.location
+        if rule.max_distance_km:
+            ort += f" (±{rule.max_distance_km} km)"
     return (
         f"📋 <b>{rule.name}</b>  ({state})\n\n"
         f"🔎 Suchbegriffe: <code>{rule.keywords}</code>\n"
+        f"📂 Kategorie: {_category_label(rule.category)}\n"
         f"💶 Preis: {price}\n"
         f"🚫 Ausschluss: {excl}\n"
+        f"📍 Ort: {ort}\n"
         f"🏪 Plattformen: {sites}\n"
         f"⏱ Intervall: {_interval_label(rule.interval_seconds)}\n"
         f"🎯 Min. Deal-Score: {rule.min_deal_score}"

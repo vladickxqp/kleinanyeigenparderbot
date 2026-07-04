@@ -53,10 +53,11 @@ def rules_list_keyboard(rules: Sequence[SearchRule], lang: str) -> InlineKeyboar
 
 def rule_actions_keyboard(rule: SearchRule, lang: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
+    kb.button(text="▶️ Jetzt suchen", callback_data=f"rule:run:{rule.id}")
     kb.button(text=t("btn.toggle", lang), callback_data=f"rule:toggle:{rule.id}")
     kb.button(text=t("btn.delete", lang), callback_data=f"rule:delete:{rule.id}")
     kb.button(text=t("btn.back", lang), callback_data="menu:rules")
-    kb.adjust(2, 1)
+    kb.adjust(1, 2, 1)
     return kb.as_markup()
 
 
@@ -107,6 +108,51 @@ def interval_keyboard(lang: str) -> InlineKeyboardMarkup:
     for seconds, label in INTERVAL_CHOICES:
         kb.button(text=f"⏱ {label}", callback_data=f"wizint:{seconds}")
     kb.adjust(4, 3)
+    kb.row(
+        InlineKeyboardButton(text=t("btn.cancel", lang), callback_data="wizard:cancel")
+    )
+    return kb.as_markup()
+
+
+# Category choices: (slug stored on the rule, label shown to the user).
+# Parsers map these slugs to their site-specific category ids.
+CATEGORY_CHOICES: list[tuple[str, str]] = [
+    ("handys", "📱 Handys"),
+    ("notebooks", "💻 Notebooks"),
+    ("pcs", "🖥 PCs"),
+    ("pc-zubehoer", "🎮 GPU / PC-Teile"),
+    ("konsolen", "🕹 Konsolen"),
+    ("elektronik", "🔌 Elektronik"),
+    ("autos", "🚗 Autos"),
+    ("fahrraeder", "🚲 Fahrräder"),
+]
+
+
+def category_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Pick a category for the search (or all)."""
+    kb = InlineKeyboardBuilder()
+    for slug, label in CATEGORY_CHOICES:
+        kb.button(text=label, callback_data=f"wizcat:{slug}")
+    kb.adjust(2)
+    kb.row(
+        InlineKeyboardButton(
+            text=t("btn.all_categories", lang), callback_data="wizcat:none"
+        ),
+        InlineKeyboardButton(text=t("btn.cancel", lang), callback_data="wizard:cancel"),
+    )
+    return kb.as_markup()
+
+
+#: Radius options (km) for the Kleinanzeigen Umkreissuche.
+RADIUS_CHOICES: list[int] = [5, 10, 25, 50, 100, 200]
+
+
+def radius_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Pick the search radius around the chosen location."""
+    kb = InlineKeyboardBuilder()
+    for km in RADIUS_CHOICES:
+        kb.button(text=f"📏 {km} km", callback_data=f"wizrad:{km}")
+    kb.adjust(3, 3)
     kb.row(
         InlineKeyboardButton(text=t("btn.cancel", lang), callback_data="wizard:cancel")
     )
