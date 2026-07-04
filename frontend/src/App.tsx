@@ -7,6 +7,7 @@ import { Login } from "./pages/Login";
 import { Parsers } from "./pages/Parsers";
 import { Rules } from "./pages/Rules";
 import { Settings } from "./pages/Settings";
+import { Users } from "./pages/Users";
 
 export default function App() {
   const { isAuthed } = useAuth();
@@ -26,6 +27,7 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="rules" element={<Rules />} />
         <Route path="listings" element={<Listings />} />
+        <Route path="users" element={<Users />} />
         <Route path="parsers" element={<Parsers />} />
         <Route path="settings" element={<Settings />} />
       </Route>

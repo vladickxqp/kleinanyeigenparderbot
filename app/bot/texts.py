@@ -89,6 +89,12 @@ _TEXTS: dict[str, dict[str, str]] = {
     },
     "btn.done": {"de": "✅ Fertig", "en": "✅ Done",
                  "ru": "✅ Готово", "uk": "✅ Готово"},
+    "rule.ask_interval": {
+        "de": "⏱ Wie oft soll ich für diese Suche prüfen?",
+        "en": "⏱ How often should I check for this search?",
+        "ru": "⏱ Как часто проверять этот поиск?",
+        "uk": "⏱ Як часто перевіряти цей пошук?",
+    },
     "btn.all_platforms": {"de": "🌐 Alle", "en": "🌐 All",
                           "ru": "🌐 Все", "uk": "🌐 Усі"},
     "rule.created": {

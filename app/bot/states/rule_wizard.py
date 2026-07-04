@@ -13,3 +13,4 @@ class RuleWizard(StatesGroup):
     max_price = State()
     exclude = State()
     sites = State()
+    interval = State()

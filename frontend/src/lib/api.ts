@@ -100,6 +100,21 @@ export interface SafeSettings {
   available_sites: string[];
 }
 
+export interface UserInfo {
+  id: number;
+  telegram_id: number;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  language_code: string;
+  role: string;
+  subscription: string;
+  is_active: boolean;
+  is_blocked: boolean;
+  rules_count: number;
+  created_at: string;
+}
+
 export const api = {
   health: () =>
     request<{ status: string; version: string; parsers: number }>("/health"),
@@ -112,4 +127,5 @@ export const api = {
   },
   parsers: () => request<ParserInfo[]>("/parsers"),
   settings: () => request<SafeSettings>("/settings"),
+  users: () => request<UserInfo[]>("/users"),
 };

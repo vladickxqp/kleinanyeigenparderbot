@@ -89,6 +89,30 @@ def sites_select_keyboard(
     return kb.as_markup()
 
 
+# Human-friendly interval choices (seconds, label). Used by the rule wizard.
+INTERVAL_CHOICES: list[tuple[int, str]] = [
+    (10, "10 s"),
+    (30, "30 s"),
+    (60, "1 min"),
+    (300, "5 min"),
+    (600, "10 min"),
+    (1800, "30 min"),
+    (3600, "1 h"),
+]
+
+
+def interval_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Pick how often a rule should be checked."""
+    kb = InlineKeyboardBuilder()
+    for seconds, label in INTERVAL_CHOICES:
+        kb.button(text=f"⏱ {label}", callback_data=f"wizint:{seconds}")
+    kb.adjust(4, 3)
+    kb.row(
+        InlineKeyboardButton(text=t("btn.cancel", lang), callback_data="wizard:cancel")
+    )
+    return kb.as_markup()
+
+
 def language_keyboard() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="🇩🇪 Deutsch", callback_data="lang:de")

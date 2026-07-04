@@ -8,6 +8,7 @@ from app.api.routers import (
     rules,
     settings,
     stats,
+    users,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "rules",
     "settings",
     "stats",
+    "users",
 ]

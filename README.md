@@ -96,9 +96,9 @@ Services after `up`:
 | Service    | URL / Port                     | Purpose                        |
 |------------|--------------------------------|--------------------------------|
 | Bot        | (Telegram)                     | the Telegram bot itself        |
-| API        | http://localhost:8000/docs     | admin backend + Swagger        |
+| API        | http://localhost:8001/docs     | admin backend + Swagger        |
 | Admin panel| http://localhost:8080          | React dashboard (nginx)        |
-| Metrics    | http://localhost:8000/metrics  | Prometheus metrics             |
+| Metrics    | http://localhost:8001/metrics  | Prometheus metrics             |
 
 The `api` service auto-creates the database tables on first boot (or applies
 Alembic migrations if any exist — see `docker/entrypoint.sh`).
@@ -134,7 +134,7 @@ uvicorn app.api.main:app --reload   # (separate shell) start the admin API
 ```bash
 cd frontend
 npm install
-npm run dev        # http://localhost:5173 (proxies /api to :8000)
+npm run dev        # http://localhost:5173 (proxies /api to :8001)
 npm run build      # production build into frontend/dist
 ```
 

@@ -1,0 +1,5 @@
+# Shell scripts must keep LF endings — they run inside Linux containers and
+# break with CRLF (e.g. docker/entrypoint.sh). This protects Windows clones
+# regardless of the user's core.autocrlf setting.
+*.sh text eol=lf
+*.mako text eol=lf

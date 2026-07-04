@@ -7,7 +7,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.keyboards import (
+    INTERVAL_CHOICES,
     cancel_keyboard,
+    interval_keyboard,
     main_menu_keyboard,
     rule_actions_keyboard,
     rules_list_keyboard,
@@ -183,9 +185,27 @@ async def cb_site_all(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
 
 
 @router.callback_query(RuleWizard.sites, F.data == "wizsite:done")
-async def cb_site_done(
+async def cb_site_done(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
+    await state.set_state(RuleWizard.interval)
+    await cb.message.answer(
+        t("rule.ask_interval", lang), reply_markup=interval_keyboard(lang)
+    )
+    await cb.answer()
+
+
+# --- Interval selection -------------------------------------------------------
+@router.callback_query(RuleWizard.interval, F.data.startswith("wizint:"))
+async def cb_interval(
     cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
 ) -> None:
+    try:
+        seconds = int(cb.data.split(":")[-1])
+    except ValueError:
+        await cb.answer()
+        return
+    # Only accept the offered choices; anything else falls back to the default.
+    if seconds not in {s for s, _ in INTERVAL_CHOICES}:
+        seconds = settings.scraper_default_interval_seconds
     data = await state.get_data()
     await _finalize(
         cb.message,
@@ -195,6 +215,7 @@ async def cb_site_done(
         state,
         exclude=list(data.get("exclude", [])),
         sites=list(data.get("sites", [])),
+        interval_seconds=seconds,
     )
     await cb.answer()
 
@@ -240,6 +261,7 @@ async def _finalize(
     *,
     exclude: list[str],
     sites: list[str] | None = None,
+    interval_seconds: int | None = None,
 ) -> None:
     data = await state.get_data()
     await state.clear()
@@ -249,7 +271,7 @@ async def _finalize(
         keywords=data.get("keywords", ""),
         exclude_keywords=exclude,
         max_price=data.get("max_price"),
-        interval_seconds=settings.scraper_default_interval_seconds,
+        interval_seconds=interval_seconds or settings.scraper_default_interval_seconds,
         sites=sites or [],  # empty = all registered parsers
     )
     await SearchRuleRepository(session).add(rule)
@@ -257,6 +279,13 @@ async def _finalize(
     await message.answer(
         t("rule.created", lang, name=rule.name), reply_markup=main_menu_keyboard(lang)
     )
+
+
+def _interval_label(seconds: int) -> str:
+    for s, label in INTERVAL_CHOICES:
+        if s == seconds:
+            return label
+    return f"{seconds}s"
 
 
 def _render_rule(rule: SearchRule) -> str:
@@ -270,6 +299,6 @@ def _render_rule(rule: SearchRule) -> str:
         f"💶 Preis: {price}\n"
         f"🚫 Ausschluss: {excl}\n"
         f"🏪 Plattformen: {sites}\n"
-        f"⏱ Intervall: {rule.interval_seconds}s\n"
+        f"⏱ Intervall: {_interval_label(rule.interval_seconds)}\n"
         f"🎯 Min. Deal-Score: {rule.min_deal_score}"
     )

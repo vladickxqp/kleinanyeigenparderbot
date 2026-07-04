@@ -34,6 +34,23 @@ class DashboardStats(BaseModel):
     parsers: int
 
 
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    telegram_id: int
+    username: str | None
+    first_name: str | None
+    last_name: str | None
+    language_code: str
+    role: str
+    subscription: str
+    is_active: bool
+    is_blocked: bool
+    rules_count: int = 0
+    created_at: datetime
+
+
 class RuleOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
