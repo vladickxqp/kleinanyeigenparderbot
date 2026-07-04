@@ -91,7 +91,24 @@ def test_build_url_without_location_has_plain_suffix():
     assert url.endswith("k0")
 
 
-def test_extract_location_id_from_dict_and_list():
+def test_extract_location_id_live_shape():
+    """Real payload shape verified against the live endpoint (2026-07):
+    the id is embedded in the KEY, "_0" is the nationwide pseudo-entry."""
+    data = {"_0": "Deutschland", "_5198": "67550 Worms"}
+    assert KleinanzeigenParser._extract_location_id(data) == "5198"
+
+
+def test_extract_location_id_skips_nationwide_entry():
+    assert KleinanzeigenParser._extract_location_id({"_0": "Deutschland"}) is None
+
+
+def test_extract_location_id_never_returns_the_zip_from_labels():
+    # The label contains the zip code — it must NOT be mistaken for the id.
+    data = {"_0": "Deutschland", "_4285": "67550 Worms, Rheinland-Pfalz"}
+    assert KleinanzeigenParser._extract_location_id(data) == "4285"
+
+
+def test_extract_location_id_legacy_shapes():
     assert KleinanzeigenParser._extract_location_id({"10115 Berlin": "l3331"}) == "3331"
     assert (
         KleinanzeigenParser._extract_location_id([{"id": "9282", "name": "München"}])

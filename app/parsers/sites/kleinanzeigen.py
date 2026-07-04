@@ -81,7 +81,7 @@ class KleinanzeigenParser(BaseParser):
         return f"{BASE_URL}/{path}/{page_seg}{suffix}"
 
     # --- Location resolution --------------------------------------------------
-    async def _resolve_location_id(self, query: SearchQuery) -> str | None:
+    async def resolve_location_id(self, query: SearchQuery) -> str | None:
         """Resolve a zip code / city name to Kleinanzeigen's internal l-id.
 
         Uses the site's own autocomplete endpoint. Any failure degrades to a
@@ -104,22 +104,45 @@ class KleinanzeigenParser(BaseParser):
             logger.warning("[kleinanzeigen] location lookup failed for {!r}: {}", term, exc)
 
         self._location_cache[term] = loc_id
-        if not loc_id:
+        if loc_id:
+            logger.info("[kleinanzeigen] resolved {!r} -> location id {}", term, loc_id)
+        else:
             logger.info("[kleinanzeigen] no location id for {!r}; searching nationwide", term)
         return loc_id or None
 
     @staticmethod
     def _extract_location_id(data: object) -> str | None:
-        """Pull the first numeric location id out of the suggestions payload.
+        """Pull the location id out of the autocomplete payload.
 
-        The endpoint's schema has changed over the years (dict of label->id,
-        list of objects, ...), so this scans defensively for the first integer.
+        Live shape (verified 2026-07): the id is embedded in the dict KEY with
+        an underscore prefix, the value is only the display label::
+
+            {"_0": "Deutschland", "_5198": "67550 Worms"}
+
+        ``_0`` is the nationwide pseudo-entry and must be skipped. Older/other
+        shapes (label->"l<id>" values, lists of objects with an ``id`` field)
+        are still handled as fallbacks.
         """
-        candidates: list[str] = []
         if isinstance(data, dict):
-            # Keys are labels ("10115 Berlin"); the id lives in the values.
-            candidates.extend(str(v) for v in data.values())
-        elif isinstance(data, list):
+            # Current shape: id in the key as "_<id>"; entries are relevance-
+            # sorted, so the first non-zero id is the best match.
+            for key in data:
+                match = re.fullmatch(r"_(\d+)", str(key).strip())
+                if match and match.group(1) != "0":
+                    return match.group(1)
+            # Legacy shape: label keys, "l<id>" (or bare id) values.
+            for value in data.values():
+                text = str(value).strip()
+                match = re.fullmatch(r"l?(\d{3,})", text)
+                if match:
+                    return match.group(1)
+                match = re.search(r"l(\d{3,})", text)
+                if match:
+                    return match.group(1)
+            return None
+
+        if isinstance(data, list):
+            candidates: list[str] = []
             for entry in data:
                 if isinstance(entry, dict):
                     if "id" in entry:
@@ -129,22 +152,19 @@ class KleinanzeigenParser(BaseParser):
                     )
                 else:
                     candidates.append(str(entry))
-
-        # Prefer values that are exactly an (optionally l-prefixed) id ...
-        for text in candidates:
-            match = re.fullmatch(r"l?(\d{3,})", text.strip())
-            if match:
-                return match.group(1)
-        # ... then fall back to an embedded l-prefixed id anywhere.
-        for text in candidates:
-            match = re.search(r"l(\d{3,})", text)
-            if match:
-                return match.group(1)
+            for text in candidates:
+                match = re.fullmatch(r"l?(\d{3,})", text.strip())
+                if match:
+                    return match.group(1)
+            for text in candidates:
+                match = re.search(r"l(\d{3,})", text)
+                if match:
+                    return match.group(1)
         return None
 
     # --- Main entrypoint ----------------------------------------------------
     async def search(self, query: SearchQuery) -> list[ParsedListing]:
-        location_id = await self._resolve_location_id(query)
+        location_id = await self.resolve_location_id(query)
         url = self._build_url(query, location_id=location_id)
         logger.debug("[kleinanzeigen] GET {}", url)
         html = await self.fetch_text(url)

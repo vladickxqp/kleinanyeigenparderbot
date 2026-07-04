@@ -25,6 +25,7 @@ from app.bot.states import RuleWizard
 from app.bot.texts import t
 from app.config.settings import settings
 from app.database.models import SearchRule, User
+from app.database.models.enums import SiteName
 from app.parsers import registry
 from app.services.parsing import parse_price_range
 from app.services.repositories import SearchRuleRepository
@@ -92,15 +93,40 @@ async def cb_run_rule(
             row.notified = True
             sent += 1
 
+    loc_note = await _location_note(rule)
     if notable:
         await status.edit_text(
             f"✅ Fertig: <b>{len(notable)}</b> neue Treffer, {sent} Karte(n) gesendet."
+            + loc_note
         )
     else:
         await status.edit_text(
             "😕 Keine neuen Treffer. Entweder gibt es nichts Neues, oder die "
-            "Filter sind zu streng (Preis/Ausschlusswörter prüfen)."
+            "Filter sind zu streng (Preis/Ausschlusswörter prüfen)." + loc_note
         )
+
+
+async def _location_note(rule: SearchRule) -> str:
+    """Tell the user whether the Kleinanzeigen radius filter is really active."""
+    if not (rule.location or rule.zip_code):
+        return ""
+    parser = registry.get(SiteName.KLEINANZEIGEN)
+    if parser is None or not hasattr(parser, "resolve_location_id"):
+        return ""
+    from app.services.search_service import SearchService
+
+    try:
+        loc_id = await parser.resolve_location_id(SearchService._build_query(rule))
+    except Exception:  # noqa: BLE001 - diagnostics must never break the flow
+        return ""
+    place = rule.location or rule.zip_code
+    radius = f" ±{rule.max_distance_km} km" if rule.max_distance_km else ""
+    if loc_id:
+        return f"\n📍 Umkreis aktiv: {place}{radius}"
+    return (
+        f"\n⚠️ Ort <b>{place}</b> wurde nicht erkannt — es wurde "
+        "deutschlandweit gesucht! PLZ prüfen und Suche neu anlegen."
+    )
 
 
 @router.callback_query(F.data.startswith("rule:toggle:"))
