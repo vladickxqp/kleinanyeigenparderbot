@@ -1,4 +1,4 @@
-"""/start and /help entrypoints."""
+"""/start, /help and /status entrypoints."""
 
 from __future__ import annotations
 
@@ -8,10 +8,12 @@ from aiogram import Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.keyboards import language_keyboard, main_menu_keyboard
 from app.bot.texts import t
-from app.database.models import User
+from app.database.models import Listing, SearchRule, User
 
 router = Router(name="start")
 
@@ -46,3 +48,47 @@ async def cmd_help(message: Message, lang: str) -> None:
 async def cmd_menu(message: Message, lang: str, state: FSMContext) -> None:
     await state.clear()
     await message.answer(t("menu.title", lang), reply_markup=main_menu_keyboard(lang))
+
+
+@router.message(Command("status"))
+async def cmd_status(message: Message, user: User, session: AsyncSession, lang: str) -> None:
+    """Live system status: is the worker searching, and what came in today?"""
+    from app.services import health
+
+    status = await health.get_status()
+
+    active_rules = await session.scalar(
+        select(func.count(SearchRule.id)).where(
+            SearchRule.user_id == user.id, SearchRule.is_active.is_(True)
+        )
+    ) or 0
+    day_ago = datetime.now(timezone.utc).timestamp() - 86400
+    new_24h = await session.scalar(
+        select(func.count(Listing.id))
+        .join(SearchRule, SearchRule.id == Listing.rule_id)
+        .where(
+            SearchRule.user_id == user.id,
+            Listing.created_at >= func.to_timestamp(day_ago),
+        )
+    ) or 0
+
+    if status.worker_alive:
+        worker_line = "🟢 Worker: läuft"
+    elif status.last_dispatch_age is None:
+        worker_line = "🔴 Worker: noch nie gelaufen — <code>docker compose ps</code> prüfen!"
+    else:
+        mins = int(status.last_dispatch_age // 60)
+        worker_line = (
+            f"🔴 Worker: seit {mins} min kein Lebenszeichen — "
+            "<code>docker compose ps</code> prüfen!"
+        )
+
+    await message.answer(
+        "📊 <b>System-Status</b>\n\n"
+        f"{worker_line}\n"
+        f"🔄 Suchläufe heute (alle Nutzer): <b>{status.runs_today}</b>\n"
+        f"📨 Karten gesendet heute: <b>{status.cards_sent_today}</b>\n\n"
+        f"📋 Deine aktiven Suchen: <b>{active_rules}</b>\n"
+        f"🆕 Deine neuen Angebote (24h): <b>{new_24h}</b>\n\n"
+        "ℹ️ Suchläufe ohne Karten = es gab nichts wirklich Neues."
+    )

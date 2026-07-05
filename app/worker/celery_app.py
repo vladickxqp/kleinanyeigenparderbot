@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 
 from app.config.settings import settings
 
@@ -36,5 +37,9 @@ celery_app.conf.beat_schedule = {
     "flush-health-alerts": {
         "task": "app.worker.tasks.flush_health_alerts",
         "schedule": 60.0,  # deliver queued admin alerts once a minute
+    },
+    "daily-heartbeat": {
+        "task": "app.worker.tasks.daily_heartbeat",
+        "schedule": crontab(hour=20, minute=0),  # 20:00 local (settings.tz)
     },
 }

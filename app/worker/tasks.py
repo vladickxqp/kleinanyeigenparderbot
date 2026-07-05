@@ -36,6 +36,8 @@ def dispatch_due_searches() -> int:
 
 
 async def _dispatch_due_searches() -> int:
+    from app.services import health
+
     now = time.time()
     dispatched = 0
     async with session_scope() as session:
@@ -48,6 +50,7 @@ async def _dispatch_due_searches() -> int:
             _redis.set(key, now + rule.interval_seconds)
             run_search_rule.delay(rule.id)
             dispatched += 1
+    await health.mark_dispatch()
     if dispatched:
         logger.info("Dispatched {} due search rule(s)", dispatched)
     return dispatched
@@ -88,6 +91,10 @@ async def _run_search_rule(rule_id: int) -> dict:
         if owner is not None:
             telegram_id = owner.telegram_id
             lang = owner.language_code
+
+    from app.services import health
+
+    await health.record_rule_run()
 
     if notable_ids and telegram_id is not None:
         deliver_notifications.delay(telegram_id, notable_ids, lang)
@@ -137,6 +144,66 @@ async def _flush_health_alerts() -> int:
                     sent += 1
                 except Exception as exc:  # noqa: BLE001 - one admin must not block others
                     logger.warning("Health alert to {} failed: {}", admin_id, exc)
+    finally:
+        await bot.session.close()
+    return sent
+
+
+# --- Daily heartbeat ------------------------------------------------------------
+@celery_app.task(name="app.worker.tasks.daily_heartbeat")
+def daily_heartbeat() -> int:
+    """Evening summary to the admins: the bot proves it is alive."""
+    return asyncio.run(_daily_heartbeat())
+
+
+async def _daily_heartbeat() -> int:
+    from sqlalchemy import func, select
+
+    from app.database.models import Listing
+    from app.services import health
+
+    admin_ids = settings.admin_ids
+    if not admin_ids or not settings.bot_token:
+        return 0
+
+    status = await health.get_status()
+
+    # Listings discovered in the last 24h (across all rules).
+    async with session_scope() as session:
+        since = time.time() - 86400
+        new_today = await session.scalar(
+            select(func.count(Listing.id)).where(
+                Listing.created_at >= func.to_timestamp(since)
+            )
+        ) or 0
+
+    worker_icon = "🟢" if status.worker_alive else "🔴"
+    message = (
+        "🫀 <b>Täglicher Statusbericht</b>\n\n"
+        f"{worker_icon} Worker: {'läuft' if status.worker_alive else 'KEIN Lebenszeichen!'}\n"
+        f"🔄 Suchläufe heute: <b>{status.runs_today}</b>\n"
+        f"🆕 Neue Angebote (24h): <b>{new_today}</b>\n"
+        f"📨 Karten gesendet heute: <b>{status.cards_sent_today}</b>\n\n"
+        "ℹ️ Keine Karten trotz Suchläufen = es gab nichts wirklich Neues. "
+        "Jederzeit prüfen: /status"
+    )
+
+    from aiogram import Bot
+    from aiogram.client.default import DefaultBotProperties
+    from aiogram.enums import ParseMode
+
+    bot = Bot(
+        token=settings.bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+    sent = 0
+    try:
+        for admin_id in admin_ids:
+            try:
+                await bot.send_message(admin_id, message)
+                sent += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Heartbeat to {} failed: {}", admin_id, exc)
     finally:
         await bot.session.close()
     return sent

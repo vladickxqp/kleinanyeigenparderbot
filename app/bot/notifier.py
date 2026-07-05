@@ -1,8 +1,8 @@
 """Send deal notifications to users. Used by the Celery worker after a scrape.
 
 Creates a short-lived Bot instance, sends each notable listing as a card (photo
-with caption when an image is available, otherwise a text message), records a
-PriceHistory point, and marks the listing as notified.
+with caption when an image is available, otherwise a text message) and marks the
+listing as notified. Price history is recorded by the search service.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from loguru import logger
 from app.bot.formatting import format_deal_card, format_resale_line
 from app.bot.keyboards import listing_actions_keyboard
 from app.config.settings import settings
-from app.database.models import Listing, PriceHistory, User
+from app.database.models import Listing, User
 from app.database.session import session_scope
 
 
@@ -41,14 +41,6 @@ async def notify_user_about_listings(
                 ok = await _send_one(bot, user_telegram_id, listing, lang)
                 if ok:
                     listing.notified = True
-                    if listing.price is not None:
-                        session.add(
-                            PriceHistory(
-                                listing_id=listing.id,
-                                price=listing.price,
-                                currency=listing.currency,
-                            )
-                        )
                     sent += 1
     finally:
         await bot.session.close()
@@ -68,6 +60,16 @@ async def send_listing_card(
     return await _send_one(bot, chat_id, listing, lang)
 
 
+async def _count_sent() -> None:
+    """Feed the daily 'cards sent' counter (never raises)."""
+    try:
+        from app.services import health  # lazy: avoid import cycles
+
+        await health.record_card_sent()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def _send_one(bot: Bot, chat_id: int, listing: Listing, lang: str) -> bool:
     caption = format_deal_card(listing)
     resale = format_resale_line(listing)
@@ -81,6 +83,7 @@ async def _send_one(bot: Bot, chat_id: int, listing: Listing, lang: str) -> bool
                 await bot.send_photo(
                     chat_id, listing.image_url, caption=caption, reply_markup=markup
                 )
+                await _count_sent()
                 return True
             except TelegramBadRequest:
                 # Image URL rejected by Telegram; fall back to text.
@@ -88,6 +91,7 @@ async def _send_one(bot: Bot, chat_id: int, listing: Listing, lang: str) -> bool
         await bot.send_message(
             chat_id, caption, reply_markup=markup, disable_web_page_preview=False
         )
+        await _count_sent()
         return True
     except TelegramForbiddenError:
         # User blocked the bot: mark them inactive.

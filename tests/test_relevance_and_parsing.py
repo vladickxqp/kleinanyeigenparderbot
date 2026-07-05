@@ -108,3 +108,24 @@ def test_max_only_with_bis():
 def test_garbage_returns_none():
     assert parse_price_range("keine ahnung") is None
     assert parse_price_range("") is None
+
+
+def test_space_separated_min_max():
+    assert parse_price_range("18000 20000") == (18000.0, 20000.0)
+
+
+def test_german_thousands_format():
+    assert parse_price_range("18.000-20.000") == (18000.0, 20000.0)
+    assert parse_price_range("18.000 20.000") == (18000.0, 20000.0)
+    assert parse_price_range("1.200") == (None, 1200.0)
+    assert parse_price_range("ab 18.000") == (18000.0, None)
+
+
+def test_comma_as_separator_and_decimal():
+    assert parse_price_range("18000, 20000") == (18000.0, 20000.0)
+    assert parse_price_range("18000,20000") == (18000.0, 20000.0)
+    assert parse_price_range("1200,50") == (None, 1200.5)
+
+
+def test_mixed_german_full_format():
+    assert parse_price_range("18.000 € - 20.000 €") == (18000.0, 20000.0)

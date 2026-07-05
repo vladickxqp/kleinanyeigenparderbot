@@ -2,8 +2,9 @@
 
 This is the heart of the pipeline used by the Celery worker:
 
-    rule -> SearchQuery -> parsers (concurrent) -> dedup -> price stats ->
-    deal scoring -> persist new Listings -> return notable new listings.
+    rule -> SearchQuery -> parsers (concurrent) -> relevance filter ->
+    price-drop detection on known listings -> dedup -> 30-day market stats ->
+    deal scoring -> persist new Listings + PriceHistory -> notable results.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import asyncio
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.models import Listing, SearchRule
+from app.database.models import Listing, PriceHistory, SearchRule
 from app.parsers import registry
 from app.parsers.schemas import ParsedListing, SearchQuery
 from app.config.settings import settings
@@ -26,6 +27,10 @@ from app.services.repositories import ListingRepository
 
 #: On the very first run of a rule everything is "new"; cap the flood.
 FIRST_RUN_MAX_NOTIFICATIONS = 5
+#: How far back stored prices feed the market-price estimate.
+MARKET_WINDOW_DAYS = 30
+#: Minimum absolute price decrease (EUR) that counts as a price drop.
+PRICE_DROP_MIN_DELTA = 1.0
 
 
 class SearchService:
@@ -52,13 +57,29 @@ class SearchService:
 
         known = await self.listings.existing_fingerprints(rule.id)
         first_run = not known
-        fresh = filter_new_listings(parsed, known)
-        if not fresh:
+
+        # Price drops on listings we already know (matched by external id):
+        # update the stored row, record a history point and re-notify.
+        drops, seen_external = await self._detect_price_drops(rule, parsed)
+
+        # Only genuinely unseen ads may become new rows. A price change alters
+        # the fingerprint, so the external-id check prevents duplicate rows.
+        candidates = [
+            p for p in parsed if (p.site, p.external_id) not in seen_external
+        ]
+        fresh = filter_new_listings(candidates, known)
+        if not fresh and not drops:
             logger.debug("Rule {}: no new listings after dedup", rule.id)
             return []
 
-        # Build a market sample from *all* parsed prices this run for context.
-        sample_prices = [p.price for p in parsed if p.price is not None]
+        # Market context: 30 days of stored prices plus the current batch —
+        # far more stable than the current batch alone.
+        stored_prices = await self.listings.recent_prices(
+            rule.id, days=MARKET_WINDOW_DAYS
+        )
+        sample_prices = stored_prices + [
+            p.price for p in parsed if p.price is not None
+        ]
         stats = compute_price_stats(sample_prices)
 
         new_rows: list[Listing] = []
@@ -74,8 +95,19 @@ class SearchService:
             await self._refine_with_ai(pairs, stats, rule.min_deal_score)
 
         await self.listings.add_all(new_rows)
+
+        # Seed the price history for every new listing that has a price.
+        for row in new_rows:
+            if row.price is not None:
+                self.session.add(
+                    PriceHistory(
+                        listing_id=row.id, price=row.price, currency=row.currency
+                    )
+                )
+
         logger.info(
-            "Rule {} ({}): +{} new listing(s)", rule.id, rule.name, len(new_rows)
+            "Rule {} ({}): +{} new, {} price drop(s)",
+            rule.id, rule.name, len(new_rows), len(drops),
         )
 
         # Only surface listings that clear the user's minimum score threshold.
@@ -89,7 +121,53 @@ class SearchService:
             for row in skipped:
                 row.notified = True  # baseline: never deliver these later
             notable = notable[:FIRST_RUN_MAX_NOTIFICATIONS]
-        return notable
+
+        # Price drops are always worth telling the user about.
+        return drops + notable
+
+    async def _detect_price_drops(
+        self, rule: SearchRule, parsed: list[ParsedListing]
+    ) -> tuple[list[Listing], set[tuple[object, str]]]:
+        """Compare current prices of known ads against the stored rows.
+
+        Returns the re-notifiable dropped listings and the set of
+        ``(site, external_id)`` pairs that already exist for this rule.
+        """
+        by_ext = {
+            (item.site, item.external_id): item
+            for item in parsed
+            if item.external_id
+        }
+        if not by_ext:
+            return [], set()
+
+        existing = await self.listings.by_external_ids(
+            rule.id, [ext for _, ext in by_ext]
+        )
+        seen: set[tuple[object, str]] = set()
+        drops: list[Listing] = []
+        for row in existing:
+            key = (row.site, row.external_id)
+            seen.add(key)
+            item = by_ext.get(key)
+            if item is None or item.price is None:
+                continue
+            if row.price is not None and item.price < row.price - PRICE_DROP_MIN_DELTA:
+                # Keep the pre-drop price for the "reduced from X" card line.
+                row.original_price = row.price
+                row.price = item.price
+                row.notified = False
+                self.session.add(
+                    PriceHistory(
+                        listing_id=row.id, price=item.price, currency=row.currency
+                    )
+                )
+                drops.append(row)
+                logger.info(
+                    "Rule {}: price drop '{}' {} -> {}",
+                    rule.id, row.title[:40], row.original_price, row.price,
+                )
+        return drops, seen
 
     # --- Internals ----------------------------------------------------------
     @staticmethod

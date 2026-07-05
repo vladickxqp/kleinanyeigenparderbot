@@ -6,18 +6,39 @@ from __future__ import annotations
 import re
 
 
+def _normalize_numbers(raw: str) -> str:
+    """Normalise German/international number formats in free-form user input.
+
+    - strips currency signs
+    - removes thousands separators: ``18.000`` -> ``18000``
+    - converts a decimal comma to a dot: ``1200,50`` -> ``1200.50``
+    - commas used as list separators become spaces: ``18000, 20000``
+    """
+    text = raw.lower().replace("€", " ").strip()
+    # Thousands dots: a dot followed by exactly 3 digits (possibly repeated).
+    text = re.sub(r"\.(?=\d{3}(?:\D|$))", "", text)
+    # Decimal comma: comma followed by 1-2 digits and then a non-digit/end.
+    text = re.sub(r",(?=\d{1,2}(?:\D|$))", ".", text)
+    # Remaining commas separate values.
+    return text.replace(",", " ")
+
+
 def parse_price_range(raw: str) -> tuple[float | None, float | None] | None:
     """Parse a user-entered price or price range.
 
-    Accepted forms (currency signs/spaces ignored):
-      - ``"1200"``      -> (None, 1200)     plain number = maximum
-      - ``"500-1200"``  -> (500, 1200)
-      - ``"ab 500"``    -> (500, None)
-      - ``"bis 1200"``  -> (None, 1200)
+    Accepted forms (currency signs, thousands dots and spaces are tolerated):
+      - ``"20000"``            -> (None, 20000)     plain number = maximum
+      - ``"18000-20000"``      -> (18000, 20000)
+      - ``"18000 20000"``      -> (18000, 20000)    space works like the dash
+      - ``"18.000-20.000"``    -> (18000, 20000)    German thousands format
+      - ``"18000, 20000"``     -> (18000, 20000)
+      - ``"ab 18000"``         -> (18000, None)
+      - ``"bis 20000"``        -> (None, 20000)
 
-    Returns ``None`` if nothing numeric could be parsed.
+    Two numbers are always interpreted as (min, max); swapped bounds are
+    corrected automatically. Returns ``None`` if nothing numeric was found.
     """
-    text = raw.lower().replace("€", "").replace(",", ".").strip()
+    text = _normalize_numbers(raw)
     if not text:
         return None
 

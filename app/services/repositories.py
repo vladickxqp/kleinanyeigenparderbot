@@ -109,3 +109,35 @@ class ListingRepository:
             .order_by(Listing.deal_score.desc())
         )
         return result.scalars().all()
+
+    async def by_external_ids(
+        self, rule_id: int, external_ids: list[str]
+    ) -> Sequence[Listing]:
+        """Stored listings of this rule matching any of the given ad ids."""
+        if not external_ids:
+            return []
+        result = await self.session.execute(
+            select(Listing).where(
+                Listing.rule_id == rule_id,
+                Listing.external_id.in_(external_ids),
+            )
+        )
+        return result.scalars().all()
+
+    async def recent_prices(self, rule_id: int, days: int = 30) -> list[float]:
+        """Prices of this rule's listings seen within the last ``days`` days.
+
+        Feeds the market-price estimate, which becomes far more stable than a
+        single scrape batch once some history has accumulated.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        result = await self.session.execute(
+            select(Listing.price).where(
+                Listing.rule_id == rule_id,
+                Listing.created_at >= cutoff,
+                Listing.price.isnot(None),
+            )
+        )
+        return [p for p in result.scalars().all() if p is not None]

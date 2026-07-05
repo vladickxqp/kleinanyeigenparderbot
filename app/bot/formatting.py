@@ -42,6 +42,18 @@ def format_deal_card(listing: Listing) -> str:
         price_line += f"  (+ {_money(listing.shipping_cost, listing.currency)} Versand)"
     lines.append(price_line)
 
+    # Price-drop re-notification: show where the price came from.
+    if (
+        listing.original_price
+        and listing.price is not None
+        and listing.original_price > listing.price
+    ):
+        saved = listing.original_price - listing.price
+        lines.append(
+            f"📉 <b>PREISSTURZ:</b> {_money(listing.original_price, listing.currency)} "
+            f"→ {_money(listing.price, listing.currency)} (−{_money(saved)})"
+        )
+
     if listing.estimated_market_price:
         lines.append(f"📈 Marktpreis ~ {_money(listing.estimated_market_price)}")
     if listing.discount_percent and listing.discount_percent > 0:
