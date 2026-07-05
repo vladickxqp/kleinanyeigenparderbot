@@ -82,9 +82,16 @@ async def cb_run_rule(
 
     try:
         notable = await SearchService(session).run_rule(rule)
-    except Exception:  # noqa: BLE001 - surface a friendly error, log the rest
+    except Exception as exc:  # noqa: BLE001 - surface the real error to the user
         logger.exception("Manual run of rule {} failed", rule_id)
-        await status.edit_text("⚠️ Suche fehlgeschlagen — Details stehen im Log.")
+        from html import escape as _esc
+
+        detail = _esc(f"{type(exc).__name__}: {exc}"[:350])
+        await status.edit_text(
+            "⚠️ Suche fehlgeschlagen:\n"
+            f"<code>{detail}</code>\n\n"
+            "Bitte diese Meldung an den Entwickler weitergeben."
+        )
         return
 
     sent = 0
