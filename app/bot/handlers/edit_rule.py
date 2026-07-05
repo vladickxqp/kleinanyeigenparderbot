@@ -44,8 +44,10 @@ async def cb_edit_menu(cb: CallbackQuery, session: AsyncSession, lang: str) -> N
     if rule is None:
         await cb.answer("Nicht gefunden", show_alert=True)
         return
+    from html import escape
+
     await cb.message.edit_text(
-        t("edit.menu", lang, name=rule.name),
+        t("edit.menu", lang, name=escape(rule.name)),
         reply_markup=rule_edit_keyboard(rule, lang),
     )
     await cb.answer()

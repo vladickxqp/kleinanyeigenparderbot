@@ -61,12 +61,14 @@ class User(Base, PKMixin, TimestampMixin):
 
     @property
     def max_rules(self) -> int:
-        """Rule quota depends on subscription tier."""
+        """Rule quota per subscription tier (Unlimited = practically no cap)."""
         return {
             SubscriptionTier.FREE: 3,
-            SubscriptionTier.PREMIUM: 25,
-            SubscriptionTier.ULTIMATE: 200,
-        }[self.subscription]
+            SubscriptionTier.PRO: 25,
+            SubscriptionTier.PREMIUM: 25,          # legacy = Pro
+            SubscriptionTier.UNLIMITED: 1_000_000,
+            SubscriptionTier.ULTIMATE: 1_000_000,  # legacy = Unlimited
+        }.get(self.subscription, 3)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<User id={self.id} tg={self.telegram_id} {self.display_name!r}>"

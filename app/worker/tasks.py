@@ -61,6 +61,11 @@ def dispatch_due_searches() -> int:
     return _run_async(_dispatch_due_searches())
 
 
+#: Hard floor for per-rule intervals: legacy rules may still carry 10s/30s
+#: values; sub-minute polling only gets the IP blocked by the marketplaces.
+MIN_INTERVAL_SECONDS = 60
+
+
 async def _dispatch_due_searches() -> int:
     from app.services import health
 
@@ -73,7 +78,8 @@ async def _dispatch_due_searches() -> int:
             next_run = _redis.get(key)
             if next_run is not None and float(next_run) > now:
                 continue
-            _redis.set(key, now + rule.interval_seconds)
+            interval = max(rule.interval_seconds, MIN_INTERVAL_SECONDS)
+            _redis.set(key, now + interval)
             run_search_rule.delay(rule.id)
             dispatched += 1
     await health.mark_dispatch()

@@ -4,6 +4,9 @@ import { useApi } from "../lib/useApi";
 
 const TIER_STYLES: Record<string, string> = {
   free: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  pro: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+  unlimited: "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/15 dark:text-fuchsia-300",
+  // legacy values written by older versions
   premium: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
   ultimate: "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/15 dark:text-fuchsia-300",
 };

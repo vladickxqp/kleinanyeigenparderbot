@@ -113,9 +113,9 @@ def sites_select_keyboard(
 
 
 # Human-friendly interval choices (seconds, label). Used by the rule wizard.
+# Minimum is 1 minute: sub-minute polling gets the user's IP blocked by the
+# marketplaces (silent zero-result pages) without finding deals any faster.
 INTERVAL_CHOICES: list[tuple[int, str]] = [
-    (10, "10 s"),
-    (30, "30 s"),
     (60, "1 min"),
     (300, "5 min"),
     (600, "10 min"),
@@ -129,7 +129,7 @@ def interval_keyboard(lang: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for seconds, label in INTERVAL_CHOICES:
         kb.button(text=f"⏱ {label}", callback_data=f"wizint:{seconds}")
-    kb.adjust(4, 3)
+    kb.adjust(3, 2)
     kb.row(
         InlineKeyboardButton(text=t("btn.cancel", lang), callback_data="wizard:cancel")
     )

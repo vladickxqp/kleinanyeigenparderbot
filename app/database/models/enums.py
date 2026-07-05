@@ -27,9 +27,17 @@ class UserRole(str, enum.Enum):
 
 
 class SubscriptionTier(str, enum.Enum):
+    """Subscription plans: Free / Pro / Unlimited.
+
+    ``PREMIUM``/``ULTIMATE`` are legacy values kept so that rows written by
+    older versions still load; treat them like PRO/UNLIMITED respectively.
+    """
+
     FREE = "free"
-    PREMIUM = "premium"
-    ULTIMATE = "ultimate"
+    PRO = "pro"
+    UNLIMITED = "unlimited"
+    PREMIUM = "premium"      # legacy, = PRO
+    ULTIMATE = "ultimate"    # legacy, = UNLIMITED
 
 
 class Condition(str, enum.Enum):

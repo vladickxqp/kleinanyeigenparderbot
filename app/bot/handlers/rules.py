@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from html import escape
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
@@ -178,7 +180,8 @@ async def cb_new_rule(
     cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
 ) -> None:
     count = await SearchRuleRepository(session).count_for_user(user.id)
-    if count >= user.max_rules:
+    is_admin = user.telegram_id in settings.admin_ids
+    if not is_admin and count >= user.max_rules:
         await cb.answer(
             t("rule.limit_reached", lang, max=user.max_rules), show_alert=True
         )
@@ -409,7 +412,8 @@ async def _finalize(
     await SearchRuleRepository(session).add(rule)
     await session.flush()
     await message.answer(
-        t("rule.created", lang, name=rule.name), reply_markup=main_menu_keyboard(lang)
+        t("rule.created", lang, name=escape(rule.name)),
+        reply_markup=main_menu_keyboard(lang),
     )
 
 
@@ -428,6 +432,8 @@ def _category_label(slug: str | None) -> str:
 
 
 def _render_rule(rule: SearchRule) -> str:
+    # All user-entered values are HTML-escaped: a rule named "RTX <3000"
+    # would otherwise break Telegram's HTML parser on every render.
     state = "🟢 aktiv" if rule.is_active else "⚪️ pausiert"
     if rule.min_price and rule.max_price:
         price = f"{rule.min_price:.0f}–{rule.max_price:.0f} €"
@@ -437,16 +443,16 @@ def _render_rule(rule: SearchRule) -> str:
         price = f"bis {rule.max_price:.0f} €"
     else:
         price = "beliebig"
-    excl = ", ".join(rule.exclude_keywords) if rule.exclude_keywords else "—"
+    excl = escape(", ".join(rule.exclude_keywords)) if rule.exclude_keywords else "—"
     sites = ", ".join(s.title() for s in rule.sites) if rule.sites else "alle"
     ort = "überall"
     if rule.location:
-        ort = rule.location
+        ort = escape(rule.location)
         if rule.max_distance_km:
             ort += f" (±{rule.max_distance_km} km)"
     return (
-        f"📋 <b>{rule.name}</b>  ({state})\n\n"
-        f"🔎 Suchbegriffe: <code>{rule.keywords}</code>\n"
+        f"📋 <b>{escape(rule.name)}</b>  ({state})\n\n"
+        f"🔎 Suchbegriffe: <code>{escape(rule.keywords)}</code>\n"
         f"📂 Kategorie: {_category_label(rule.category)}\n"
         f"💶 Preis: {price}\n"
         f"🚫 Ausschluss: {excl}\n"

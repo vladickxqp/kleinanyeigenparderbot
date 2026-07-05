@@ -109,11 +109,13 @@ class KleinanzeigenParser(BaseParser):
         else:
             logger.info("[kleinanzeigen] no location id for {!r}; searching nationwide", term)
             try:
+                from html import escape as _esc
+
                 from app.services import health  # lazy: avoid import cycles
 
                 await health.report(
                     f"loc:{term}",
-                    f"⚠️ Kleinanzeigen: Ort <b>{term}</b> konnte nicht aufgelöst "
+                    f"⚠️ Kleinanzeigen: Ort <b>{_esc(term)}</b> konnte nicht aufgelöst "
                     "werden — die Umkreissuche ist inaktiv, es wird "
                     "deutschlandweit gesucht! PLZ in der Suchregel prüfen.",
                 )

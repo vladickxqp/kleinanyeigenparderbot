@@ -167,6 +167,16 @@ class SearchService:
                     "Rule {}: price drop '{}' {} -> {}",
                     rule.id, row.title[:40], row.original_price, row.price,
                 )
+            elif row.price is None or item.price > row.price + PRICE_DROP_MIN_DELTA:
+                # Price increases (or first-seen prices) update the stored row
+                # and the history quietly — no notification, but the data stays
+                # honest for market statistics and the price chart.
+                row.price = item.price
+                self.session.add(
+                    PriceHistory(
+                        listing_id=row.id, price=item.price, currency=row.currency
+                    )
+                )
         return drops, seen
 
     # --- Internals ----------------------------------------------------------

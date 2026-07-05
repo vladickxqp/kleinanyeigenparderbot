@@ -222,6 +222,6 @@ def t(key: str, lang: str | None = None, /, **kwargs: object) -> str:
     if kwargs:
         try:
             return template.format(**kwargs)
-        except (KeyError, IndexError):
+        except (KeyError, IndexError, ValueError):
             return template
     return template
