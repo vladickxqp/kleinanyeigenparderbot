@@ -1,14 +1,20 @@
 """Celery tasks: dispatch due searches, run one rule, deliver notifications.
 
-Async work is bridged into Celery's sync world with :func:`asyncio.run`. Per-rule
-scheduling is enforced with Redis keys (``rule:next_run:<id>``) so we don't need an
-extra DB column or a beat entry per rule.
+Async work is bridged into Celery's sync world via :func:`_run_async`, which
+wraps :func:`asyncio.run` and disposes the database engine at the end of every
+task — pooled asyncpg connections are bound to the event loop they were created
+on, and the next task runs in a fresh loop, so reusing them raises
+``RuntimeError``. Per-rule scheduling is enforced with Redis keys
+(``rule:next_run:<id>``) so we don't need an extra DB column or a beat entry
+per rule.
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Coroutine
+from typing import Any, TypeVar
 
 import redis
 from loguru import logger
@@ -16,12 +22,32 @@ from loguru import logger
 from app.bot.notifier import notify_user_about_listings
 from app.config.settings import settings
 from app.database.models import User
-from app.database.session import session_scope
+from app.database.session import dispose_engine, session_scope
 from app.services.repositories import SearchRuleRepository
 from app.services.search_service import SearchService
 from app.worker.celery_app import celery_app
 
 _redis = redis.Redis.from_url(settings.redis_url, decode_responses=True)
+
+T = TypeVar("T")
+
+
+def _run_async(coro: Coroutine[Any, Any, T]) -> T:
+    """Run a coroutine in a fresh loop and ALWAYS dispose the DB engine in it.
+
+    Without the dispose step, the second task executed by a worker child
+    process crashes with "RuntimeError: ... attached to a different loop",
+    because the engine's pooled connections belong to the previous task's
+    (already closed) event loop.
+    """
+
+    async def wrapper() -> T:
+        try:
+            return await coro
+        finally:
+            await dispose_engine()
+
+    return asyncio.run(wrapper())
 
 
 def _next_run_key(rule_id: int) -> str:
@@ -32,7 +58,7 @@ def _next_run_key(rule_id: int) -> str:
 @celery_app.task(name="app.worker.tasks.dispatch_due_searches")
 def dispatch_due_searches() -> int:
     """Enqueue ``run_search_rule`` for every active rule whose interval elapsed."""
-    return asyncio.run(_dispatch_due_searches())
+    return _run_async(_dispatch_due_searches())
 
 
 async def _dispatch_due_searches() -> int:
@@ -65,7 +91,7 @@ async def _dispatch_due_searches() -> int:
 )
 def run_search_rule(self, rule_id: int) -> dict:  # noqa: ANN001
     try:
-        return asyncio.run(_run_search_rule(rule_id))
+        return _run_async(_run_search_rule(rule_id))
     except Exception as exc:  # noqa: BLE001
         logger.exception("run_search_rule({}) failed: {}", rule_id, exc)
         raise self.retry(exc=exc) from exc
@@ -107,14 +133,14 @@ async def _run_search_rule(rule_id: int) -> dict:
 def deliver_notifications(
     telegram_id: int, listing_ids: list[int], lang: str = "de"
 ) -> int:
-    return asyncio.run(notify_user_about_listings(telegram_id, listing_ids, lang))
+    return _run_async(notify_user_about_listings(telegram_id, listing_ids, lang))
 
 
 # --- Admin health alerts ------------------------------------------------------
 @celery_app.task(name="app.worker.tasks.flush_health_alerts")
 def flush_health_alerts() -> int:
     """Deliver queued health alerts to all configured bot admins."""
-    return asyncio.run(_flush_health_alerts())
+    return _run_async(_flush_health_alerts())
 
 
 async def _flush_health_alerts() -> int:
@@ -153,7 +179,7 @@ async def _flush_health_alerts() -> int:
 @celery_app.task(name="app.worker.tasks.daily_heartbeat")
 def daily_heartbeat() -> int:
     """Evening summary to the admins: the bot proves it is alive."""
-    return asyncio.run(_daily_heartbeat())
+    return _run_async(_daily_heartbeat())
 
 
 async def _daily_heartbeat() -> int:

@@ -22,14 +22,13 @@ def get_engine() -> AsyncEngine:
     """Return the lazily-created global async engine."""
     global _engine
     if _engine is None:
-        _engine = create_async_engine(
-            settings.database_url,
-            echo=False,
-            pool_pre_ping=True,
-            pool_size=10,
-            max_overflow=20,
-            pool_recycle=1800,
-        )
+        url = settings.database_url
+        kwargs: dict = {"echo": False, "pool_pre_ping": True}
+        if url.startswith("postgresql"):
+            # Pool tuning only applies to real server databases; SQLite (used
+            # in tests) rejects these arguments.
+            kwargs.update(pool_size=10, max_overflow=20, pool_recycle=1800)
+        _engine = create_async_engine(url, **kwargs)
     return _engine
 
 
@@ -67,8 +66,16 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def dispose_engine() -> None:
-    """Dispose of the engine's connection pool (call on shutdown)."""
-    global _engine
+    """Dispose of the engine's connection pool and reset the factories.
+
+    Must be called at the end of every Celery task coroutine: the worker runs
+    each task in its own event loop, and pooled asyncpg connections are bound
+    to the loop they were created on — reusing them from the next task's loop
+    raises RuntimeError. The sessionmaker is reset too, otherwise it would
+    keep handing out sessions bound to the disposed engine.
+    """
+    global _engine, _sessionmaker
     if _engine is not None:
         await _engine.dispose()
         _engine = None
+    _sessionmaker = None

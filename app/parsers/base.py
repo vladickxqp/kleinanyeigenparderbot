@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import random
+import time
+import weakref
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 
@@ -49,7 +51,23 @@ class BaseParser(ABC):
             raise TypeError(f"{type(self).__name__} must set a `site` attribute")
         self.label = self.label or self.site.value.title()
         self._last_request_ts: float = 0.0
-        self._lock = asyncio.Lock()
+        # Parser instances are process-wide singletons, but the Celery worker
+        # runs every task in a fresh event loop. An asyncio.Lock binds to the
+        # loop it is first awaited in and raises "bound to a different event
+        # loop" afterwards — so keep one lock per loop (weak keys let dead
+        # loops be garbage-collected).
+        self._loop_locks: weakref.WeakKeyDictionary[
+            asyncio.AbstractEventLoop, asyncio.Lock
+        ] = weakref.WeakKeyDictionary()
+
+    def _throttle_lock(self) -> asyncio.Lock:
+        """Return the rate-limit lock for the currently running event loop."""
+        loop = asyncio.get_running_loop()
+        lock = self._loop_locks.get(loop)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._loop_locks[loop] = lock
+        return lock
 
     # --- Public API ---------------------------------------------------------
     @abstractmethod
@@ -105,14 +123,18 @@ class BaseParser(ABC):
         return random.choice(proxies) if proxies else None
 
     async def _throttle(self) -> None:
-        """Enforce a polite minimum delay between requests to this site."""
-        async with self._lock:
-            loop = asyncio.get_event_loop()
-            elapsed = loop.time() - self._last_request_ts
+        """Enforce a polite minimum delay between requests to this site.
+
+        Uses ``time.monotonic()`` (process-wide) instead of ``loop.time()``:
+        the worker spawns a new event loop per task, and per-loop clocks have
+        unrelated epochs, which would corrupt the elapsed-time math.
+        """
+        async with self._throttle_lock():
+            elapsed = time.monotonic() - self._last_request_ts
             wait = settings.scraper_min_delay_seconds - elapsed
             if wait > 0:
                 await asyncio.sleep(wait + random.uniform(0, 0.5))
-            self._last_request_ts = loop.time()
+            self._last_request_ts = time.monotonic()
 
     @retry(
         stop=stop_after_attempt(3),
