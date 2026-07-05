@@ -230,19 +230,19 @@ class SearchService:
         return Listing(
             rule_id=rule_id,
             site=item.site,
-            external_id=item.external_id,
+            external_id=_clip(item.external_id, 128) or "",
             fingerprint=item.fingerprint,
-            title=item.title,
+            title=_clip(item.title, 512) or "(kein Titel)",
             description=item.description,
-            url=str(item.url),
-            image_url=str(item.image_url) if item.image_url else None,
+            url=_clip(str(item.url), 1024) or "",
+            image_url=_clip(str(item.image_url), 1024) if item.image_url else None,
             price=item.price,
             original_price=item.original_price,
-            currency=item.currency,
+            currency=_clip(item.currency, 3) or "EUR",
             shipping_cost=item.shipping_cost,
             condition=item.condition,
-            location=item.location,
-            seller_name=item.seller_name,
+            location=_clip(item.location, 128),
+            seller_name=_clip(item.seller_name, 128),
             seller_rating=item.seller_rating,
             is_auction=item.is_auction,
             deal_score=deal.score,
@@ -250,3 +250,17 @@ class SearchService:
             estimated_market_price=deal.estimated_market_price,
             discount_percent=deal.discount_percent,
         )
+
+
+def _clip(value: str | None, limit: int) -> str | None:
+    """Trim a scraped string to its DB column length.
+
+    Marketplaces occasionally deliver pathological values (one oversized
+    location string crashed a whole search run with
+    ``StringDataRightTruncationError``); persisting a truncated value is
+    always better than failing the entire scrape.
+    """
+    if value is None:
+        return None
+    value = " ".join(value.split())  # collapse runs of whitespace/newlines
+    return value[:limit]
