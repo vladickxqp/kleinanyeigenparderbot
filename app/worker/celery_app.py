@@ -42,4 +42,8 @@ celery_app.conf.beat_schedule = {
         "task": "app.worker.tasks.daily_heartbeat",
         "schedule": crontab(hour=20, minute=0),  # 20:00 local (settings.tz)
     },
+    "flush-digests": {
+        "task": "app.worker.tasks.flush_digests",
+        "schedule": 600.0,  # check every 10 min whether quiet windows ended
+    },
 }

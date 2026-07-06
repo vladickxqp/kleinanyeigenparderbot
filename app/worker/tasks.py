@@ -239,3 +239,57 @@ async def _daily_heartbeat() -> int:
     finally:
         await bot.session.close()
     return sent
+
+
+# --- Morning digest -----------------------------------------------------------
+@celery_app.task(name="app.worker.tasks.flush_digests")
+def flush_digests() -> int:
+    """Deliver queued quiet-hour cards once each user's window has ended."""
+    return _run_async(_flush_digests())
+
+
+async def _flush_digests() -> int:
+    from sqlalchemy import select
+
+    from app.services import quiet
+
+    delivered = 0
+    for tg_id in await quiet.users_with_pending_digest():
+        if await quiet.is_quiet_now(tg_id):
+            continue  # still sleeping
+        ids = await quiet.pop_digest(tg_id)
+        if not ids:
+            continue
+
+        async with session_scope() as session:
+            result = await session.execute(
+                select(User).where(User.telegram_id == tg_id)
+            )
+            user = result.scalar_one_or_none()
+        lang = user.language_code if user else "de"
+
+        from aiogram import Bot
+        from aiogram.client.default import DefaultBotProperties
+        from aiogram.enums import ParseMode
+
+        bot = Bot(
+            token=settings.bot_token,
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        )
+        try:
+            extra = len(ids) - quiet.DIGEST_MAX_CARDS
+            note = f" (die besten {quiet.DIGEST_MAX_CARDS} unten)" if extra > 0 else ""
+            await bot.send_message(
+                tg_id,
+                f"☀️ Guten Morgen! Über Nacht sind "
+                f"<b>{len(ids)}</b> neue Angebote reingekommen{note}.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Digest summary to {} failed: {}", tg_id, exc)
+        finally:
+            await bot.session.close()
+
+        delivered += await notify_user_about_listings(
+            tg_id, ids[: quiet.DIGEST_MAX_CARDS], lang
+        )
+    return delivered

@@ -62,8 +62,29 @@ async def cb_open_rule(
     if rule is None:
         await cb.answer("Nicht gefunden", show_alert=True)
         return
-    await cb.message.edit_text(_render_rule(rule), reply_markup=rule_actions_keyboard(rule, lang))
+    text = _render_rule(rule) + await _stats_line(session, rule.id)
+    await cb.message.edit_text(text, reply_markup=rule_actions_keyboard(rule, lang))
     await cb.answer()
+
+
+async def _stats_line(session: AsyncSession, rule_id: int) -> str:
+    """Compact 7-day statistics block for the rule view (never raises)."""
+    try:
+        from app.services.repositories import ListingRepository
+
+        count, avg_price, min_price = await ListingRepository(session).rule_stats(
+            rule_id, days=7
+        )
+    except Exception:  # noqa: BLE001 - stats are decoration, not critical
+        return ""
+    if count == 0:
+        return "\n\n📊 Letzte 7 Tage: noch keine Treffer"
+    parts = [f"{count} Angebote"]
+    if avg_price:
+        parts.append(f"Ø {avg_price:,.0f} €".replace(",", "."))
+    if min_price:
+        parts.append(f"ab {min_price:,.0f} €".replace(",", "."))
+    return "\n\n📊 Letzte 7 Tage: " + " · ".join(parts)
 
 
 @router.callback_query(F.data.startswith("rule:run:"))

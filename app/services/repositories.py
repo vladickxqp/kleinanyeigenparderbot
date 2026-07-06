@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import Listing, SearchRule, User
@@ -145,6 +145,27 @@ class ListingRepository:
             )
         )
         return {(site, ext) for site, ext in result.all()}
+
+    async def rule_stats(
+        self, rule_id: int, days: int = 7
+    ) -> tuple[int, float | None, float | None]:
+        """(count, avg price, min price) of this rule's finds in the last days."""
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        result = await self.session.execute(
+            select(
+                func.count(Listing.id),
+                func.avg(Listing.price),
+                func.min(Listing.price),
+            ).where(Listing.rule_id == rule_id, Listing.created_at >= cutoff)
+        )
+        count, avg_price, min_price = result.one()
+        return (
+            int(count or 0),
+            float(avg_price) if avg_price is not None else None,
+            float(min_price) if min_price is not None else None,
+        )
 
     async def recent_prices(self, rule_id: int, days: int = 30) -> list[float]:
         """Prices of this rule's listings seen within the last ``days`` days.

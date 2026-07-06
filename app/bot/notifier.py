@@ -23,8 +23,18 @@ from app.database.session import session_scope
 async def notify_user_about_listings(
     user_telegram_id: int, listing_ids: list[int], lang: str = "de"
 ) -> int:
-    """Send cards for the given listing ids to a user. Returns count sent."""
+    """Send cards for the given listing ids to a user. Returns count sent.
+
+    During the user's quiet hours the cards are queued for the morning digest
+    instead of being delivered immediately.
+    """
     if not listing_ids:
+        return 0
+
+    from app.services import quiet  # lazy: avoid import cycles
+
+    if await quiet.is_quiet_now(user_telegram_id):
+        await quiet.queue_digest(user_telegram_id, listing_ids)
         return 0
 
     bot = Bot(
