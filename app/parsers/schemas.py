@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from datetime import datetime
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
@@ -79,6 +80,8 @@ class ParsedListing(BaseModel):
     seller_name: str | None = None
     seller_rating: float | None = None
     is_auction: bool = False
+    #: When the ad was posted on the marketplace (None = unknown / promoted ad).
+    posted_at: datetime | None = None
 
     @field_validator("title")
     @classmethod

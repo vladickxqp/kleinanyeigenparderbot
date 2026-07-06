@@ -21,6 +21,7 @@ from app.config.settings import settings
 from app.services import ai
 from app.services.deal_scorer import score_listing
 from app.services.dedup import filter_new_listings
+from app.services.freshness import is_fresh_enough
 from app.services.price_analysis import PriceStats, compute_price_stats
 from app.services.relevance import filter_relevant
 from app.services.repositories import ListingRepository
@@ -110,8 +111,16 @@ class SearchService:
             rule.id, rule.name, len(new_rows), len(drops),
         )
 
-        # Only surface listings that clear the user's minimum score threshold.
-        notable = [r for r in new_rows if r.deal_score >= rule.min_deal_score]
+        # Freshness policy: month-old ads that are merely new TO THE BOT are
+        # not deals. Stale rows are stored (their prices feed the market
+        # stats) but marked notified so they can never be delivered later.
+        notable: list[Listing] = []
+        for item, row in pairs:
+            if not is_fresh_enough(item, row.deal_score):
+                row.notified = True
+                continue
+            if row.deal_score >= rule.min_deal_score:
+                notable.append(row)
         notable.sort(key=lambda r: r.deal_score, reverse=True)
 
         # First run seeds the baseline: send only the top few instead of
@@ -121,6 +130,22 @@ class SearchService:
             for row in skipped:
                 row.notified = True  # baseline: never deliver these later
             notable = notable[:FIRST_RUN_MAX_NOTIFICATIONS]
+
+        # Cross-rule dedup: if another rule of the same user already delivered
+        # this exact ad, do not send it a second time.
+        if notable:
+            already = await self.listings.notified_elsewhere(
+                rule.user_id,
+                rule.id,
+                [row.external_id for row in notable],
+            )
+            if already:
+                for row in notable:
+                    if (row.site, row.external_id) in already:
+                        row.notified = True
+                notable = [
+                    r for r in notable if (r.site, r.external_id) not in already
+                ]
 
         # Price drops are always worth telling the user about.
         return drops + notable

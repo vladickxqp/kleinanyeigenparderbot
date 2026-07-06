@@ -10,6 +10,7 @@ the selectors below are defensive and degrade gracefully (a missing field yields
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta
 from urllib.parse import quote_plus, urljoin
 
 from bs4 import BeautifulSoup, Tag
@@ -56,12 +57,14 @@ class KleinanzeigenParser(BaseParser):
     ) -> str:
         """Construct a Kleinanzeigen search URL.
 
-        Format: ``/s-anzeige:angebote/<preis:MIN:MAX>/<keywords>/k0[c<cat>][l<loc>][r<km>]``
+        Format:
+        ``/s-anzeige:angebote/sortierung:neueste/<preis:MIN:MAX>/<keywords>/k0[c..][l..][r..]``
         - ``anzeige:angebote`` hides wanted-ads (Gesuche).
+        - ``sortierung:neueste`` puts the newest ads first (verified live).
         - The trailing token combines category, location and radius filters.
         """
         keywords = quote_plus(query.keywords.strip())
-        segments = ["s-anzeige:angebote"]
+        segments = ["s-anzeige:angebote", "sortierung:neueste"]
         if query.min_price is not None or query.max_price is not None:
             lo = int(query.min_price) if query.min_price is not None else ""
             hi = int(query.max_price) if query.max_price is not None else ""
@@ -253,6 +256,14 @@ class KleinanzeigenParser(BaseParser):
         # --- Image ---
         image_url = self._extract_image(card)
 
+        # --- Posting date ("Heute, 08:01" / "Gestern, 21:08" / "04.07.2026").
+        # Promoted TOP ads have an empty date container -> posted_at stays None
+        # and the freshness filter treats them as old.
+        date_el = card.select_one(".aditem-main--top--right")
+        posted_at = self._parse_posted_date(
+            date_el.get_text(strip=True) if date_el else None
+        )
+
         # --- Auction / negotiable detection from price text ---
         raw_price_text = price_el.get_text(strip=True).lower() if price_el else ""
         is_auction = "gebot" in raw_price_text  # "X € VB" is not an auction
@@ -270,9 +281,43 @@ class KleinanzeigenParser(BaseParser):
             location=location,
             condition=Condition.ANY,
             is_auction=is_auction,
+            posted_at=posted_at,
         )
 
     # --- Small helpers ------------------------------------------------------
+    @staticmethod
+    def _parse_posted_date(text: str | None) -> datetime | None:
+        """Parse the card's posting date.
+
+        Live formats (verified 2026-07): ``"Heute, 08:01"``, ``"Gestern,
+        21:08"`` and ``"04.07.2026"`` for older ads. Promoted TOP ads ship an
+        empty container -> ``None``.
+        """
+        if not text:
+            return None
+        text = text.strip()
+        now = datetime.now()
+        try:
+            lower = text.lower()
+            time_match = re.search(r"(\d{1,2}):(\d{2})", text)
+            hour, minute = (
+                (int(time_match.group(1)), int(time_match.group(2)))
+                if time_match
+                else (12, 0)
+            )
+            if lower.startswith("heute"):
+                return now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if lower.startswith("gestern"):
+                base = now - timedelta(days=1)
+                return base.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            date_match = re.search(r"(\d{2})\.(\d{2})\.(\d{4})", text)
+            if date_match:
+                day, month, year = (int(g) for g in date_match.groups())
+                return datetime(year, month, day, 12, 0)
+        except (ValueError, OverflowError):
+            return None
+        return None
+
     @staticmethod
     def _parse_price(text: str | None) -> float | None:
         if not text:

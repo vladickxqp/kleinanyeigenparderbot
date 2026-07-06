@@ -124,6 +124,28 @@ class ListingRepository:
         )
         return result.scalars().all()
 
+    async def notified_elsewhere(
+        self, user_id: int, exclude_rule_id: int, external_ids: list[str]
+    ) -> set[tuple[object, str]]:
+        """(site, external_id) pairs already delivered via the user's OTHER rules.
+
+        Prevents duplicate cards when two rules of the same user match the
+        same ad (e.g. "Tesla" and "Tesla Model 3").
+        """
+        if not external_ids:
+            return set()
+        result = await self.session.execute(
+            select(Listing.site, Listing.external_id)
+            .join(SearchRule, SearchRule.id == Listing.rule_id)
+            .where(
+                SearchRule.user_id == user_id,
+                Listing.rule_id != exclude_rule_id,
+                Listing.notified.is_(True),
+                Listing.external_id.in_(external_ids),
+            )
+        )
+        return {(site, ext) for site, ext in result.all()}
+
     async def recent_prices(self, rule_id: int, days: int = 30) -> list[float]:
         """Prices of this rule's listings seen within the last ``days`` days.
 
