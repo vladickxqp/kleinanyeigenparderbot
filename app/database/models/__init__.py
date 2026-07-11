@@ -12,6 +12,7 @@ from app.database.models.listing import Listing
 from app.database.models.notification import Notification
 from app.database.models.price_history import PriceHistory
 from app.database.models.search_rule import SearchRule
+from app.database.models.subscription import PlanType, Subscription, SubscriptionStatus
 from app.database.models.user import User
 
 __all__ = [
@@ -20,9 +21,12 @@ __all__ = [
     "Listing",
     "Notification",
     "NotificationChannel",
+    "PlanType",
     "PriceHistory",
     "SearchRule",
     "SiteName",
+    "Subscription",
+    "SubscriptionStatus",
     "SubscriptionTier",
     "User",
     "UserRole",

@@ -82,6 +82,22 @@ class Settings(BaseSettings):
     # --- Monitoring ---------------------------------------------------------
     prometheus_enabled: bool = True
 
+    # --- Premium / tier limits (all configurable, never hardcode) -----------
+    premium_enabled: bool = True
+    #: Monthly price in Telegram Stars (~250 XTR ≈ 4.99 €).
+    premium_price_stars: int = 250
+    #: Display price used in texts and revenue estimates.
+    premium_price_eur: float = 4.99
+    #: Days granted per successful (renewal) payment.
+    premium_period_days: int = 31
+    #: Rule quotas per tier.
+    free_max_rules: int = 3
+    pro_max_rules: int = 25
+    unlimited_max_rules: int = 1_000_000
+    #: Minimum allowed check interval per tier (seconds).
+    free_min_interval_seconds: int = 600
+    paid_min_interval_seconds: int = 60
+
     # --- Validators ---------------------------------------------------------
     @field_validator("bot_token")
     @classmethod

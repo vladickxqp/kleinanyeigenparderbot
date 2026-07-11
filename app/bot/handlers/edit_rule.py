@@ -26,7 +26,7 @@ from app.bot.keyboards import (
 )
 from app.bot.states import EditWizard
 from app.bot.texts import t
-from app.database.models import SearchRule
+from app.database.models import SearchRule, User
 from app.services.parsing import parse_price_range
 from app.services.repositories import SearchRuleRepository
 
@@ -250,8 +250,14 @@ async def edit_category(
 
 @router.callback_query(EditWizard.interval, F.data.startswith("wizint:"))
 async def edit_interval(
-    cb: CallbackQuery, session: AsyncSession, lang: str, state: FSMContext
+    cb: CallbackQuery,
+    user: "User",
+    session: AsyncSession,
+    lang: str,
+    state: FSMContext,
 ) -> None:
+    from app.bot.handlers.rules import _clamp_interval_for_tier
+
     rule = await _load_rule(session, state)
     if rule is None:
         await state.clear()
@@ -262,7 +268,12 @@ async def edit_interval(
     except ValueError:
         await cb.answer()
         return
+    tier_note = None
     if seconds in {s for s, _ in INTERVAL_CHOICES}:
+        seconds, tier_note = _clamp_interval_for_tier(user, seconds)
         rule.interval_seconds = seconds
     await _finish(cb.message, session, state, rule, lang)
-    await cb.answer()
+    if tier_note:
+        await cb.answer(tier_note, show_alert=True)
+    else:
+        await cb.answer()

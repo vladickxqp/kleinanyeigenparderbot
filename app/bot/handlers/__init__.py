@@ -9,6 +9,7 @@ from app.bot.handlers import (
     edit_rule,
     listings,
     menu,
+    premium,
     quick_search,
     rules,
     settings,
@@ -20,6 +21,7 @@ def build_router() -> Router:
     """Combine all feature routers. Order matters: specific before generic."""
     root = Router(name="root")
     root.include_router(admin.router)
+    root.include_router(premium.router)
     root.include_router(quick_search.router)
     root.include_router(start.router)
     root.include_router(rules.router)

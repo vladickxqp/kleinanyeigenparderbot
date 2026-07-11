@@ -60,15 +60,31 @@ class User(Base, PKMixin, TimestampMixin):
         return " ".join(parts) or str(self.telegram_id)
 
     @property
+    def is_paid_tier(self) -> bool:
+        """True for any tier above Free (paid or admin-granted)."""
+        return self.subscription is not SubscriptionTier.FREE
+
+    @property
     def max_rules(self) -> int:
-        """Rule quota per subscription tier (Unlimited = practically no cap)."""
+        """Rule quota per subscription tier — configurable via environment."""
+        from app.config.settings import settings
+
         return {
-            SubscriptionTier.FREE: 3,
-            SubscriptionTier.PRO: 25,
-            SubscriptionTier.PREMIUM: 25,          # legacy = Pro
-            SubscriptionTier.UNLIMITED: 1_000_000,
-            SubscriptionTier.ULTIMATE: 1_000_000,  # legacy = Unlimited
-        }.get(self.subscription, 3)
+            SubscriptionTier.FREE: settings.free_max_rules,
+            SubscriptionTier.PRO: settings.pro_max_rules,
+            SubscriptionTier.PREMIUM: settings.pro_max_rules,            # legacy
+            SubscriptionTier.UNLIMITED: settings.unlimited_max_rules,
+            SubscriptionTier.ULTIMATE: settings.unlimited_max_rules,     # legacy
+        }.get(self.subscription, settings.free_max_rules)
+
+    @property
+    def min_interval_seconds(self) -> int:
+        """Fastest allowed check interval for this tier (configurable)."""
+        from app.config.settings import settings
+
+        if self.is_paid_tier:
+            return settings.paid_min_interval_seconds
+        return settings.free_min_interval_seconds
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<User id={self.id} tg={self.telegram_id} {self.display_name!r}>"

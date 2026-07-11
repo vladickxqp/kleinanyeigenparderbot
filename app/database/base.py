@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, func
+from sqlalchemy import BigInteger, DateTime, Integer, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
+
+#: BIGINT in production (Postgres), plain INTEGER on SQLite — SQLite only
+#: autoincrements INTEGER primary keys, which the test suite relies on.
+BigIntPK = BigInteger().with_variant(Integer, "sqlite")
 
 
 class Base(DeclarativeBase):
@@ -24,7 +28,7 @@ class Base(DeclarativeBase):
 class PKMixin:
     """Adds a surrogate BigInteger primary key."""
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
 
 
 class TimestampMixin:

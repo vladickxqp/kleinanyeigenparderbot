@@ -293,3 +293,43 @@ async def _flush_digests() -> int:
             tg_id, ids[: quiet.DIGEST_MAX_CARDS], lang
         )
     return delivered
+
+
+# --- Subscription expiry --------------------------------------------------------
+@celery_app.task(name="app.worker.tasks.check_expired_subscriptions")
+def check_expired_subscriptions() -> int:
+    """Downgrade users whose premium period ended (no renewal charge arrived)."""
+    return _run_async(_check_expired_subscriptions())
+
+
+async def _check_expired_subscriptions() -> int:
+    from app.services.premium import expire_overdue_subscriptions
+
+    async with session_scope() as session:
+        downgraded = await expire_overdue_subscriptions(session)
+
+    if not downgraded or not settings.bot_token:
+        return len(downgraded)
+
+    from aiogram import Bot
+    from aiogram.client.default import DefaultBotProperties
+    from aiogram.enums import ParseMode
+
+    bot = Bot(
+        token=settings.bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+    try:
+        for tg_id in downgraded:
+            try:
+                await bot.send_message(
+                    tg_id,
+                    "💎 Dein <b>Premium</b> ist abgelaufen — du bist jetzt "
+                    "wieder im Free-Tarif.\n"
+                    "Jederzeit zurückholen: /premium",
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Expiry notice to {} failed: {}", tg_id, exc)
+    finally:
+        await bot.session.close()
+    return len(downgraded)

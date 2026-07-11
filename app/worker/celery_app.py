@@ -46,4 +46,8 @@ celery_app.conf.beat_schedule = {
         "task": "app.worker.tasks.flush_digests",
         "schedule": 600.0,  # check every 10 min whether quiet windows ended
     },
+    "check-expired-subscriptions": {
+        "task": "app.worker.tasks.check_expired_subscriptions",
+        "schedule": crontab(hour=3, minute=15),  # nightly downgrade sweep
+    },
 }

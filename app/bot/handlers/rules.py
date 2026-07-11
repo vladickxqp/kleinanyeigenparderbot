@@ -348,6 +348,7 @@ async def cb_interval(
     # Only accept the offered choices; anything else falls back to the default.
     if seconds not in {s for s, _ in INTERVAL_CHOICES}:
         seconds = settings.scraper_default_interval_seconds
+    seconds, tier_note = _clamp_interval_for_tier(user, seconds)
     data = await state.get_data()
     await _finalize(
         cb.message,
@@ -359,7 +360,10 @@ async def cb_interval(
         sites=list(data.get("sites", [])),
         interval_seconds=seconds,
     )
-    await cb.answer()
+    if tier_note:
+        await cb.answer(tier_note, show_alert=True)
+    else:
+        await cb.answer()
 
 
 # --- Skip handling for optional steps ---------------------------------------
@@ -382,6 +386,23 @@ async def cb_skip(
 
 
 # --- Helpers ----------------------------------------------------------------
+def _clamp_interval_for_tier(user: User, seconds: int) -> tuple[int, str | None]:
+    """Enforce the tier's minimum check interval (admins are exempt).
+
+    Returns the effective interval and an optional user-facing note.
+    """
+    if user.telegram_id in settings.admin_ids:
+        return seconds, None
+    min_allowed = user.min_interval_seconds
+    if seconds >= min_allowed:
+        return seconds, None
+    return min_allowed, (
+        f"⏱ In deinem Tarif ist das schnellste Intervall "
+        f"{min_allowed // 60} min — auf {min_allowed // 60} min gesetzt. "
+        f"💎 Premium prüft ab {settings.paid_min_interval_seconds // 60} min!"
+    )
+
+
 def _available_sites() -> list[str]:
     return [s.value for s in registry.available_sites]
 
