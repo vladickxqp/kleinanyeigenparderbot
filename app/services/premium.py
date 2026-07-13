@@ -35,17 +35,28 @@ from app.database.models import (
 TELEGRAM_SUBSCRIPTION_PERIOD = 2_592_000
 
 
-async def create_invoice_link() -> str | None:
-    """Create a Telegram Stars subscription invoice link (or None on failure)."""
+async def create_invoice_link(
+    *, price_stars: int | None = None, coupon_code: str | None = None
+) -> str | None:
+    """Create a Telegram Stars subscription invoice link (or None on failure).
+
+    ``price_stars`` overrides the configured price (coupon discounts); the
+    coupon code travels in the payload so the successful payment can be
+    attributed and the redemption booked only when money actually flowed.
+    """
+    amount = price_stars or settings.premium_price_stars
+    invoice_payload = "premium_monthly"
+    if coupon_code:
+        invoice_payload += f":{coupon_code}"
     payload = {
         "title": "Deal Hunter Premium",
         "description": (
             "Unbegrenzte Suchen, schnellstes Prüf-Intervall und Prioritäts-"
             "Verarbeitung. Monatlich, jederzeit kündbar."
         ),
-        "payload": "premium_monthly",
+        "payload": invoice_payload,
         "currency": "XTR",
-        "prices": [{"label": "Premium (1 Monat)", "amount": settings.premium_price_stars}],
+        "prices": [{"label": "Premium (1 Monat)", "amount": amount}],
         "subscription_period": TELEGRAM_SUBSCRIPTION_PERIOD,
     }
     url = f"https://api.telegram.org/bot{settings.bot_token}/createInvoiceLink"
@@ -173,3 +184,69 @@ async def expire_overdue_subscriptions(session: AsyncSession) -> list[int]:
         logger.info("PREMIUM: subscription {} expired (tg {})", sub.id, sub.telegram_id)
     await session.flush()
     return downgraded
+
+
+async def record_payment(
+    session: AsyncSession,
+    user: User,
+    *,
+    provider: str,
+    amount_stars: int = 0,
+    amount_eur: float = 0.0,
+    currency: str = "XTR",
+    charge_id: str | None = None,
+    invoice_payload: str | None = None,
+    coupon_code: str | None = None,
+    subscription_id: int | None = None,
+    is_renewal: bool = False,
+    status: str = "paid",
+):
+    """Append one charge to the immutable payment ledger."""
+    from app.database.models import Payment
+
+    payment = Payment(
+        telegram_id=user.telegram_id,
+        user_id=user.id,
+        subscription_id=subscription_id,
+        provider=provider,
+        amount_stars=amount_stars,
+        amount_eur=amount_eur,
+        currency=currency,
+        status=status,
+        charge_id=charge_id,
+        invoice_payload=invoice_payload,
+        coupon_code=coupon_code,
+        is_renewal=is_renewal,
+    )
+    session.add(payment)
+    await session.flush()
+    return payment
+
+
+async def has_used_trial(session: AsyncSession, telegram_id: int) -> bool:
+    """True if this user ever activated the free trial (allowed exactly once)."""
+    result = await session.execute(
+        select(Subscription).where(
+            Subscription.telegram_id == telegram_id,
+            Subscription.plan_type == PlanType.TRIAL,
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def payments_count_for_user(session: AsyncSession, telegram_id: int) -> int:
+    """Number of real (paid) charges of this user — used for referral rewards."""
+    from sqlalchemy import func
+
+    from app.database.models import Payment
+
+    return (
+        await session.scalar(
+            select(func.count(Payment.id)).where(
+                Payment.telegram_id == telegram_id,
+                Payment.status == "paid",
+                Payment.provider == "telegram_stars",
+            )
+        )
+        or 0
+    )

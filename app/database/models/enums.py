@@ -21,6 +21,10 @@ class SiteName(str, enum.Enum):
 
 
 class UserRole(str, enum.Enum):
+    """Role hierarchy: OWNER > SUPER_ADMIN > ADMIN > MODERATOR > USER."""
+
+    OWNER = "owner"
+    SUPER_ADMIN = "super_admin"
     ADMIN = "admin"
     MODERATOR = "moderator"
     USER = "user"

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from aiogram import Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from sqlalchemy import func, select
@@ -29,8 +29,26 @@ def _is_new_user(user: User) -> bool:
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, user: User, lang: str, state: FSMContext) -> None:
+async def cmd_start(
+    message: Message,
+    user: User,
+    session: AsyncSession,
+    lang: str,
+    state: FSMContext,
+    command: CommandObject,
+) -> None:
     await state.clear()
+
+    # Referral deep-link: /start ref<telegram_id> — only counts for NEW users.
+    if _is_new_user(user):
+        from app.services import referrals as referral_svc
+
+        referrer_tg = referral_svc.parse_referral_payload(command.args)
+        if referrer_tg:
+            await referral_svc.register_referral(
+                session, referrer_tg, user.telegram_id
+            )
+
     await message.answer(t("start.greeting", lang))
     if _is_new_user(user):
         # First contact: let the user pick their language right away.

@@ -40,16 +40,18 @@ class User(Base, PKMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    # Relationships
+    # Relationships. lazy="noload": nothing reads these collections directly
+    # (repositories query explicitly), and eager selectin loading added two
+    # extra queries to EVERY user lookup — i.e. to every Telegram update.
     search_rules: Mapped[list["SearchRule"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="noload",
     )
     notifications: Mapped[list["Notification"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="noload",
     )
 
     @property

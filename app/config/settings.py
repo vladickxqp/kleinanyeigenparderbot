@@ -97,6 +97,12 @@ class Settings(BaseSettings):
     #: Minimum allowed check interval per tier (seconds).
     free_min_interval_seconds: int = 600
     paid_min_interval_seconds: int = 60
+    #: Free trial (activatable exactly once per user).
+    trial_enabled: bool = True
+    trial_days: int = 7
+    #: Referral programme: free premium days for the inviter per first purchase.
+    referral_enabled: bool = True
+    referral_reward_days: int = 7
 
     # --- Validators ---------------------------------------------------------
     @field_validator("bot_token")

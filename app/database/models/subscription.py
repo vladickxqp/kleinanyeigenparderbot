@@ -20,6 +20,9 @@ class PlanType(str, enum.Enum):
     MONTHLY = "monthly"
     YEARLY = "yearly"          # future-proof: not offered yet
     ADMIN_GRANT = "admin_grant"
+    TRIAL = "trial"
+    REFERRAL = "referral"      # reward days for successful referrals
+    COUPON = "coupon"          # free days granted by a coupon
 
 
 class SubscriptionStatus(str, enum.Enum):
