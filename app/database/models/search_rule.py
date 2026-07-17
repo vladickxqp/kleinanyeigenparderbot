@@ -14,10 +14,14 @@ from sqlalchemy import (
     Integer,
     String,
 )
+from sqlalchemy import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, PKMixin, TimestampMixin
 from app.database.models.enums import Condition, SiteName
+
+#: A list-of-strings column: native ARRAY on Postgres, JSON on SQLite (tests).
+StringList = ARRAY(String).with_variant(JSON, "sqlite")
 
 if TYPE_CHECKING:
     from app.database.models.listing import Listing
@@ -37,7 +41,7 @@ class SearchRule(Base, PKMixin, TimestampMixin):
     # --- Core query ---------------------------------------------------------
     keywords: Mapped[str] = mapped_column(String(256), nullable=False)
     exclude_keywords: Mapped[list[str]] = mapped_column(
-        ARRAY(String), default=list, nullable=False
+        StringList, default=list, nullable=False
     )
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)
     brand: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -63,7 +67,7 @@ class SearchRule(Base, PKMixin, TimestampMixin):
     exclude_auctions: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # --- Which sites to search (empty = all registered parsers) -------------
-    sites: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False)
+    sites: Mapped[list[str]] = mapped_column(StringList, default=list, nullable=False)
 
     # --- Scheduling ---------------------------------------------------------
     interval_seconds: Mapped[int] = mapped_column(
