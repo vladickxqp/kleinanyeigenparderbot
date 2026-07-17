@@ -191,25 +191,53 @@ _TEXTS: dict[str, dict[str, str]] = {
     },
     "help.body": {
         "de": "❓ <b>Hilfe</b>\n\n"
-        "• ➕ Neue Suche: Assistent legt eine Suchregel an.\n"
-        "• 📋 Meine Suchen: aktivieren/deaktivieren, löschen.\n"
-        "• ⭐ Favoriten: gemerkte Angebote.\n"
-        "• Ich prüfe deine Suchen automatisch im Intervall und melde neue Deals.",
+        "<b>Suchen</b>\n"
+        "• ➕ Neue Suche: Assistent (Kategorie, Preis, Ort, Intervall)\n"
+        "• 📋 Meine Suchen: ▶️ sofort suchen, ✏️ bearbeiten, ⏯ an/aus\n"
+        "• /suche begriff — Schnell-Suche ohne Regel\n\n"
+        "<b>Premium</b>\n"
+        "• /premium — Vorteile &amp; Upgrade · /trial — gratis testen\n"
+        "• /coupon CODE — Gutschein · /ref — Freunde werben\n\n"
+        "<b>Sonstiges</b>\n"
+        "• /status — läuft alles? · 🌙 Ruhezeiten in ⚙️ Einstellungen\n"
+        "• Ich prüfe deine Suchen automatisch und melde nur echte Neuheiten "
+        "(inkl. 📉 Preisstürzen).",
         "en": "❓ <b>Help</b>\n\n"
-        "• ➕ New search: a wizard creates a search rule.\n"
-        "• 📋 My searches: enable/disable, delete.\n"
-        "• ⭐ Favorites: saved offers.\n"
-        "• I check your searches automatically and alert you to new deals.",
+        "<b>Searches</b>\n"
+        "• ➕ New search: wizard (category, price, location, interval)\n"
+        "• 📋 My searches: ▶️ run now, ✏️ edit, ⏯ on/off\n"
+        "• /suche term — quick search without a rule\n\n"
+        "<b>Premium</b>\n"
+        "• /premium — perks &amp; upgrade · /trial — free trial\n"
+        "• /coupon CODE — voucher · /ref — invite friends\n\n"
+        "<b>Other</b>\n"
+        "• /status — is everything running? · 🌙 quiet hours in ⚙️ settings\n"
+        "• I check your searches automatically and only alert on true news "
+        "(incl. 📉 price drops).",
         "ru": "❓ <b>Помощь</b>\n\n"
-        "• ➕ Новый поиск: мастер создаёт правило.\n"
-        "• 📋 Мои поиски: вкл/выкл, удалить.\n"
-        "• ⭐ Избранное: сохранённые предложения.\n"
-        "• Я проверяю поиски автоматически и присылаю новые находки.",
+        "<b>Поиски</b>\n"
+        "• ➕ Новый поиск: мастер (категория, цена, место, интервал)\n"
+        "• 📋 Мои поиски: ▶️ искать сейчас, ✏️ изменить, ⏯ вкл/выкл\n"
+        "• /suche запрос — быстрый поиск без правила\n\n"
+        "<b>Премиум</b>\n"
+        "• /premium — преимущества · /trial — бесплатный тест\n"
+        "• /coupon CODE — купон · /ref — пригласить друзей\n\n"
+        "<b>Прочее</b>\n"
+        "• /status — всё ли работает? · 🌙 тихие часы в ⚙️ настройках\n"
+        "• Я проверяю поиски автоматически и присылаю только настоящие "
+        "новинки (включая 📉 падения цен).",
         "uk": "❓ <b>Довідка</b>\n\n"
-        "• ➕ Новий пошук: майстер створює правило.\n"
-        "• 📋 Мої пошуки: увімк/вимк, видалити.\n"
-        "• ⭐ Обране: збережені пропозиції.\n"
-        "• Я перевіряю пошуки автоматично та надсилаю нові знахідки.",
+        "<b>Пошуки</b>\n"
+        "• ➕ Новий пошук: майстер (категорія, ціна, місце, інтервал)\n"
+        "• 📋 Мої пошуки: ▶️ шукати зараз, ✏️ змінити, ⏯ увімк/вимк\n"
+        "• /suche запит — швидкий пошук без правила\n\n"
+        "<b>Преміум</b>\n"
+        "• /premium — переваги · /trial — безкоштовний тест\n"
+        "• /coupon CODE — купон · /ref — запросити друзів\n\n"
+        "<b>Інше</b>\n"
+        "• /status — чи все працює? · 🌙 тихі години в ⚙️ налаштуваннях\n"
+        "• Я перевіряю пошуки автоматично та надсилаю лише справжні "
+        "новинки (включно з 📉 падінням цін).",
     },
 }
 

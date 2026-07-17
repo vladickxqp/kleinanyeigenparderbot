@@ -23,7 +23,8 @@ def main_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     kb.button(text=t("btn.settings", lang), callback_data="menu:settings")
     kb.button(text=t("btn.help", lang), callback_data="menu:help")
     kb.button(text="💎 Premium", callback_data="menu:premium")
-    kb.adjust(2, 2, 2, 1)
+    kb.button(text="💬 Support", callback_data="menu:support")
+    kb.adjust(2, 2, 2, 2)
     return kb.as_markup()
 
 

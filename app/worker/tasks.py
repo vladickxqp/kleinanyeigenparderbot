@@ -257,9 +257,15 @@ async def _flush_digests() -> int:
     for tg_id in await quiet.users_with_pending_digest():
         if await quiet.is_quiet_now(tg_id):
             continue  # still sleeping
-        ids = await quiet.pop_digest(tg_id)
+
+        # Pop ONLY one batch per cycle: anything popped but not delivered
+        # would be lost forever, so the remainder stays queued and follows
+        # with the next beat run (10 minutes later).
+        total = await quiet.digest_size(tg_id)
+        ids = await quiet.pop_digest(tg_id, limit=quiet.DIGEST_MAX_CARDS)
         if not ids:
             continue
+        remaining = max(0, total - len(ids))
 
         async with session_scope() as session:
             result = await session.execute(
@@ -277,21 +283,21 @@ async def _flush_digests() -> int:
             default=DefaultBotProperties(parse_mode=ParseMode.HTML),
         )
         try:
-            extra = len(ids) - quiet.DIGEST_MAX_CARDS
-            note = f" (die besten {quiet.DIGEST_MAX_CARDS} unten)" if extra > 0 else ""
+            note = (
+                f" — die besten {len(ids)} jetzt, {remaining} weitere folgen gleich"
+                if remaining
+                else ""
+            )
             await bot.send_message(
                 tg_id,
-                f"☀️ Guten Morgen! Über Nacht sind "
-                f"<b>{len(ids)}</b> neue Angebote reingekommen{note}.",
+                f"☀️ Aus deiner Ruhezeit: <b>{total}</b> neue Angebot(e){note}.",
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Digest summary to {} failed: {}", tg_id, exc)
         finally:
             await bot.session.close()
 
-        delivered += await notify_user_about_listings(
-            tg_id, ids[: quiet.DIGEST_MAX_CARDS], lang
-        )
+        delivered += await notify_user_about_listings(tg_id, ids, lang)
     return delivered
 
 

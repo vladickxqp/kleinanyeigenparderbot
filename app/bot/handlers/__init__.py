@@ -14,6 +14,7 @@ from app.bot.handlers import (
     rules,
     settings,
     start,
+    support,
 )
 
 
@@ -22,6 +23,7 @@ def build_router() -> Router:
     root = Router(name="root")
     root.include_router(admin.router)
     root.include_router(premium.router)
+    root.include_router(support.router)
     root.include_router(quick_search.router)
     root.include_router(start.router)
     root.include_router(rules.router)

@@ -98,6 +98,16 @@ async def pop_digest(telegram_id: int, limit: int = 100) -> list[int]:
     return list(dict.fromkeys(ids))
 
 
+async def digest_size(telegram_id: int) -> int:
+    """Number of currently queued digest items for a user."""
+    try:
+        async with _redis() as r:
+            return int(await r.llen(f"digest:{telegram_id}") or 0)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("quiet.digest_size failed: {}", exc)
+        return 0
+
+
 async def users_with_pending_digest() -> list[int]:
     """Telegram ids that currently have queued digest items."""
     users: list[int] = []
