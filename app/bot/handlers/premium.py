@@ -26,14 +26,35 @@ from app.services import referrals as referral_svc
 router = Router(name="premium")
 
 
+def _cancellable(sub) -> bool:
+    """True if this subscription auto-renews via Stars and can be cancelled."""
+    return (
+        sub is not None
+        and sub.payment_provider == "telegram_stars"
+        and bool(sub.telegram_charge_id)
+        and sub.payment_status != premium.CANCEL_AT_PERIOD_END
+    )
+
+
 def _premium_text(user: User, sub) -> str:
     if user.is_paid_tier and sub is not None:
+        if sub.payment_status == premium.CANCEL_AT_PERIOD_END:
+            return (
+                "💎 <b>Premium — gekündigt</b>\n\n"
+                f"✅ Läuft noch bis: <b>{sub.subscription_end:%d.%m.%Y}</b>\n"
+                "❌ Verlängert sich danach <b>nicht</b> mehr.\n\n"
+                "Umentschieden? Nach Ablauf einfach neu buchen: /premium"
+            )
+        renewal = (
+            f"🔄 Verlängert sich automatisch "
+            f"({settings.premium_price_stars} ⭐/Monat)"
+            if _cancellable(sub)
+            else "⏳ Läuft danach automatisch aus (keine Abbuchung)"
+        )
         return (
             "💎 <b>Du bist Premium!</b>\n\n"
             f"✅ Aktiv bis: <b>{sub.subscription_end:%d.%m.%Y}</b>\n"
-            f"🔄 Verlängert sich automatisch"
-            f" ({settings.premium_price_stars} ⭐/Monat)\n\n"
-            "Kündigen: Telegram-Einstellungen → Meine Sterne → Abos."
+            f"{renewal}"
         )
     if user.is_paid_tier:
         return "💎 <b>Du hast Premium</b> (vom Admin freigeschaltet). Viel Spaß!"
@@ -61,6 +82,7 @@ async def _premium_keyboard(
     *,
     price_stars: int | None = None,
     coupon_code: str | None = None,
+    sub=None,
 ):
     kb = InlineKeyboardBuilder()
     if not user.is_paid_tier and settings.premium_enabled:
@@ -74,6 +96,12 @@ async def _premium_keyboard(
                     text=f"💳 Premium holen ({shown} ⭐/Monat)", url=link
                 )
             )
+    if user.is_paid_tier and _cancellable(sub):
+        kb.row(
+            InlineKeyboardButton(
+                text="❌ Abo kündigen", callback_data="premium:cancel"
+            )
+        )
     kb.row(InlineKeyboardButton(text=t("btn.back", lang), callback_data="menu:home"))
     return kb.as_markup()
 
@@ -84,7 +112,8 @@ async def cmd_premium(
 ) -> None:
     sub = await premium.get_active_subscription(session, user.telegram_id)
     await message.answer(
-        _premium_text(user, sub), reply_markup=await _premium_keyboard(user, lang)
+        _premium_text(user, sub),
+        reply_markup=await _premium_keyboard(user, lang, sub=sub),
     )
 
 
@@ -94,9 +123,68 @@ async def cb_premium(
 ) -> None:
     sub = await premium.get_active_subscription(session, user.telegram_id)
     await cb.message.edit_text(
-        _premium_text(user, sub), reply_markup=await _premium_keyboard(user, lang)
+        _premium_text(user, sub),
+        reply_markup=await _premium_keyboard(user, lang, sub=sub),
     )
     await cb.answer()
+
+
+# --- In-bot cancellation ------------------------------------------------------
+@router.callback_query(F.data == "premium:cancel")
+async def cb_cancel_confirm(
+    cb: CallbackQuery, user: User, session: AsyncSession
+) -> None:
+    sub = await premium.get_active_subscription(session, user.telegram_id)
+    if not _cancellable(sub):
+        await cb.answer("Nichts zu kündigen.", show_alert=True)
+        return
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Ja, wirklich kündigen", callback_data="premium:cancel_yes")
+    kb.button(text="⬅️ Zurück", callback_data="menu:premium")
+    kb.adjust(1)
+    await cb.message.edit_text(
+        "❌ <b>Premium kündigen?</b>\n\n"
+        f"Dein Premium bleibt bis <b>{sub.subscription_end:%d.%m.%Y}</b> voll "
+        "aktiv — es wird danach nur nicht mehr verlängert und nichts mehr "
+        "abgebucht.\n\nWirklich kündigen?",
+        reply_markup=kb.as_markup(),
+    )
+    await cb.answer()
+
+
+@router.callback_query(F.data == "premium:cancel_yes")
+async def cb_cancel_do(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str
+) -> None:
+    sub = await premium.get_active_subscription(session, user.telegram_id)
+    if not _cancellable(sub):
+        await cb.answer("Nichts zu kündigen.", show_alert=True)
+        return
+
+    ok = await premium.cancel_stars_subscription(
+        user.telegram_id, sub.telegram_charge_id
+    )
+    if not ok:
+        await cb.message.edit_text(
+            "⚠️ Die Kündigung über den Bot hat gerade nicht geklappt.\n\n"
+            "Alternative (dauert 30 Sekunden): Telegram-Einstellungen → "
+            "⭐ Meine Sterne → Abos → Deal Hunter Premium → Kündigen.\n\n"
+            "Oder gleich nochmal versuchen: /premium",
+        )
+        await cb.answer()
+        return
+
+    sub.payment_status = premium.CANCEL_AT_PERIOD_END
+    sub.renewal_date = None
+    await session.flush()
+    logger.info("PREMIUM: {} cancelled in-bot", user.telegram_id)
+    await cb.message.edit_text(
+        "✅ <b>Gekündigt.</b>\n\n"
+        f"Dein Premium bleibt bis <b>{sub.subscription_end:%d.%m.%Y}</b> aktiv "
+        "und verlängert sich danach nicht mehr — es wird nichts mehr "
+        "abgebucht.\n\nSchade! Falls du zurückkommst: /premium 💎"
+    )
+    await cb.answer("Abo gekündigt")
 
 
 # --- Free trial -----------------------------------------------------------------

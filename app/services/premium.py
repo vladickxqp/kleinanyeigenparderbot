@@ -72,6 +72,37 @@ async def create_invoice_link(
     return None
 
 
+#: payment_status value for "cancelled, but paid period still running".
+CANCEL_AT_PERIOD_END = "cancel_at_period_end"
+
+
+async def cancel_stars_subscription(telegram_id: int, charge_id: str) -> bool:
+    """Stop the auto-renewal of a Stars subscription via the Bot API.
+
+    Uses ``editUserStarSubscription`` (Bot API 8.0) as a raw call, immune to
+    the pinned aiogram version. The user keeps premium until the already-paid
+    period ends; Telegram simply won't charge again, and the nightly expiry
+    sweep downgrades the account afterwards.
+    """
+    url = f"https://api.telegram.org/bot{settings.bot_token}/editUserStarSubscription"
+    payload = {
+        "user_id": telegram_id,
+        "telegram_payment_charge_id": charge_id,
+        "is_canceled": True,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(url, json=payload)
+            data = resp.json()
+        if data.get("ok"):
+            logger.info("PREMIUM: renewal cancelled for {} ({})", telegram_id, charge_id)
+            return True
+        logger.error("editUserStarSubscription failed: {}", data)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("editUserStarSubscription error: {}", exc)
+    return False
+
+
 async def get_active_subscription(
     session: AsyncSession, telegram_id: int
 ) -> Subscription | None:
