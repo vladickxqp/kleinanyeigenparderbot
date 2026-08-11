@@ -94,6 +94,11 @@ async def support_message(
         return
 
     staff = await _support_staff_ids(session)
+    # Normally staff do not need their own ticket back — but when the sender
+    # IS the only staff member (solo owner testing the flow), skipping them
+    # would deliver the ticket to nobody while still claiming success.
+    recipients = [s for s in staff if s != user.telegram_id] or staff
+
     ticket = (
         "💬 <b>Support-Anfrage</b>\n"
         f"Von: <b>{escape(user.display_name)}</b> "
@@ -102,9 +107,7 @@ async def support_message(
         f"Antworten: <code>/reply {user.telegram_id} </code>"
     )
     delivered = 0
-    for staff_id in staff:
-        if staff_id == user.telegram_id:
-            continue  # admins do not need their own ticket back
+    for staff_id in recipients:
         try:
             await message.bot.send_message(staff_id, ticket)
             delivered += 1
@@ -112,13 +115,21 @@ async def support_message(
             logger.warning("Support ticket to {} failed: {}", staff_id, exc)
 
     logger.info(
-        "SUPPORT: request from {} delivered to {} staff member(s)",
-        user.telegram_id, delivered,
+        "SUPPORT: request from {} delivered to {}/{} staff member(s)",
+        user.telegram_id, delivered, len(recipients),
     )
-    await message.answer(
-        "✅ Deine Nachricht ist beim Team! Du bekommst die Antwort "
-        "direkt hier im Chat."
-    )
+    if delivered:
+        await message.answer(
+            "✅ Deine Nachricht ist beim Team! Du bekommst die Antwort "
+            "direkt hier im Chat."
+        )
+    else:
+        # Never claim success when nothing was delivered.
+        await message.answer(
+            "⚠️ Gerade ist leider kein Team-Mitglied erreichbar — deine "
+            "Nachricht konnte nicht zugestellt werden. Bitte versuch es "
+            "später nochmal."
+        )
 
 
 # --- Admin side ------------------------------------------------------------------

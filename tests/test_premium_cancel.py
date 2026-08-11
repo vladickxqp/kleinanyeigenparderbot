@@ -52,3 +52,27 @@ def test_premium_text_shows_renewal_for_active_stars_sub():
 def test_premium_text_for_non_renewing_grant():
     text = _premium_text(_paid_user(), _sub(provider="admin_grant", charge=None))
     assert "läuft danach automatisch aus" in text.lower()
+
+
+# --- Ending non-renewing premium (trial / grant / coupon) --------------------
+def test_trial_and_grant_can_be_ended():
+    from app.bot.handlers.premium import _endable
+
+    assert _endable(_sub(provider="trial", charge=None)) is True
+    assert _endable(_sub(provider="admin_grant", charge=None)) is True
+    assert _endable(_sub(provider="coupon", charge=None)) is True
+
+
+def test_stars_subscription_is_cancelled_not_ended():
+    from app.bot.handlers.premium import _endable
+
+    # A renewing Stars sub uses the cancel flow, never the "end" flow.
+    assert _endable(_sub()) is False
+
+
+def test_already_cancelled_cannot_be_ended():
+    from app.bot.handlers.premium import _endable
+
+    assert _endable(_sub(provider="trial", charge=None,
+                         status=CANCEL_AT_PERIOD_END)) is False
+    assert _endable(None) is False

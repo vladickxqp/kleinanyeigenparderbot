@@ -36,6 +36,19 @@ def _cancellable(sub) -> bool:
     )
 
 
+def _endable(sub) -> bool:
+    """True if a non-renewing premium (trial/grant/coupon) can be ended early.
+
+    Nothing is charged for these, but users still want to be able to give the
+    premium back — e.g. to test the free tier again.
+    """
+    return (
+        sub is not None
+        and not _cancellable(sub)
+        and sub.payment_status != premium.CANCEL_AT_PERIOD_END
+    )
+
+
 def _premium_text(user: User, sub) -> str:
     if user.is_paid_tier and sub is not None:
         if sub.payment_status == premium.CANCEL_AT_PERIOD_END:
@@ -57,7 +70,11 @@ def _premium_text(user: User, sub) -> str:
             f"{renewal}"
         )
     if user.is_paid_tier:
-        return "💎 <b>Du hast Premium</b> (vom Admin freigeschaltet). Viel Spaß!"
+        return (
+            "💎 <b>Du hast Premium</b> (vom Admin freigeschaltet).\n"
+            "Unbegrenzte Suchen und das schnellste Prüf-Intervall sind aktiv. "
+            "Viel Spaß!"
+        )
     lines = [
         "💎 <b>Deal Hunter Premium</b>\n",
         f"Nur <b>{settings.premium_price_stars} ⭐</b> (~{settings.premium_price_eur:.2f} €) "
@@ -102,6 +119,12 @@ async def _premium_keyboard(
                 text="❌ Abo kündigen", callback_data="premium:cancel"
             )
         )
+    elif user.is_paid_tier and _endable(sub):
+        kb.row(
+            InlineKeyboardButton(
+                text="❌ Premium beenden", callback_data="premium:end"
+            )
+        )
     kb.row(InlineKeyboardButton(text=t("btn.back", lang), callback_data="menu:home"))
     return kb.as_markup()
 
@@ -127,6 +150,44 @@ async def cb_premium(
         reply_markup=await _premium_keyboard(user, lang, sub=sub),
     )
     await cb.answer()
+
+
+# --- Ending a non-renewing premium (trial / grant / coupon) -------------------
+@router.callback_query(F.data == "premium:end")
+async def cb_end_confirm(
+    cb: CallbackQuery, user: User, session: AsyncSession
+) -> None:
+    sub = await premium.get_active_subscription(session, user.telegram_id)
+    if not _endable(sub):
+        await cb.answer("Nichts zu beenden.", show_alert=True)
+        return
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Ja, Premium beenden", callback_data="premium:end_yes")
+    kb.button(text="⬅️ Zurück", callback_data="menu:premium")
+    kb.adjust(1)
+    await cb.message.edit_text(
+        "❌ <b>Premium beenden?</b>\n\n"
+        "Dieses Premium wird nicht abgerechnet (Test/Geschenk/Gutschein) — "
+        "du kannst es aber sofort beenden und im Free-Tarif weitermachen.\n\n"
+        "Wirklich beenden?",
+        reply_markup=kb.as_markup(),
+    )
+    await cb.answer()
+
+
+@router.callback_query(F.data == "premium:end_yes")
+async def cb_end_do(cb: CallbackQuery, user: User, session: AsyncSession) -> None:
+    sub = await premium.get_active_subscription(session, user.telegram_id)
+    if not _endable(sub):
+        await cb.answer("Nichts zu beenden.", show_alert=True)
+        return
+    await premium.deactivate_premium(session, user)
+    logger.info("PREMIUM: {} ended a non-renewing premium in-bot", user.telegram_id)
+    await cb.message.edit_text(
+        "✅ <b>Premium beendet.</b>\n\n"
+        "Du bist wieder im Free-Tarif. Jederzeit zurück: /premium 💎"
+    )
+    await cb.answer("Premium beendet")
 
 
 # --- In-bot cancellation ------------------------------------------------------
