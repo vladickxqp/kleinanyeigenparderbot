@@ -86,13 +86,14 @@ def rule_edit_keyboard(rule: SearchRule, lang: str) -> InlineKeyboardMarkup:
 
 
 def listing_actions_keyboard(listing: Listing, lang: str) -> InlineKeyboardMarkup:
-    """Buttons attached to a deal card: open, favorite, ignore, track."""
+    """Buttons attached to a deal card: open, favorite, negotiate, ignore, track."""
     kb = InlineKeyboardBuilder()
     kb.row(InlineKeyboardButton(text="🔗 Öffnen / Open", url=listing.url))
     kb.button(text="⭐", callback_data=f"listing:fav:{listing.id}")
+    kb.button(text="🤝", callback_data=f"listing:nego:{listing.id}")
     kb.button(text="🙈", callback_data=f"listing:ignore:{listing.id}")
     kb.button(text="👁 Preis", callback_data=f"listing:track:{listing.id}")
-    kb.adjust(1, 3)
+    kb.adjust(1, 4)
     return kb.as_markup()
 
 

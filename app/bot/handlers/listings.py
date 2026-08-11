@@ -27,6 +27,34 @@ async def cb_favorite(cb: CallbackQuery, session: AsyncSession) -> None:
     await cb.answer("⭐ Zu Favoriten" if listing.is_favorite else "Entfernt")
 
 
+@router.callback_query(F.data.startswith("listing:nego:"))
+async def cb_negotiate(cb: CallbackQuery, session: AsyncSession) -> None:
+    """Suggest an opening offer and a copyable negotiation message."""
+    from html import escape
+
+    from app.services.negotiation import build_message, suggest_offer
+
+    listing = await _get(session, int(cb.data.split(":")[-1]))
+    if listing is None:
+        await cb.answer("Nicht gefunden", show_alert=True)
+        return
+    if listing.price is None or listing.price < 5:
+        await cb.answer("Kein verhandelbarer Preis hinterlegt.", show_alert=True)
+        return
+
+    offer = suggest_offer(listing.price)
+    message_text = build_message(listing.title, listing.price, offer)
+    await cb.message.answer(
+        "🤝 <b>Verhandlungs-Vorschlag</b>\n\n"
+        f"Preis: {listing.price:,.0f} € → Dein Angebot: <b>{offer:,} €</b>\n\n"
+        "Nachricht zum Kopieren (antippen):\n"
+        f"<code>{escape(message_text)}</code>\n\n"
+        f"🔗 Direkt zur Anzeige: {listing.url}".replace(",", "."),
+        disable_web_page_preview=True,
+    )
+    await cb.answer()
+
+
 @router.callback_query(F.data.startswith("listing:ignore:"))
 async def cb_ignore(cb: CallbackQuery, session: AsyncSession) -> None:
     listing = await _get(session, int(cb.data.split(":")[-1]))
