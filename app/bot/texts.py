@@ -200,6 +200,7 @@ _TEXTS: dict[str, dict[str, str]] = {
         "• /coupon CODE — Gutschein · /ref — Freunde werben\n\n"
         "<b>Sonstiges</b>\n"
         "• /status — läuft alles? · 🌙 Ruhezeiten in ⚙️ Einstellungen\n"
+        "• 📸 Produktfoto senden → Marktwert-Schätzung (💎 Premium)\n"
         "• Ich prüfe deine Suchen automatisch und melde nur echte Neuheiten "
         "(inkl. 📉 Preisstürzen).",
         "en": "❓ <b>Help</b>\n\n"
@@ -212,6 +213,7 @@ _TEXTS: dict[str, dict[str, str]] = {
         "• /coupon CODE — voucher · /ref — invite friends\n\n"
         "<b>Other</b>\n"
         "• /status — is everything running? · 🌙 quiet hours in ⚙️ settings\n"
+        "• 📸 send a product photo → value estimate (💎 Premium)\n"
         "• I check your searches automatically and only alert on true news "
         "(incl. 📉 price drops).",
         "ru": "❓ <b>Помощь</b>\n\n"
@@ -224,6 +226,7 @@ _TEXTS: dict[str, dict[str, str]] = {
         "• /coupon CODE — купон · /ref — пригласить друзей\n\n"
         "<b>Прочее</b>\n"
         "• /status — всё ли работает? · 🌙 тихие часы в ⚙️ настройках\n"
+        "• 📸 пришли фото товара → оценка стоимости (💎 Премиум)\n"
         "• Я проверяю поиски автоматически и присылаю только настоящие "
         "новинки (включая 📉 падения цен).",
         "uk": "❓ <b>Довідка</b>\n\n"
@@ -236,6 +239,7 @@ _TEXTS: dict[str, dict[str, str]] = {
         "• /coupon CODE — купон · /ref — запросити друзів\n\n"
         "<b>Інше</b>\n"
         "• /status — чи все працює? · 🌙 тихі години в ⚙️ налаштуваннях\n"
+        "• 📸 надішли фото товару → оцінка вартості (💎 Преміум)\n"
         "• Я перевіряю пошуки автоматично та надсилаю лише справжні "
         "новинки (включно з 📉 падінням цін).",
     },

@@ -9,6 +9,7 @@ from app.bot.handlers import (
     edit_rule,
     listings,
     menu,
+    photo_eval,
     premium,
     quick_search,
     rules,
@@ -24,6 +25,7 @@ def build_router() -> Router:
     root.include_router(admin.router)
     root.include_router(premium.router)
     root.include_router(support.router)
+    root.include_router(photo_eval.router)
     root.include_router(quick_search.router)
     root.include_router(start.router)
     root.include_router(rules.router)

@@ -111,6 +111,8 @@ class Settings(BaseSettings):
     resale_shipping_eur: float = 5.90
     #: Default discount the negotiation assistant suggests (percent).
     nego_discount_percent: float = 12.0
+    #: Photo evaluation is a premium perk by default (admins always allowed).
+    photo_ai_premium_only: bool = True
 
     # --- Validators ---------------------------------------------------------
     @field_validator("bot_token")
