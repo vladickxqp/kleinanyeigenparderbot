@@ -77,16 +77,29 @@ def format_deal_card(listing: Listing) -> str:
     return "\n".join(lines)
 
 
+def net_flip_profit(price: float, market: float) -> float:
+    """Reseller math: sale price − fees − shipping − purchase price.
+
+    Fees and shipping are configurable (RESALE_FEE_PERCENT /
+    RESALE_SHIPPING_EUR) so the estimate reflects reality instead of the
+    gross difference between two asking prices.
+    """
+    from app.config.settings import settings
+
+    proceeds = market * (1 - settings.resale_fee_percent / 100)
+    return proceeds - settings.resale_shipping_eur - price
+
+
 def format_resale_line(listing: Listing) -> str | None:
-    """If the item looks profitable to flip, return an ROI summary line."""
+    """If the item is profitable to flip AFTER fees, return a summary line."""
     market = listing.estimated_market_price
     if market is None or listing.price is None or listing.price <= 0:
         return None
-    profit = market - listing.price
-    if profit <= 0:
+    net = net_flip_profit(listing.price, market)
+    if net <= 0:
         return None
-    roi = profit / listing.price * 100
+    roi = net / listing.price * 100
     return (
-        f"♻️ <b>Wiederverkauf:</b> kaufen {_money(listing.price)} → "
-        f"Markt {_money(market)} = Gewinn {_money(profit)} (ROI {roi:.0f}%)"
+        f"♻️ <b>Flip:</b> Kauf {_money(listing.price)} → Markt {_money(market)} "
+        f"= <b>{_money(net)} netto</b> nach Gebühren (ROI {roi:.0f}%)"
     )

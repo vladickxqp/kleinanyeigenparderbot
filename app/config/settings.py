@@ -104,6 +104,14 @@ class Settings(BaseSettings):
     referral_enabled: bool = True
     referral_reward_days: int = 7
 
+    # --- Resale / negotiation (all configurable) ----------------------------
+    #: Marketplace fees deducted in the net-profit estimate (percent).
+    resale_fee_percent: float = 13.0
+    #: Flat shipping/handling cost deducted in the net-profit estimate (EUR).
+    resale_shipping_eur: float = 5.90
+    #: Default discount the negotiation assistant suggests (percent).
+    nego_discount_percent: float = 12.0
+
     # --- Validators ---------------------------------------------------------
     @field_validator("bot_token")
     @classmethod
