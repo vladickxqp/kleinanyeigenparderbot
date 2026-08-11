@@ -115,3 +115,37 @@ def test_extract_location_id_legacy_shapes():
         == "9282"
     )
     assert KleinanzeigenParser._extract_location_id({}) is None
+
+
+def test_vehicle_tags_are_prepended_to_description():
+    """Car cards carry km + EZ as simpletag spans (verified live 2026-07)."""
+    html = """
+    <article class="aditem" data-adid="555000111"
+             data-href="/s-anzeige/tesla/555000111-216-1">
+      <div class="aditem-main">
+        <div class="aditem-main--top">
+          <div class="aditem-main--top--left">67550 Worms</div>
+          <div class="aditem-main--top--right">Heute, 10:00</div>
+        </div>
+        <div class="aditem-main--middle">
+          <h2><a class="ellipsis" href="/s-anzeige/tesla/555000111-216-1">
+            Tesla Model 3 Long Range</a></h2>
+          <p class="aditem-main--middle--description">Top Zustand, AHK.</p>
+          <div class="aditem-main--middle--price-shipping">
+            <p class="aditem-main--middle--price-shipping--price">27.900 €</p>
+          </div>
+        </div>
+        <div class="aditem-main--bottom">
+          <span class="simpletag">55.000 km</span>
+          <span class="simpletag">EZ 09/2021</span>
+        </div>
+      </div>
+    </article>
+    """
+    parser = KleinanzeigenParser()
+    listings = parser._parse_results(html, SearchQuery(keywords="tesla model 3"))
+    assert len(listings) == 1
+    desc = listings[0].description
+    assert desc is not None
+    assert desc.startswith("55.000 km · EZ 09/2021")
+    assert "Top Zustand" in desc

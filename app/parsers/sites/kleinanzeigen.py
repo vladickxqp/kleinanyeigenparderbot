@@ -253,6 +253,18 @@ class KleinanzeigenParser(BaseParser):
         desc_el = card.select_one(".aditem-main--middle--description")
         description = desc_el.get_text(strip=True) if desc_el else None
 
+        # --- Attribute tags (verified live 2026-07): vehicle cards carry
+        # "74.000 km" and "EZ 12/2020" as simpletag spans. Prepending them to
+        # the description surfaces them on the deal card and keeps them
+        # searchable — without any schema change.
+        tags = [t.get_text(strip=True) for t in card.select("span.simpletag")]
+        tags = [tag for tag in tags if tag]
+        if tags:
+            attr_line = " · ".join(tags[:4])
+            description = (
+                f"{attr_line} — {description}" if description else attr_line
+            )
+
         # --- Image ---
         image_url = self._extract_image(card)
 
