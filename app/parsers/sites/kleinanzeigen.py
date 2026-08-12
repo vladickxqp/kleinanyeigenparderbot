@@ -259,6 +259,7 @@ class KleinanzeigenParser(BaseParser):
         # searchable — without any schema change.
         tags = [t.get_text(strip=True) for t in card.select("span.simpletag")]
         tags = [tag for tag in tags if tag]
+        mileage_km, registration_year = self._parse_vehicle_tags(tags)
         if tags:
             attr_line = " · ".join(tags[:4])
             description = (
@@ -294,9 +295,35 @@ class KleinanzeigenParser(BaseParser):
             condition=Condition.ANY,
             is_auction=is_auction,
             posted_at=posted_at,
+            mileage_km=mileage_km,
+            registration_year=registration_year,
         )
 
     # --- Small helpers ------------------------------------------------------
+    @staticmethod
+    def _parse_vehicle_tags(tags: list[str]) -> tuple[int | None, int | None]:
+        """Extract mileage (km) and first-registration year from card tags.
+
+        Live formats (verified 2026): ``"74.000 km"`` and ``"EZ 12/2020"`` /
+        ``"EZ 2020"``. Returns ``(None, None)`` for non-vehicle listings.
+        """
+        mileage: int | None = None
+        year: int | None = None
+        for tag in tags:
+            low = tag.lower()
+            if mileage is None and "km" in low:
+                digits = re.sub(r"[^\d]", "", tag)
+                if digits:
+                    value = int(digits)
+                    # Plausible car mileage; ignore e.g. "5 km entfernt".
+                    if 100 <= value <= 1_000_000:
+                        mileage = value
+            if year is None and ("ez" in low or "erstzulassung" in low):
+                match = re.search(r"(19|20)\d{2}", tag)
+                if match:
+                    year = int(match.group(0))
+        return mileage, year
+
     @staticmethod
     def _parse_posted_date(text: str | None) -> datetime | None:
         """Parse the card's posting date.

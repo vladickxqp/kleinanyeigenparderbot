@@ -24,6 +24,7 @@ from app.services.dedup import filter_new_listings
 from app.services.freshness import is_fresh_enough
 from app.services.price_analysis import PriceStats, compute_price_stats
 from app.services.relevance import filter_relevant
+from app.services.vehicle import is_vehicle_batch, similar_market_stats
 from app.services.repositories import ListingRepository
 
 #: On the very first run of a rule everything is "new"; cap the flood.
@@ -83,10 +84,18 @@ class SearchService:
         ]
         stats = compute_price_stats(sample_prices)
 
+        # For vehicle searches, compare each car only against comparable cars
+        # (similar mileage + year), so the score means "cheap for a car
+        # like THIS one" instead of "cheap vs. all listings".
+        vehicles = is_vehicle_batch(parsed)
+
         new_rows: list[Listing] = []
         pairs: list[tuple[ParsedListing, Listing]] = []
         for item in fresh:
-            row = self._to_row(rule.id, item, stats)
+            item_stats = (
+                similar_market_stats(item, parsed, stats) if vehicles else stats
+            )
+            row = self._to_row(rule.id, item, item_stats)
             new_rows.append(row)
             pairs.append((item, row))
 

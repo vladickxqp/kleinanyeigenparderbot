@@ -82,6 +82,14 @@ class ParsedListing(BaseModel):
     is_auction: bool = False
     #: When the ad was posted on the marketplace (None = unknown / promoted ad).
     posted_at: datetime | None = None
+    #: Vehicle attributes (cars/motorbikes) — None for non-vehicle listings.
+    mileage_km: int | None = None
+    registration_year: int | None = None
+
+    @property
+    def is_vehicle(self) -> bool:
+        """True if the listing carries vehicle attributes."""
+        return self.mileage_km is not None or self.registration_year is not None
 
     @field_validator("title")
     @classmethod
