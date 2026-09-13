@@ -14,7 +14,7 @@ import asyncio
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.models import Listing, PriceHistory, SearchRule
+from app.database.models import Listing, PriceHistory, SearchRule, User
 from app.parsers import registry
 from app.parsers.schemas import ParsedListing, SearchQuery
 from app.config.settings import settings
@@ -23,6 +23,7 @@ from app.services.deal_scorer import score_listing
 from app.services.dedup import filter_new_listings
 from app.services.freshness import is_fresh_enough
 from app.services.price_analysis import PriceStats, compute_price_stats
+from app.services.flips import get_flip_min, passes_flip_mode
 from app.services.relevance import filter_relevant
 from app.services.vehicle import is_vehicle_batch, similar_market_stats
 from app.services.repositories import ListingRepository
@@ -157,7 +158,23 @@ class SearchService:
                 ]
 
         # Price drops are always worth telling the user about.
-        return drops + notable
+        result = drops + notable
+
+        # Flip-only mode: the owner wants ONLY listings whose estimated net
+        # profit after fees reaches their threshold (set in /flips).
+        if result:
+            owner = await self.session.get(User, rule.user_id)
+            min_net = await get_flip_min(owner.telegram_id) if owner else None
+            if min_net:
+                kept = [
+                    r for r in result
+                    if passes_flip_mode(r.price, r.estimated_market_price, min_net)
+                ]
+                for row in result:
+                    if row not in kept:
+                        row.notified = True  # below the flip threshold, never deliver
+                result = kept
+        return result
 
     async def _detect_price_drops(
         self, rule: SearchRule, parsed: list[ParsedListing]

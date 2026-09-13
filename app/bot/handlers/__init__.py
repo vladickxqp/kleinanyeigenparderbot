@@ -7,6 +7,7 @@ from aiogram import Router
 from app.bot.handlers import (
     admin,
     edit_rule,
+    flips,
     listings,
     menu,
     photo_eval,
@@ -25,6 +26,7 @@ def build_router() -> Router:
     root.include_router(admin.router)
     root.include_router(premium.router)
     root.include_router(support.router)
+    root.include_router(flips.router)
     root.include_router(photo_eval.router)
     root.include_router(quick_search.router)
     root.include_router(start.router)

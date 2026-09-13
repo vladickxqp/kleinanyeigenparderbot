@@ -80,14 +80,12 @@ def format_deal_card(listing: Listing) -> str:
 def net_flip_profit(price: float, market: float) -> float:
     """Reseller math: sale price − fees − shipping − purchase price.
 
-    Fees and shipping are configurable (RESALE_FEE_PERCENT /
-    RESALE_SHIPPING_EUR) so the estimate reflects reality instead of the
-    gross difference between two asking prices.
+    Delegates to the flip service so the card estimate and the realised
+    profit in /flips are computed by exactly the same formula.
     """
-    from app.config.settings import settings
+    from app.services.flips import estimated_net_profit
 
-    proceeds = market * (1 - settings.resale_fee_percent / 100)
-    return proceeds - settings.resale_shipping_eur - price
+    return estimated_net_profit(price, market)
 
 
 def format_resale_line(listing: Listing) -> str | None:

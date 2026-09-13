@@ -24,7 +24,8 @@ def main_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     kb.button(text=t("btn.help", lang), callback_data="menu:help")
     kb.button(text="💎 Premium", callback_data="menu:premium")
     kb.button(text="💬 Support", callback_data="menu:support")
-    kb.adjust(2, 2, 2, 2)
+    kb.button(text="📦 Meine Flips", callback_data="menu:flips")
+    kb.adjust(2, 2, 2, 2, 1)
     return kb.as_markup()
 
 
@@ -93,7 +94,12 @@ def listing_actions_keyboard(listing: Listing, lang: str) -> InlineKeyboardMarku
     kb.button(text="🤝", callback_data=f"listing:nego:{listing.id}")
     kb.button(text="🙈", callback_data=f"listing:ignore:{listing.id}")
     kb.button(text="👁 Preis", callback_data=f"listing:track:{listing.id}")
-    kb.adjust(1, 4)
+    kb.row(
+        InlineKeyboardButton(
+            text="🛒 Gekauft — Flip tracken", callback_data=f"listing:buy:{listing.id}"
+        )
+    )
+    kb.adjust(1, 4, 1)
     return kb.as_markup()
 
 

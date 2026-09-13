@@ -9,6 +9,7 @@ from app.database.models.enums import (
     SubscriptionTier,
     UserRole,
 )
+from app.database.models.flip import Flip, FlipStatus
 from app.database.models.listing import Listing
 from app.database.models.notification import Notification
 from app.database.models.payment import Payment
@@ -23,6 +24,8 @@ __all__ = [
     "Coupon",
     "CouponRedemption",
     "DealVerdict",
+    "Flip",
+    "FlipStatus",
     "Listing",
     "Notification",
     "NotificationChannel",
