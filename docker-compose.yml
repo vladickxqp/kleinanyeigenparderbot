@@ -99,6 +99,19 @@ services:
       api:
         condition: service_started
 
+  # Optional: public HTTPS for the Telegram Mini App via Cloudflare Tunnel.
+  # Start with:  docker compose --profile tunnel up -d
+  # Needs CLOUDFLARE_TUNNEL_TOKEN in .env and the tunnel's public hostname
+  # routed to http://frontend:80 (Cloudflare Zero Trust → Tunnels).
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      frontend:
+        condition: service_started
+
 volumes:
   pgdata:
   redisdata:

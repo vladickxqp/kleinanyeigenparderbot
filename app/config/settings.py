@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     #: Photo evaluation is a premium perk by default (admins always allowed).
     photo_ai_premium_only: bool = True
 
+    # --- Telegram Mini App ----------------------------------------------------
+    #: Public HTTPS URL of the Mini App (e.g. https://deals.example.com/app).
+    #: Empty = Mini App buttons are hidden; the bot works exactly as before.
+    webapp_url: str = ""
+
     # --- Validators ---------------------------------------------------------
     @field_validator("bot_token")
     @classmethod

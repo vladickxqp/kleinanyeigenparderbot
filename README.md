@@ -141,6 +141,34 @@ npm run build      # production build into frontend/dist
 Stack: React 18 + TypeScript + Vite + Tailwind + Recharts. Dark/light theme,
 dashboard with charts, and pages for search rules, listings and parsers.
 
+### Telegram Mini App (`/app`)
+
+The same frontend also serves a **Telegram Mini App** at `/app`: deals,
+searches (with on/off toggle), flips & profit, premium status with the exact
+charge dates and the full payment history — all inside Telegram, no login.
+Authentication is Telegram's signed `initData` (verified server-side in
+`app/api/webapp_auth.py`), so a user can only ever see their own data.
+
+Telegram only loads Mini Apps from a **public HTTPS URL**. Cheapest setup
+(free): a domain + Cloudflare Tunnel — nothing is exposed on your router.
+
+1. Buy a domain and add it to Cloudflare (free plan).
+2. Cloudflare Zero Trust → Networks → Tunnels → *Create a tunnel* → copy the
+   token. Add a public hostname, e.g. `deals.example.com`, pointing to
+   `http://frontend:80`.
+3. In `.env`:
+   ```
+   CLOUDFLARE_TUNNEL_TOKEN=<token>
+   WEBAPP_URL=https://deals.example.com/app
+   ```
+4. Start with the tunnel profile and rebuild the bot:
+   ```bash
+   docker compose --profile tunnel up -d --build
+   ```
+
+The bot now shows **🌐 App öffnen** in the main menu and sets Telegram's
+menu button automatically. With `WEBAPP_URL` empty, nothing changes.
+
 ---
 
 ## ➕ Adding a new marketplace parser

@@ -49,6 +49,7 @@ async def _set_commands(bot: Bot) -> None:
             BotCommand(command="suche", description="Schnell-Suche ohne Regel"),
             BotCommand(command="premium", description="Premium-Status & Upgrade"),
             BotCommand(command="flips", description="Meine Flips & Gewinn"),
+            BotCommand(command="payments", description="Zahlungsverlauf & Abbuchungen"),
             BotCommand(command="support", description="Support kontaktieren"),
             BotCommand(command="status", description="System-Status prüfen"),
             BotCommand(command="help", description="Hilfe"),
@@ -56,11 +57,29 @@ async def _set_commands(bot: Bot) -> None:
     )
 
 
+async def _set_menu_button(bot: Bot) -> None:
+    """Show the Mini App in the chat's menu button once WEBAPP_URL is set."""
+    if not settings.webapp_url:
+        return
+    from aiogram.types import MenuButtonWebApp, WebAppInfo
+
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="🌐 App", web_app=WebAppInfo(url=settings.webapp_url)
+            )
+        )
+        logger.info("Mini App menu button set: {}", settings.webapp_url)
+    except Exception as exc:  # noqa: BLE001 - a bad URL must not stop the bot
+        logger.warning("Could not set Mini App menu button: {}", exc)
+
+
 async def run_polling() -> None:
     setup_logging()
     bot = create_bot()
     dp = create_dispatcher()
     await _set_commands(bot)
+    await _set_menu_button(bot)
     me = await bot.get_me()
     logger.info("🤖 Bot @{} started (long polling)", me.username)
     await bot.delete_webhook(drop_pending_updates=True)

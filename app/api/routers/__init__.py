@@ -9,6 +9,7 @@ from app.api.routers import (
     settings,
     stats,
     users,
+    webapp,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "settings",
     "stats",
     "users",
+    "webapp",
 ]

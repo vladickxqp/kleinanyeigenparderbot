@@ -18,6 +18,7 @@ from app.api.routers import (
     settings as settings_router,
     stats,
     users,
+    webapp,
 )
 from app.config.logging import setup_logging
 from app.config.settings import settings
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     app.include_router(parsers.router, prefix=api_prefix)
     app.include_router(settings_router.router, prefix=api_prefix)
     app.include_router(users.router, prefix=api_prefix)
+    app.include_router(webapp.router, prefix=api_prefix)
 
     if settings.prometheus_enabled:
         _mount_metrics(app)

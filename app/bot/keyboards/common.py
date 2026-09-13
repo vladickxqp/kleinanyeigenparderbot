@@ -7,10 +7,12 @@ from collections.abc import Sequence
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    WebAppInfo,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.bot.texts import t
+from app.config.settings import settings
 from app.database.models import Listing, SearchRule
 
 
@@ -26,6 +28,13 @@ def main_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     kb.button(text="💬 Support", callback_data="menu:support")
     kb.button(text="📦 Meine Flips", callback_data="menu:flips")
     kb.adjust(2, 2, 2, 2, 1)
+    if settings.webapp_url:
+        # Only shown once a public HTTPS URL is configured (WEBAPP_URL).
+        kb.row(
+            InlineKeyboardButton(
+                text="🌐 App öffnen", web_app=WebAppInfo(url=settings.webapp_url)
+            )
+        )
     return kb.as_markup()
 
 

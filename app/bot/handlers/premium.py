@@ -49,7 +49,23 @@ def _endable(sub) -> bool:
     )
 
 
-def _premium_text(user: User, sub) -> str:
+def _billing_text(info, sub) -> str:
+    """'Last charge / next charge' lines derived from the payment ledger."""
+    if info is None or info.payments_count == 0 or info.last_charge_at is None:
+        return ""
+    lines = [
+        f"\n\n💳 Letzte Abbuchung: <b>{info.last_charge_at:%d.%m.%Y}</b> "
+        f"({info.last_amount_stars} ⭐)"
+    ]
+    if sub is not None and sub.payment_status == premium.CANCEL_AT_PERIOD_END:
+        lines.append("🔄 Nächste Abbuchung: <b>keine</b> (gekündigt)")
+    elif sub is not None and _cancellable(sub) and info.next_charge_at:
+        lines.append(f"🔄 Nächste Abbuchung: <b>{info.next_charge_at:%d.%m.%Y}</b>")
+    lines.append("📜 Alle Zahlungen: /payments")
+    return "\n".join(lines)
+
+
+def _premium_text(user: User, sub, billing: str = "") -> str:
     if user.is_paid_tier and sub is not None:
         if sub.payment_status == premium.CANCEL_AT_PERIOD_END:
             return (
@@ -57,6 +73,7 @@ def _premium_text(user: User, sub) -> str:
                 f"✅ Läuft noch bis: <b>{sub.subscription_end:%d.%m.%Y}</b>\n"
                 "❌ Verlängert sich danach <b>nicht</b> mehr.\n\n"
                 "Umentschieden? Nach Ablauf einfach neu buchen: /premium"
+                + billing
             )
         renewal = (
             f"🔄 Verlängert sich automatisch "
@@ -68,6 +85,7 @@ def _premium_text(user: User, sub) -> str:
             "💎 <b>Du bist Premium!</b>\n\n"
             f"✅ Aktiv bis: <b>{sub.subscription_end:%d.%m.%Y}</b>\n"
             f"{renewal}"
+            + billing
         )
     if user.is_paid_tier:
         return (
@@ -100,6 +118,7 @@ async def _premium_keyboard(
     price_stars: int | None = None,
     coupon_code: str | None = None,
     sub=None,
+    has_payments: bool = False,
 ):
     kb = InlineKeyboardBuilder()
     if not user.is_paid_tier and settings.premium_enabled:
@@ -125,29 +144,84 @@ async def _premium_keyboard(
                 text="❌ Premium beenden", callback_data="premium:end"
             )
         )
+    if has_payments:
+        kb.row(
+            InlineKeyboardButton(
+                text="📜 Zahlungsverlauf", callback_data="premium:history"
+            )
+        )
     kb.row(InlineKeyboardButton(text=t("btn.back", lang), callback_data="menu:home"))
     return kb.as_markup()
+
+
+async def _premium_view(user: User, session: AsyncSession, lang: str):
+    """Text + keyboard of the premium page, billing dates included."""
+    sub = await premium.get_active_subscription(session, user.telegram_id)
+    info = await premium.billing_info(session, user.telegram_id)
+    has_payments = bool(await premium.payment_history(session, user.telegram_id, limit=1))
+    text = _premium_text(user, sub, _billing_text(info, sub))
+    markup = await _premium_keyboard(user, lang, sub=sub, has_payments=has_payments)
+    return text, markup
 
 
 @router.message(Command("premium"))
 async def cmd_premium(
     message: Message, user: User, session: AsyncSession, lang: str
 ) -> None:
-    sub = await premium.get_active_subscription(session, user.telegram_id)
-    await message.answer(
-        _premium_text(user, sub),
-        reply_markup=await _premium_keyboard(user, lang, sub=sub),
-    )
+    text, markup = await _premium_view(user, session, lang)
+    await message.answer(text, reply_markup=markup)
 
 
 @router.callback_query(F.data == "menu:premium")
 async def cb_premium(
     cb: CallbackQuery, user: User, session: AsyncSession, lang: str
 ) -> None:
-    sub = await premium.get_active_subscription(session, user.telegram_id)
+    text, markup = await _premium_view(user, session, lang)
+    await cb.message.edit_text(text, reply_markup=markup)
+    await cb.answer()
+
+
+# --- Payment history (dates of every charge) --------------------------------------
+_PROVIDER_LABEL = {
+    "telegram_stars": "⭐ Stars",
+    "admin_grant": "🎁 Geschenk (Admin)",
+    "trial": "🆓 Test",
+    "coupon": "🎟 Gutschein",
+    "referral": "🎫 Empfehlung",
+}
+
+
+async def _history_text(session: AsyncSession, user: User) -> str:
+    payments = await premium.payment_history(session, user.telegram_id, limit=12)
+    if not payments:
+        return "📜 <b>Zahlungsverlauf</b>\n\nNoch keine Zahlungen."
+    info = await premium.billing_info(session, user.telegram_id)
+    lines = ["📜 <b>Zahlungsverlauf</b>\n"]
+    for p in payments:
+        when = f"{p.created_at:%d.%m.%Y %H:%M}"
+        label = _PROVIDER_LABEL.get(p.provider, p.provider)
+        amount = f"{p.amount_stars} ⭐ (~{p.amount_eur:.2f} €)" if p.amount_stars else "0 €"
+        kind = " · Verlängerung" if p.is_renewal else ""
+        coupon = f" · 🎟 {p.coupon_code}" if p.coupon_code else ""
+        state = " · ↩️ ERSTATTET" if p.refunded else ""
+        lines.append(f"• <b>{when}</b> — {label}: {amount}{kind}{coupon}{state}")
+    if info.next_charge_at and user.is_paid_tier:
+        lines.append(f"\n🔄 Nächste geplante Abbuchung: <b>{info.next_charge_at:%d.%m.%Y}</b>")
+    lines.append("\nStars-Abo verwalten: /premium")
+    return "\n".join(lines)
+
+
+@router.message(Command("payments", "zahlungen"))
+async def cmd_payments(message: Message, user: User, session: AsyncSession) -> None:
+    await message.answer(await _history_text(session, user))
+
+
+@router.callback_query(F.data == "premium:history")
+async def cb_history(cb: CallbackQuery, user: User, session: AsyncSession) -> None:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Zurück", callback_data="menu:premium")
     await cb.message.edit_text(
-        _premium_text(user, sub),
-        reply_markup=await _premium_keyboard(user, lang, sub=sub),
+        await _history_text(session, user), reply_markup=kb.as_markup()
     )
     await cb.answer()
 
@@ -405,4 +479,21 @@ async def on_successful_payment(
         "🎉 <b>Willkommen bei Premium!</b>\n\n"
         "♾ Unbegrenzte Suchen und das schnellste Prüf-Intervall sind jetzt "
         "freigeschaltet. Status jederzeit: /premium"
+    )
+
+
+@router.message(F.refunded_payment)
+async def on_refunded_payment(
+    message: Message, user: User, session: AsyncSession
+) -> None:
+    """Telegram refunded a Stars charge: book it and take the premium back."""
+    refund = message.refunded_payment
+    charge_id = getattr(refund, "telegram_payment_charge_id", None)
+    if charge_id:
+        await premium.mark_refunded(session, user.telegram_id, charge_id)
+    await premium.deactivate_premium(session, user)
+    logger.info("PREMIUM: refund for {} (charge {})", user.telegram_id, charge_id)
+    await message.answer(
+        "↩️ <b>Erstattung erhalten.</b> Dein Premium wurde beendet und die "
+        "Zahlung im Verlauf als erstattet markiert (/payments)."
     )

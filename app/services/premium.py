@@ -15,6 +15,7 @@ parameter; the raw call is version-proof.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -281,3 +282,75 @@ async def payments_count_for_user(session: AsyncSession, telegram_id: int) -> in
         )
         or 0
     )
+
+
+# --- User-facing billing: history, charge dates, refunds --------------------------------
+async def payment_history(session: AsyncSession, telegram_id: int, limit: int = 12):
+    """The user's own payment ledger, newest first (all providers, incl. refunds)."""
+    from app.database.models import Payment
+
+    result = await session.execute(
+        select(Payment)
+        .where(Payment.telegram_id == telegram_id)
+        .order_by(Payment.created_at.desc(), Payment.id.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+@dataclass(slots=True)
+class BillingInfo:
+    """When money was last taken and when Telegram will charge next."""
+
+    payments_count: int
+    last_charge_at: datetime | None
+    last_amount_stars: int | None
+    next_charge_at: datetime | None
+
+
+async def billing_info(session: AsyncSession, telegram_id: int) -> BillingInfo:
+    """Derived from the ledger, so the dates are the REAL charge timestamps.
+
+    Telegram bills Stars subscriptions every 30 days (the API's only period),
+    so the next charge is the last successful one plus 30 days — regardless
+    of the grace days the entitlement itself may carry.
+    """
+    from sqlalchemy import func
+
+    from app.database.models import Payment
+
+    paid = (
+        Payment.telegram_id == telegram_id,
+        Payment.provider == "telegram_stars",
+        Payment.status == "paid",
+    )
+    count = await session.scalar(select(func.count(Payment.id)).where(*paid)) or 0
+    last = (
+        await session.execute(
+            select(Payment).where(*paid).order_by(Payment.created_at.desc(), Payment.id.desc()).limit(1)
+        )
+    ).scalar_one_or_none()
+    if last is None:
+        return BillingInfo(0, None, None, None)
+    next_at = last.created_at + timedelta(seconds=TELEGRAM_SUBSCRIPTION_PERIOD)
+    return BillingInfo(int(count), last.created_at, last.amount_stars, next_at)
+
+
+async def mark_refunded(session: AsyncSession, telegram_id: int, charge_id: str):
+    """Flag a charge as refunded (Telegram ``refunded_payment`` update)."""
+    from app.database.models import Payment
+
+    payment = (
+        await session.execute(
+            select(Payment).where(
+                Payment.telegram_id == telegram_id, Payment.charge_id == charge_id
+            )
+        )
+    ).scalar_one_or_none()
+    if payment is None:
+        return None
+    payment.refunded = True
+    payment.status = "refunded"
+    await session.flush()
+    logger.info("PREMIUM: charge {} of {} refunded", charge_id, telegram_id)
+    return payment
