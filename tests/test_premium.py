@@ -39,12 +39,14 @@ def sqlite_db(monkeypatch):
 async def _setup() -> None:
     engine = db.get_engine()
     async with engine.begin() as conn:
-        # Only the tables premium needs — SearchRule uses postgres ARRAY.
+        # Downgrades reconcile the user's rules, so that table is needed too.
         await conn.run_sync(
             Base.metadata.create_all,
             tables=[
                 Base.metadata.tables["users"],
                 Base.metadata.tables["subscriptions"],
+                Base.metadata.tables["search_rules"],
+                Base.metadata.tables["payments"],
             ],
         )
 

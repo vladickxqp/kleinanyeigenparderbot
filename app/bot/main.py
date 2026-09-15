@@ -12,7 +12,7 @@ from aiogram.types import BotCommand
 from loguru import logger
 
 from app.bot.handlers import build_router
-from app.bot.middlewares import UserContextMiddleware
+from app.bot.middlewares import ThrottlingMiddleware, UserContextMiddleware
 from app.config.logging import setup_logging
 from app.config.settings import settings
 
@@ -22,6 +22,7 @@ def create_bot() -> Bot:
         raise RuntimeError(
             "BOT_TOKEN is not configured. Put a fresh @BotFather token in .env."
         )
+    settings.require_secure_secrets()
     return Bot(
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
@@ -32,6 +33,11 @@ def create_dispatcher() -> Dispatcher:
     # FSM state survives restarts by living in Redis.
     storage = RedisStorage.from_url(settings.redis_url)
     dp = Dispatcher(storage=storage)
+
+    # Order matters: flood protection runs before we touch the database.
+    throttling = ThrottlingMiddleware()
+    dp.message.middleware(throttling)
+    dp.callback_query.middleware(throttling)
 
     middleware = UserContextMiddleware()
     dp.message.middleware(middleware)

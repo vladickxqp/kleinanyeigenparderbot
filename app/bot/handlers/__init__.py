@@ -13,6 +13,7 @@ from app.bot.handlers import (
     menu,
     photo_eval,
     premium,
+    privacy,
     quick_search,
     rules,
     settings,
@@ -30,6 +31,7 @@ def build_router() -> Router:
     root.include_router(support.router)
     root.include_router(flips.router)
     root.include_router(photo_eval.router)
+    root.include_router(privacy.router)
     root.include_router(quick_search.router)
     root.include_router(start.router)
     root.include_router(rules.router)

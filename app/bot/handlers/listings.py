@@ -7,18 +7,20 @@ from aiogram.types import CallbackQuery
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.models import Listing, PriceHistory
+from app.database.models import Listing, PriceHistory, User
+from app.services.repositories import ListingRepository
 
 router = Router(name="listings")
 
 
-async def _get(session: AsyncSession, listing_id: int) -> Listing | None:
-    return await session.get(Listing, listing_id)
+async def _get(session: AsyncSession, listing_id: int, user: User) -> Listing | None:
+    """Owner-scoped lookup: callback data alone never grants access."""
+    return await ListingRepository(session).get_for_user(listing_id, user.id)
 
 
 @router.callback_query(F.data.startswith("listing:fav:"))
-async def cb_favorite(cb: CallbackQuery, session: AsyncSession) -> None:
-    listing = await _get(session, int(cb.data.split(":")[-1]))
+async def cb_favorite(cb: CallbackQuery, user: User, session: AsyncSession) -> None:
+    listing = await _get(session, int(cb.data.split(":")[-1]), user)
     if listing is None:
         await cb.answer("Nicht gefunden", show_alert=True)
         return
@@ -28,13 +30,13 @@ async def cb_favorite(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("listing:nego:"))
-async def cb_negotiate(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_negotiate(cb: CallbackQuery, user: User, session: AsyncSession) -> None:
     """Suggest an opening offer and a copyable negotiation message."""
     from html import escape
 
     from app.services.negotiation import build_message, suggest_offer
 
-    listing = await _get(session, int(cb.data.split(":")[-1]))
+    listing = await _get(session, int(cb.data.split(":")[-1]), user)
     if listing is None:
         await cb.answer("Nicht gefunden", show_alert=True)
         return
@@ -49,15 +51,15 @@ async def cb_negotiate(cb: CallbackQuery, session: AsyncSession) -> None:
         f"Preis: {listing.price:,.0f} € → Dein Angebot: <b>{offer:,} €</b>\n\n"
         "Nachricht zum Kopieren (antippen):\n"
         f"<code>{escape(message_text)}</code>\n\n"
-        f"🔗 Direkt zur Anzeige: {listing.url}".replace(",", "."),
+        f"🔗 Direkt zur Anzeige: {escape(listing.url)}".replace(",", "."),
         disable_web_page_preview=True,
     )
     await cb.answer()
 
 
 @router.callback_query(F.data.startswith("listing:ignore:"))
-async def cb_ignore(cb: CallbackQuery, session: AsyncSession) -> None:
-    listing = await _get(session, int(cb.data.split(":")[-1]))
+async def cb_ignore(cb: CallbackQuery, user: User, session: AsyncSession) -> None:
+    listing = await _get(session, int(cb.data.split(":")[-1]), user)
     if listing is None:
         await cb.answer("Nicht gefunden", show_alert=True)
         return
@@ -67,8 +69,8 @@ async def cb_ignore(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("listing:track:"))
-async def cb_track(cb: CallbackQuery, session: AsyncSession) -> None:
-    listing = await _get(session, int(cb.data.split(":")[-1]))
+async def cb_track(cb: CallbackQuery, user: User, session: AsyncSession) -> None:
+    listing = await _get(session, int(cb.data.split(":")[-1]), user)
     if listing is None:
         await cb.answer("Nicht gefunden", show_alert=True)
         return

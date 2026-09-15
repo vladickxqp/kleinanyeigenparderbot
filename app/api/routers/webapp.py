@@ -161,8 +161,8 @@ async def toggle_rule(
     user: User = Depends(current_webapp_user),
     session: AsyncSession = Depends(get_session),
 ) -> SearchRule:
-    rule = await SearchRuleRepository(session).get(rule_id)
-    if rule is None or rule.user_id != user.id:
+    rule = await SearchRuleRepository(session).get(rule_id, user.id)
+    if rule is None:
         raise HTTPException(status_code=404, detail="Suche nicht gefunden")
     rule.is_active = not rule.is_active
     await session.commit()

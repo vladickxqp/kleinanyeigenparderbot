@@ -29,17 +29,23 @@ def format_deal_card(listing: Listing) -> str:
     badge = _VERDICT_BADGE.get(listing.deal_verdict, "")
     # Title doubles as a clickable link so the offer is always one tap away,
     # in addition to the "Öffnen" button below the card.
+    # The URL comes from scraped markup, so it is escaped like any other
+    # untrusted text before it goes into an HTML attribute.
+    safe_url = escape(listing.url, quote=True)
     lines: list[str] = [
         f"{badge}  •  <b>{listing.deal_score}/100</b>",
-        f'<b><a href="{listing.url}">{escape(listing.title)}</a></b>',
+        f'<b><a href="{safe_url}">{escape(listing.title)}</a></b>',
         "",
-        f"🔗 {listing.url}",
+        f"🔗 {safe_url}",
         "",
     ]
 
     price_line = f"💶 <b>{_money(listing.price, listing.currency)}</b>"
     if listing.shipping_cost:
         price_line += f"  (+ {_money(listing.shipping_cost, listing.currency)} Versand)"
+    elif listing.shipping_cost == 0:
+        # Parsers encode "seller offers shipping" as a zero cost.
+        price_line += "  (📦 Versand möglich)"
     lines.append(price_line)
 
     # Price-drop re-notification: show where the price came from.

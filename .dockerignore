@@ -1,0 +1,40 @@
+# Never bake local state or secrets into an image layer.
+# `.env` is gitignored but the Docker build context is the repo root, so
+# without this file every `docker compose build` copies the real bot token,
+# database password and API keys into the image.
+.env
+.env.*
+!.env.example
+*.env
+
+.git
+.github
+.gitignore
+.venv
+venv
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+.coverage*
+
+logs
+backups
+*.log
+*.sqlite3
+*.db
+
+frontend/node_modules
+frontend/dist
+node_modules
+
+*.md
+!README.md
+tests
+.vscode
+.idea
+.DS_Store
+Thumbs.db

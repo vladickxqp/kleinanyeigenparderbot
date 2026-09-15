@@ -38,9 +38,11 @@ CLEAR_MARKER = "-"
 
 # --- Menu ---------------------------------------------------------------------
 @router.callback_query(F.data.startswith("rule:edit:"))
-async def cb_edit_menu(cb: CallbackQuery, session: AsyncSession, lang: str) -> None:
+async def cb_edit_menu(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str
+) -> None:
     rule_id = int(cb.data.split(":")[-1])
-    rule = await SearchRuleRepository(session).get(rule_id)
+    rule = await SearchRuleRepository(session).get(rule_id, user.id)
     if rule is None:
         await cb.answer("Nicht gefunden", show_alert=True)
         return
@@ -93,12 +95,14 @@ async def cb_edit_field(cb: CallbackQuery, lang: str, state: FSMContext) -> None
 
 
 # --- Shared helpers -------------------------------------------------------------
-async def _load_rule(session: AsyncSession, state: FSMContext) -> SearchRule | None:
+async def _load_rule(
+    session: AsyncSession, state: FSMContext, user: User
+) -> SearchRule | None:
     data = await state.get_data()
     rule_id = data.get("edit_rule_id")
     if rule_id is None:
         return None
-    return await SearchRuleRepository(session).get(int(rule_id))
+    return await SearchRuleRepository(session).get(int(rule_id), user.id)
 
 
 async def _finish(
@@ -117,9 +121,9 @@ async def _finish(
 # --- Text-field handlers ---------------------------------------------------------
 @router.message(EditWizard.name, F.text)
 async def edit_name(
-    message: Message, session: AsyncSession, lang: str, state: FSMContext
+    message: Message, user: User, session: AsyncSession, lang: str, state: FSMContext
 ) -> None:
-    rule = await _load_rule(session, state)
+    rule = await _load_rule(session, state, user)
     if rule is None:
         await state.clear()
         return
@@ -129,9 +133,9 @@ async def edit_name(
 
 @router.message(EditWizard.keywords, F.text)
 async def edit_keywords(
-    message: Message, session: AsyncSession, lang: str, state: FSMContext
+    message: Message, user: User, session: AsyncSession, lang: str, state: FSMContext
 ) -> None:
-    rule = await _load_rule(session, state)
+    rule = await _load_rule(session, state, user)
     if rule is None:
         await state.clear()
         return
@@ -141,7 +145,7 @@ async def edit_keywords(
 
 @router.message(EditWizard.price, F.text)
 async def edit_price(
-    message: Message, session: AsyncSession, lang: str, state: FSMContext
+    message: Message, user: User, session: AsyncSession, lang: str, state: FSMContext
 ) -> None:
     parsed = parse_price_range(message.text or "")
     if parsed is None:
@@ -150,7 +154,7 @@ async def edit_price(
             reply_markup=cancel_keyboard(lang),
         )
         return
-    rule = await _load_rule(session, state)
+    rule = await _load_rule(session, state, user)
     if rule is None:
         await state.clear()
         return
@@ -160,9 +164,9 @@ async def edit_price(
 
 @router.message(EditWizard.exclude, F.text)
 async def edit_exclude(
-    message: Message, session: AsyncSession, lang: str, state: FSMContext
+    message: Message, user: User, session: AsyncSession, lang: str, state: FSMContext
 ) -> None:
-    rule = await _load_rule(session, state)
+    rule = await _load_rule(session, state, user)
     if rule is None:
         await state.clear()
         return
@@ -176,14 +180,14 @@ async def edit_exclude(
 
 @router.message(EditWizard.min_score, F.text)
 async def edit_min_score(
-    message: Message, session: AsyncSession, lang: str, state: FSMContext
+    message: Message, user: User, session: AsyncSession, lang: str, state: FSMContext
 ) -> None:
     try:
         score = int((message.text or "").strip())
     except ValueError:
         await message.answer("⚠️ Bitte eine Zahl 0–100 senden.", reply_markup=cancel_keyboard(lang))
         return
-    rule = await _load_rule(session, state)
+    rule = await _load_rule(session, state, user)
     if rule is None:
         await state.clear()
         return
@@ -193,9 +197,9 @@ async def edit_min_score(
 
 @router.message(EditWizard.location, F.text)
 async def edit_location(
-    message: Message, session: AsyncSession, lang: str, state: FSMContext
+    message: Message, user: User, session: AsyncSession, lang: str, state: FSMContext
 ) -> None:
-    rule = await _load_rule(session, state)
+    rule = await _load_rule(session, state, user)
     if rule is None:
         await state.clear()
         return
@@ -215,9 +219,9 @@ async def edit_location(
 # --- Inline-choice handlers -------------------------------------------------------
 @router.callback_query(EditWizard.radius, F.data.startswith("wizrad:"))
 async def edit_radius(
-    cb: CallbackQuery, session: AsyncSession, lang: str, state: FSMContext
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
 ) -> None:
-    rule = await _load_rule(session, state)
+    rule = await _load_rule(session, state, user)
     if rule is None:
         await state.clear()
         await cb.answer()
@@ -234,9 +238,9 @@ async def edit_radius(
 
 @router.callback_query(EditWizard.category, F.data.startswith("wizcat:"))
 async def edit_category(
-    cb: CallbackQuery, session: AsyncSession, lang: str, state: FSMContext
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
 ) -> None:
-    rule = await _load_rule(session, state)
+    rule = await _load_rule(session, state, user)
     if rule is None:
         await state.clear()
         await cb.answer()
@@ -258,7 +262,7 @@ async def edit_interval(
 ) -> None:
     from app.bot.handlers.rules import _clamp_interval_for_tier
 
-    rule = await _load_rule(session, state)
+    rule = await _load_rule(session, state, user)
     if rule is None:
         await state.clear()
         await cb.answer()

@@ -32,8 +32,11 @@ class Payment(Base, PKMixin, TimestampMixin):
     refunded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_renewal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    #: Telegram charge id / future provider transaction id.
-    charge_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    #: Telegram charge id / future provider transaction id. Unique so a
+    #: redelivered ``successful_payment`` update can never be booked twice.
+    charge_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, unique=True, index=True
+    )
     #: The invoice payload, e.g. "premium_monthly" or "premium_monthly:CODE".
     invoice_payload: Mapped[str | None] = mapped_column(String(128), nullable=True)
     #: Coupon code applied to this charge, if any.

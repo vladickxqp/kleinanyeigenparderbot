@@ -7,7 +7,7 @@ object. Secrets are read from the environment and are never written to logs.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import Field, PostgresDsn, RedisDsn, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -126,6 +126,55 @@ class Settings(BaseSettings):
         # We do not raise here so that non-bot components (api/worker) can boot
         # without a token; the bot entrypoint validates presence explicitly.
         return v.strip()
+
+    #: Values that must never survive into a reachable deployment.
+    PLACEHOLDER_SECRETS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "change_me_generate_a_long_random_secret",
+            "change_me_postgres",
+            "change_me",
+            "secret",
+            "password",
+        }
+    )
+
+    def insecure_secrets(self) -> list[str]:
+        """Names of secrets still set to a placeholder or far too short.
+
+        A default JWT secret is not a cosmetic issue: the value is public in
+        this repository, so anyone could mint an admin token for the panel.
+        """
+        problems: list[str] = []
+        if (
+            self.jwt_secret_key in self.PLACEHOLDER_SECRETS
+            or len(self.jwt_secret_key) < 32
+        ):
+            problems.append("JWT_SECRET_KEY")
+        if self.postgres_password in self.PLACEHOLDER_SECRETS:
+            problems.append("POSTGRES_PASSWORD")
+        return problems
+
+    def require_secure_secrets(self) -> None:
+        """Abort startup when a placeholder secret would go live.
+
+        Only enforced outside development so local experiments stay friction
+        free, while a production container refuses to boot half-secured.
+        """
+        problems = self.insecure_secrets()
+        if problems and self.is_production:
+            raise RuntimeError(
+                "Refusing to start: "
+                + ", ".join(problems)
+                + " still use(s) an insecure default. Generate real values, "
+                "e.g. `python -c \"import secrets;print(secrets.token_urlsafe(48))\"`."
+            )
+        if problems:
+            from loguru import logger
+
+            logger.warning(
+                "⚠️ Insecure default secret(s): {}. Fine locally, never in production.",
+                ", ".join(problems),
+            )
 
     # --- Derived / computed -------------------------------------------------
     @computed_field  # type: ignore[prop-decorator]

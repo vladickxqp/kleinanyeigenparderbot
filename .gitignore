@@ -62,3 +62,7 @@ node_modules/
 *.swp
 .DS_Store
 Thumbs.db
+
+# --- Runtime artefacts ---
+backups/
+logs/

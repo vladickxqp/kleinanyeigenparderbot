@@ -25,7 +25,9 @@ from app.database.session import get_session
 from app.services.repositories import UserRepository
 
 #: initData older than this is refused (replay protection).
-MAX_AGE_SECONDS = 24 * 3600
+#: Telegram re-issues initData whenever the Mini App opens, so a short window
+#: is enough — and it keeps a captured string from being replayable all day.
+MAX_AGE_SECONDS = 15 * 60
 
 
 def validate_init_data(

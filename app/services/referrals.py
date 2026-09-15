@@ -77,14 +77,19 @@ async def reward_referrer_if_due(
         return None
 
     from app.database.models import PlanType
-    from app.services.premium import activate_premium
+    from app.services.premium import activate_premium, record_payment
 
-    await activate_premium(
+    sub = await activate_premium(
         session,
         referrer,
         days=settings.referral_reward_days,
         provider="referral",
         plan=PlanType.REFERRAL,
+    )
+    await record_payment(
+        session, referrer, provider="referral", subscription_id=sub.id,
+        status="granted",
+        invoice_payload=f"referral:{settings.referral_reward_days}d",
     )
     referral.rewarded = True
     await session.flush()

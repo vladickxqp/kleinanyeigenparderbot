@@ -1,6 +1,10 @@
-# One-command stack: postgres + redis + api + bot + worker + beat.
+# One-command stack: postgres + redis + api + bot + worker + beat + backup.
 #   cp .env.example .env   (set BOT_TOKEN etc.)
 #   docker compose up -d --build
+#
+# Database and cache are reachable from the host on 127.0.0.1 only — never on
+# the LAN. Every service keeps its logs capped so a long-running home server
+# cannot fill its own disk.
 
 x-app-env: &app-env
   env_file: .env
@@ -10,10 +14,18 @@ x-app-build: &app-build
     context: .
     dockerfile: docker/Dockerfile
 
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
 services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    <<: *logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-parserbot}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_postgres}
@@ -22,7 +34,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"   # host access for tooling, never the LAN
+    mem_limit: 1g
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-parserbot}"]
       interval: 5s
@@ -32,60 +45,158 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    <<: *logging
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - |
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+        else
+          exec redis-server --appendonly yes
+        fi
     volumes:
       - redisdata:/data
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
+    mem_limit: 512m
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
 
-  api:
-    <<: [*app-build, *app-env]
-    restart: unless-stopped
+  # One-shot schema step. Everything else waits for it, so no service can
+  # query a table that does not exist yet.
+  migrate:
+    <<: [*app-build, *app-env, *logging]
+    restart: "no"
     entrypoint: ["bash", "docker/entrypoint.sh"]
+    command: ["python", "-c", "print('schema ready')"]
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  api:
+    <<: [*app-build, *app-env, *logging]
+    restart: unless-stopped
     command:
       ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8001:8000"   # host 8000 is taken by a local PostgreSQL on this machine
+    volumes:
+      - ./logs:/app/logs
+    mem_limit: 768m
+    healthcheck:
+      test:
+        ["CMD", "python", "-c",
+         "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   bot:
-    <<: [*app-build, *app-env]
+    <<: [*app-build, *app-env, *logging]
     restart: unless-stopped
     command: ["python", "-m", "app.bot"]
+    volumes:
+      - ./logs:/app/logs
+    mem_limit: 768m
+    stop_grace_period: 30s
     depends_on:
-      api:
-        condition: service_started
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 
   worker:
-    <<: [*app-build, *app-env]
+    <<: [*app-build, *app-env, *logging]
     restart: unless-stopped
     command:
       ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info",
-       "--concurrency=4"]
+       "--concurrency=${CELERY_CONCURRENCY:-2}"]
+    volumes:
+      - ./logs:/app/logs
+    mem_limit: 3g
+    # Long enough for a running scrape or broadcast batch to finish instead of
+    # being SIGKILLed mid-task on every redeploy.
+    stop_grace_period: 90s
+    healthcheck:
+      test:
+        ["CMD-SHELL",
+         "celery -A app.worker.celery_app inspect ping -d celery@$$HOSTNAME >/dev/null 2>&1"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 40s
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 
   beat:
-    <<: [*app-build, *app-env]
+    <<: [*app-build, *app-env, *logging]
     restart: unless-stopped
+    # The schedule file lives on a volume: without it every container
+    # recreation resets beat's clock and crontab jobs get skipped.
     command:
-      ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info"]
+      ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info",
+       "--schedule=/beat/celerybeat-schedule"]
+    volumes:
+      - beatdata:/beat
+      - ./logs:/app/logs
+    mem_limit: 256m
+    stop_grace_period: 30s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       redis:
+        condition: service_healthy
+
+  # Nightly database dump into ./backups with 14-day retention.
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    <<: *logging
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-change_me_postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-parserbot}
+      POSTGRES_DB: ${POSTGRES_DB:-parserbot}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_PING_URL: ${BACKUP_PING_URL:-}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "backup service started";
+        while true; do
+          ts=$$(date +%Y%m%d-%H%M);
+          if pg_dump -h postgres -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" \
+               | gzip > "/backups/$$POSTGRES_DB-$$ts.sql.gz"; then
+            echo "backup ok: $$POSTGRES_DB-$$ts.sql.gz";
+            [ -n "$$BACKUP_PING_URL" ] && wget -qO- "$$BACKUP_PING_URL" >/dev/null 2>&1;
+          else
+            echo "BACKUP FAILED at $$ts" >&2;
+            rm -f "/backups/$$POSTGRES_DB-$$ts.sql.gz";
+          fi;
+          find /backups -name '*.sql.gz' -mtime +$$BACKUP_KEEP_DAYS -delete;
+          sleep "$$BACKUP_INTERVAL_SECONDS";
+        done
+    depends_on:
+      postgres:
         condition: service_healthy
 
   frontend:
@@ -93,8 +204,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     restart: unless-stopped
+    <<: *logging
     ports:
       - "8080:80"
+    mem_limit: 128m
     depends_on:
       api:
         condition: service_started
@@ -104,9 +217,10 @@ services:
   # Needs CLOUDFLARE_TUNNEL_TOKEN in .env and the tunnel's public hostname
   # routed to http://frontend:80 (Cloudflare Zero Trust → Tunnels).
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2025.8.1
     profiles: ["tunnel"]
     restart: unless-stopped
+    <<: *logging
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
       frontend:
@@ -115,3 +229,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  beatdata:

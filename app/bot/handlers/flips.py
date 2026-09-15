@@ -48,9 +48,13 @@ def _parse_amount(text: str) -> float | None:
 # --- Purchase (from a deal card) ------------------------------------------------------
 @router.callback_query(F.data.startswith("listing:buy:"))
 async def cb_buy(
-    cb: CallbackQuery, session: AsyncSession, state: FSMContext
+    cb: CallbackQuery, user: User, session: AsyncSession, state: FSMContext
 ) -> None:
-    listing = await session.get(Listing, int(cb.data.split(":")[-1]))
+    from app.services.repositories import ListingRepository
+
+    listing = await ListingRepository(session).get_for_user(
+        int(cb.data.split(":")[-1]), user.id
+    )
     if listing is None:
         await cb.answer("Nicht gefunden", show_alert=True)
         return
@@ -77,8 +81,12 @@ async def cmd_flip_cancel(message: Message, state: FSMContext) -> None:
 async def flip_buy_price(
     message: Message, user: User, session: AsyncSession, state: FSMContext
 ) -> None:
+    from app.services.repositories import ListingRepository
+
     data = await state.get_data()
-    listing = await session.get(Listing, int(data.get("flip_listing_id", 0)))
+    listing = await ListingRepository(session).get_for_user(
+        int(data.get("flip_listing_id", 0)), user.id
+    )
     if listing is None:
         await state.clear()
         await message.answer("⚠️ Angebot nicht mehr gefunden.")

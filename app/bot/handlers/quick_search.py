@@ -10,15 +10,20 @@ from __future__ import annotations
 import asyncio
 from html import escape
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database.models import User
 from app.parsers import registry
 from app.parsers.schemas import ParsedListing, SearchQuery
 from app.services.deal_scorer import score_listing
 from app.services.price_analysis import compute_price_stats
 from app.services.relevance import filter_relevant
+from app.services.throttle import manual_run_allowed
 
 router = Router(name="quick_search")
 
@@ -26,12 +31,22 @@ MAX_RESULTS = 8
 
 
 @router.message(Command("suche"))
-async def cmd_suche(message: Message, command: CommandObject) -> None:
+async def cmd_suche(
+    message: Message, user: User, command: CommandObject, state: FSMContext
+) -> None:
     keywords = (command.args or "").strip()
     if not keywords:
         await message.answer(
             "🔍 <b>Schnell-Suche</b> — einmalig suchen, ohne Regel anzulegen.\n\n"
             "Nutzung: <code>/suche tesla model 3</code>"
+        )
+        return
+
+    wait = await manual_run_allowed(user.telegram_id)
+    if wait:
+        await message.answer(
+            f"⏳ Kurz durchatmen — noch {wait}s. "
+            "Zu viele Suchen hintereinander riskieren eine Sperre der Marktplätze."
         )
         return
 
@@ -75,9 +90,60 @@ async def cmd_suche(message: Message, command: CommandObject) -> None:
         if item.location:
             meta.append(escape(item.location))
         lines.append(
-            f"• <a href=\"{item.url}\">{escape(item.title[:70])}</a>\n"
+            f"• <a href=\"{escape(item.url, quote=True)}\">{escape(item.title[:70])}</a>\n"
             f"   {'  ·  '.join(meta)}"
         )
-    lines.append("\n💡 Dauerhaft überwachen? ➕ Neue Suche im /menu anlegen.")
+    lines.append("\n💡 Dauerhaft überwachen? Ein Tipp auf den Knopf genügt.")
 
-    await status.edit_text("\n".join(lines), disable_web_page_preview=True)
+    # Remember the query so the button below can turn it into a real rule.
+    await state.update_data(qs_keywords=keywords[:256])
+    kb = InlineKeyboardBuilder()
+    kb.button(text="➕ Als Dauer-Suche speichern", callback_data="qs:save")
+    await status.edit_text(
+        "\n".join(lines), disable_web_page_preview=True, reply_markup=kb.as_markup()
+    )
+
+
+@router.callback_query(F.data == "qs:save")
+async def cb_save_as_rule(
+    cb: CallbackQuery, user: User, session: AsyncSession, state: FSMContext, lang: str
+) -> None:
+    """Turn the last quick search into a monitored rule in one tap.
+
+    The wizard asks eight questions before showing anything; a user who just
+    saw good results should not have to answer them again. Defaults are used
+    and the edit menu opens right away for fine-tuning.
+    """
+    from app.bot.keyboards import rule_edit_keyboard
+    from app.bot.texts import t
+    from app.config.settings import settings
+    from app.database.models import SearchRule
+    from app.services.repositories import SearchRuleRepository
+
+    data = await state.get_data()
+    keywords = (data.get("qs_keywords") or "").strip()
+    if not keywords:
+        await cb.answer("Bitte /suche erneut ausführen.", show_alert=True)
+        return
+
+    repo = SearchRuleRepository(session)
+    count = await repo.count_for_user(user.id)
+    if user.telegram_id not in settings.admin_ids and count >= user.max_rules:
+        await cb.answer(t("rule.limit_reached", lang, max=user.max_rules), show_alert=True)
+        return
+
+    rule = await repo.add(
+        SearchRule(
+            user_id=user.id,
+            name=keywords[:128],
+            keywords=keywords,
+            interval_seconds=max(user.min_interval_seconds, 300),
+        )
+    )
+    await state.clear()
+    await cb.message.answer(
+        f"✅ <b>{escape(rule.name)}</b> wird jetzt dauerhaft überwacht.\n\n"
+        "Feintuning (Preis, Ort, Kategorie, Intervall) direkt hier:",
+        reply_markup=rule_edit_keyboard(rule, lang),
+    )
+    await cb.answer("✅ Gespeichert")

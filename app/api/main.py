@@ -31,6 +31,8 @@ import app.parsers  # noqa: F401,E402
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ANN201
     setup_logging()
+    # Refuses to boot in production with the repository's default secrets.
+    settings.require_secure_secrets()
     logger.info("API starting (env={}, v{})", settings.environment, __version__)
     yield
     await dispose_engine()

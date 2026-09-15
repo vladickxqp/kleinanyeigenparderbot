@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.settings import settings
 from app.database.models import (
+    Payment,
     PlanType,
     Subscription,
     SubscriptionStatus,
@@ -34,6 +35,14 @@ from app.database.models import (
 
 #: Fixed by the Bot API: the only supported Stars subscription period (30 days).
 TELEGRAM_SUBSCRIPTION_PERIOD = 2_592_000
+
+
+def stars_to_eur(amount_stars: int) -> float:
+    """Convert a Stars amount to the euro value at the configured rate."""
+    if amount_stars <= 0 or settings.premium_price_stars <= 0:
+        return 0.0
+    rate = settings.premium_price_eur / settings.premium_price_stars
+    return round(amount_stars * rate, 2)
 
 
 async def create_invoice_link(
@@ -120,6 +129,21 @@ async def get_active_subscription(
     return result.scalar_one_or_none()
 
 
+async def charge_already_processed(session: AsyncSession, charge_id: str) -> bool:
+    """True when this provider charge was already booked.
+
+    Telegram can redeliver a ``successful_payment`` update (bot restart, network
+    hiccup). Without this check the same money would extend the subscription a
+    second time and show up twice in the ledger.
+    """
+    if not charge_id:
+        return False
+    result = await session.execute(
+        select(Payment.id).where(Payment.charge_id == charge_id).limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def activate_premium(
     session: AsyncSession,
     user: User,
@@ -129,6 +153,7 @@ async def activate_premium(
     plan: PlanType = PlanType.MONTHLY,
     charge_id: str | None = None,
     price_stars: int | None = None,
+    tier: SubscriptionTier | None = None,
 ) -> Subscription:
     """Grant or extend premium for ``user`` and set the effective tier.
 
@@ -166,11 +191,14 @@ async def activate_premium(
         )
         session.add(sub)
 
-    user.subscription = SubscriptionTier.UNLIMITED
+    # Which tier the payment buys is a parameter, not a constant: that is what
+    # makes a second (cheaper) plan sellable next to the unlimited one.
+    user.subscription = tier or SubscriptionTier.UNLIMITED
     await session.flush()
     logger.info(
-        "PREMIUM: {} active until {} (provider={}, charge={})",
-        user.telegram_id, sub.subscription_end, provider, charge_id,
+        "PREMIUM: {} active until {} as {} (provider={}, charge={})",
+        user.telegram_id, sub.subscription_end, user.subscription.value,
+        provider, charge_id,
     )
     return sub
 
@@ -188,7 +216,47 @@ async def deactivate_premium(
         sub.payment_status = status.value
     user.subscription = SubscriptionTier.FREE
     await session.flush()
+    await enforce_tier_limits(session, user)
     logger.info("PREMIUM: {} deactivated ({})", user.telegram_id, status.value)
+
+
+async def enforce_tier_limits(session: AsyncSession, user: User) -> tuple[int, int]:
+    """Bring a user's rules back in line with their CURRENT tier.
+
+    Limits used to be checked only while creating a rule, so a lapsed
+    subscriber kept every rule and the fast interval forever. Returns how many
+    rules were paused and how many intervals were slowed down.
+    """
+    from app.database.models import SearchRule
+
+    result = await session.execute(
+        select(SearchRule)
+        .where(SearchRule.user_id == user.id)
+        .order_by(SearchRule.created_at.asc(), SearchRule.id.asc())
+    )
+    rules = list(result.scalars().all())
+
+    paused = slowed = 0
+    allowed = user.max_rules
+    active_seen = 0
+    for rule in rules:
+        if rule.is_active:
+            active_seen += 1
+            # Keep the oldest rules running, pause what exceeds the quota.
+            if active_seen > allowed:
+                rule.is_active = False
+                paused += 1
+        if rule.interval_seconds < user.min_interval_seconds:
+            rule.interval_seconds = user.min_interval_seconds
+            slowed += 1
+
+    if paused or slowed:
+        await session.flush()
+        logger.info(
+            "TIER: {} reconciled to {} — {} rule(s) paused, {} interval(s) slowed",
+            user.telegram_id, user.subscription.value, paused, slowed,
+        )
+    return paused, slowed
 
 
 async def expire_overdue_subscriptions(session: AsyncSession) -> list[int]:
@@ -208,10 +276,10 @@ async def expire_overdue_subscriptions(session: AsyncSession) -> list[int]:
         sub.status = SubscriptionStatus.EXPIRED
         sub.payment_status = "expired"
         user = await session.get(User, sub.user_id)
-        if user is not None and user.subscription in (
-            SubscriptionTier.UNLIMITED, SubscriptionTier.ULTIMATE
-        ):
+        if user is not None and user.subscription != SubscriptionTier.FREE:
             user.subscription = SubscriptionTier.FREE
+            await session.flush()
+            await enforce_tier_limits(session, user)
             downgraded.append(user.telegram_id)
         logger.info("PREMIUM: subscription {} expired (tg {})", sub.id, sub.telegram_id)
     await session.flush()

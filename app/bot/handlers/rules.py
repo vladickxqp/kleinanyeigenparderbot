@@ -55,10 +55,10 @@ async def cb_list_rules(
 
 @router.callback_query(F.data.startswith("rule:open:"))
 async def cb_open_rule(
-    cb: CallbackQuery, session: AsyncSession, lang: str
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str
 ) -> None:
     rule_id = int(cb.data.split(":")[-1])
-    rule = await SearchRuleRepository(session).get(rule_id)
+    rule = await SearchRuleRepository(session).get(rule_id, user.id)
     if rule is None:
         await cb.answer("Nicht gefunden", show_alert=True)
         return
@@ -93,9 +93,15 @@ async def cb_run_rule(
 ) -> None:
     """Run a rule immediately and deliver the results in-chat (great for testing)."""
     rule_id = int(cb.data.split(":")[-1])
-    rule = await SearchRuleRepository(session).get(rule_id)
+    rule = await SearchRuleRepository(session).get(rule_id, user.id)
     if rule is None:
         await cb.answer("Nicht gefunden", show_alert=True)
+        return
+    from app.services.throttle import manual_run_allowed
+
+    wait = await manual_run_allowed(user.telegram_id)
+    if wait:
+        await cb.answer(f"⏳ Bitte {wait}s warten (Schutz vor Sperren).", show_alert=True)
         return
     await cb.answer("🔍 Suche läuft…")
     status = await cb.message.answer("🔍 Suche läuft, einen Moment…")
@@ -160,10 +166,12 @@ async def _location_note(rule: SearchRule) -> str:
 
 
 @router.callback_query(F.data.startswith("rule:toggle:"))
-async def cb_toggle_rule(cb: CallbackQuery, session: AsyncSession, lang: str) -> None:
+async def cb_toggle_rule(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str
+) -> None:
     rule_id = int(cb.data.split(":")[-1])
     repo = SearchRuleRepository(session)
-    rule = await repo.get(rule_id)
+    rule = await repo.get(rule_id, user.id)
     if rule is None:
         await cb.answer("Nicht gefunden", show_alert=True)
         return
@@ -179,7 +187,7 @@ async def cb_delete_rule(
 ) -> None:
     rule_id = int(cb.data.split(":")[-1])
     repo = SearchRuleRepository(session)
-    rule = await repo.get(rule_id)
+    rule = await repo.get(rule_id, user.id)
     if rule is not None:
         await repo.delete(rule)
         await session.flush()

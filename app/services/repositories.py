@@ -56,7 +56,21 @@ class SearchRuleRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get(self, rule_id: int) -> SearchRule | None:
+    async def get(self, rule_id: int, user_id: int) -> SearchRule | None:
+        """A rule by id, scoped to its owner.
+
+        Callback data is client-controlled: a custom Telegram client can send
+        ``rule:delete:<any id>``. Every user-facing lookup therefore has to
+        prove ownership — use :meth:`get_unscoped` only for system code
+        (worker, admin) that has already established its own authority.
+        """
+        rule = await self.session.get(SearchRule, rule_id)
+        if rule is None or rule.user_id != user_id:
+            return None
+        return rule
+
+    async def get_unscoped(self, rule_id: int) -> SearchRule | None:
+        """A rule by id without an ownership check (worker/admin only)."""
         return await self.session.get(SearchRule, rule_id)
 
     async def list_for_user(self, user_id: int) -> Sequence[SearchRule]:
@@ -91,6 +105,15 @@ class SearchRuleRepository:
 class ListingRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+
+    async def get_for_user(self, listing_id: int, user_id: int) -> Listing | None:
+        """A listing by id, only if it belongs to a rule owned by this user."""
+        result = await self.session.execute(
+            select(Listing)
+            .join(SearchRule, SearchRule.id == Listing.rule_id)
+            .where(Listing.id == listing_id, SearchRule.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
 
     async def existing_fingerprints(self, rule_id: int) -> set[str]:
         result = await self.session.execute(

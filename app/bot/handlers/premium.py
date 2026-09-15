@@ -341,6 +341,12 @@ async def cmd_trial(message: Message, user: User, session: AsyncSession) -> None
         session, user, days=settings.trial_days,
         provider="trial", plan=PlanType.TRIAL,
     )
+    # Grants belong in the ledger too, otherwise /payments and the admin view
+    # cannot explain where a premium came from.
+    await premium.record_payment(
+        session, user, provider="trial", subscription_id=sub.id, status="granted",
+        invoice_payload=f"trial:{settings.trial_days}d",
+    )
     logger.info("TRIAL: {} started ({}d)", user.telegram_id, settings.trial_days)
     await message.answer(
         f"🎉 <b>{settings.trial_days} Tage Premium — geschenkt!</b>\n\n"
@@ -369,11 +375,25 @@ async def cmd_coupon(
         await message.answer(f"😕 {exc}")
         return
 
+    # Acquisition codes are for new customers: an active subscriber must not
+    # stack free days or buy the next months at the newcomer discount.
+    if user.is_paid_tier:
+        await message.answer(
+            "💎 Du hast bereits Premium — Gutscheine gelten nur für Neukunden.\n"
+            "Verschenke den Code doch an jemanden, den du einladen willst. 🎁"
+        )
+        return
+
     if coupon.free_days:
         # Instant benefit: free premium days, counted immediately.
         sub = await premium.activate_premium(
             session, user, days=coupon.free_days,
             provider="coupon", plan=PlanType.COUPON,
+        )
+        await premium.record_payment(
+            session, user, provider="coupon", subscription_id=sub.id,
+            status="granted", coupon_code=code,
+            invoice_payload=f"coupon:{coupon.free_days}d",
         )
         await coupon_svc.mark_redeemed(session, coupon, user.telegram_id)
         await message.answer(
@@ -426,6 +446,13 @@ async def on_successful_payment(
     payment = message.successful_payment
     payload = payment.invoice_payload or ""
     coupon_code = payload.split(":", 1)[1] if ":" in payload else None
+    charge_id = payment.telegram_payment_charge_id
+
+    # Telegram may redeliver an update after a restart. One charge, one grant.
+    if await premium.charge_already_processed(session, charge_id):
+        logger.info("PREMIUM: duplicate charge {} ignored", charge_id)
+        await message.answer("✅ Diese Zahlung ist bereits verbucht. Danke!")
+        return
 
     # Renewal = the user already has paid charges on record.
     prior_payments = await premium.payments_count_for_user(session, user.telegram_id)
@@ -435,7 +462,7 @@ async def on_successful_payment(
         user,
         provider="telegram_stars",
         plan=PlanType.MONTHLY,
-        charge_id=payment.telegram_payment_charge_id,
+        charge_id=charge_id,
         price_stars=payment.total_amount,
     )
     await premium.record_payment(
@@ -443,8 +470,10 @@ async def on_successful_payment(
         user,
         provider="telegram_stars",
         amount_stars=payment.total_amount,
-        amount_eur=settings.premium_price_eur,
-        charge_id=payment.telegram_payment_charge_id,
+        # Book what was actually charged: a discounted (coupon) purchase must
+        # not show up in the revenue report as a full-price sale.
+        amount_eur=premium.stars_to_eur(payment.total_amount),
+        charge_id=charge_id,
         invoice_payload=payload,
         coupon_code=coupon_code,
         subscription_id=sub.id,
