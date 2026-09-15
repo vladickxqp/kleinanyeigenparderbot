@@ -50,4 +50,8 @@ celery_app.conf.beat_schedule = {
         "task": "app.worker.tasks.check_expired_subscriptions",
         "schedule": crontab(hour=3, minute=15),  # nightly downgrade sweep
     },
+    "dispatch-broadcasts": {
+        "task": "app.worker.tasks.dispatch_broadcasts",
+        "schedule": 15.0,  # pick up immediate + due scheduled broadcasts
+    },
 }

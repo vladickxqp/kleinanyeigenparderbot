@@ -9,14 +9,13 @@ Text commands (power users) AND an inline panel (/admin) exist side by side:
 /grant <telegram_id> [tage], /revoke <telegram_id> — ADMIN+
 /newcoupon CODE percent=20|stars=50|days=7 [uses=N] [valid=TAGE] — ADMIN+
 /coupons, /delcoupon CODE — ADMIN+
-/broadcast <text> — ADMIN+
+/broadcast, /broadcasts — see handlers/broadcast.py — ADMIN+
 
 Every admin action is logged.
 """
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timedelta, timezone
 from html import escape
 
@@ -64,9 +63,21 @@ def _panel_keyboard():
     kb.button(text="💳 Zahlungen", callback_data="adminp:payments")
     kb.button(text="🎁 Coupons", callback_data="adminp:coupons")
     kb.button(text="🎫 Referrals", callback_data="adminp:referrals")
+    kb.button(text="📢 Broadcasts", callback_data="adminp:broadcasts")
     kb.button(text="❓ Befehle", callback_data="adminp:help")
-    kb.adjust(2, 2, 2)
+    kb.adjust(2, 2, 2, 1)
     return kb.as_markup()
+
+
+async def _broadcasts_text(session: AsyncSession) -> str:
+    from app.services import broadcasts as bc_svc
+
+    items = await bc_svc.recent_broadcasts(session)
+    if not items:
+        return "📢 Noch keine Broadcasts. Starten: /broadcast"
+    lines = ["📢 <b>Broadcasts</b>\n"] + [bc_svc.summary_line(b) for b in items]
+    lines.append("\nNeu: /broadcast · Verwalten: /broadcasts")
+    return "\n".join(lines)
 
 
 # --- Panel text builders -------------------------------------------------------
@@ -253,7 +264,11 @@ _HELP_TEXT = (
     "<code>/newcoupon CODE percent=20|stars=50|days=7 [uses=N] [valid=TAGE]</code>\n"
     "<code>/coupons</code> · <code>/delcoupon CODE</code>\n\n"
     "<b>Kommunikation</b>\n"
-    "<code>/broadcast &lt;text&gt;</code> — an alle aktiven Nutzer"
+    "<code>/broadcast</code> — Assistent: Text/Foto/Video, Zielgruppe, Button, "
+    "Zeitplan, Vorschau\n"
+    "<code>/broadcast &lt;text&gt;</code> — Schnellversand an alle\n"
+    "<code>/broadcasts</code> — Übersicht, Statistik, geplante abbrechen\n"
+    "<code>/reply &lt;id&gt; &lt;text&gt;</code> — Support-Antwort"
 )
 
 
@@ -289,6 +304,11 @@ async def cb_admin_panel(cb: CallbackQuery, user: User, session: AsyncSession) -
         text = await _coupons_text(session)
     elif section == "referrals":
         text = await _referrals_text(session)
+    elif section == "broadcasts":
+        if not has_role(user, UserRole.ADMIN):
+            await cb.answer("⛔ Nur für Admins", show_alert=True)
+            return
+        text = await _broadcasts_text(session)
     elif section == "help":
         text = _HELP_TEXT
     else:
@@ -549,38 +569,4 @@ async def cmd_delcoupon(
     await message.answer(f"✅ Coupon <code>{coupon.code}</code> deaktiviert.")
 
 
-# --- Broadcast ------------------------------------------------------------------------
-@router.message(Command("broadcast"))
-async def cmd_broadcast(
-    message: Message, user: User, session: AsyncSession, command: CommandObject
-) -> None:
-    if not has_role(user, UserRole.ADMIN):
-        return
-
-    text = (command.args or "").strip()
-    if not text:
-        await message.answer(
-            "Nutzung: <code>/broadcast &lt;Nachricht&gt;</code>\n"
-            "Wird an ALLE aktiven Nutzer gesendet."
-        )
-        return
-
-    result = await session.execute(
-        select(User.telegram_id).where(
-            User.is_active.is_(True), User.is_blocked.is_(False)
-        )
-    )
-    targets = list(result.scalars().all())
-    logger.info(
-        "ADMIN: {} broadcasting to {} user(s)", user.telegram_id, len(targets)
-    )
-
-    sent = 0
-    for tg_id in targets:
-        try:
-            await message.bot.send_message(tg_id, f"📢 {escape(text)}")
-            sent += 1
-        except Exception:  # noqa: BLE001 - blocked users etc.
-            pass
-        await asyncio.sleep(0.05)  # stay well under Telegram's rate limits
-    await message.answer(f"📢 Broadcast an <b>{sent}/{len(targets)}</b> Nutzer gesendet.")
+# Broadcasts live in app/bot/handlers/broadcast.py (wizard, media, scheduling).

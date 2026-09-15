@@ -171,6 +171,25 @@ menu button automatically. With `WEBAPP_URL` empty, nothing changes.
 
 ---
 
+## 📢 Broadcasts (admin)
+
+`/broadcast` opens a wizard: send the announcement to the bot exactly as your
+users should receive it (text, photo, video, document — formatting kept),
+pick the audience (**all / free only / premium only**), optionally attach a
+URL button, then choose *now* or a time (`2h`, `18:30`, `24.12. 18:00`).
+You get a **preview of the real message** before anything is sent.
+
+Delivery runs in the Celery worker, not in the bot: recipients are copied at
+~20 msg/s, Telegram's flood control is honoured, users who blocked the bot are
+counted and **deactivated automatically**, and the admin's status message is
+edited with live progress and a final report (sent / blocked / failed).
+
+- `/broadcast <text>` — one-liner to everyone, no wizard.
+- `/broadcasts` — history with delivery stats; scheduled ones can be cancelled.
+- The admin panel (`/admin`) has the same list under **📢 Broadcasts**.
+
+---
+
 ## ➕ Adding a new marketplace parser
 
 1. Create `app/parsers/sites/<site>.py`.

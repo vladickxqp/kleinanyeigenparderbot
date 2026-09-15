@@ -339,3 +339,107 @@ async def _check_expired_subscriptions() -> int:
     finally:
         await bot.session.close()
     return len(downgraded)
+
+
+# --- Broadcasts -------------------------------------------------------------------
+@celery_app.task(name="app.worker.tasks.dispatch_broadcasts")
+def dispatch_broadcasts() -> int:
+    """Claim immediate and due scheduled broadcasts and enqueue their delivery."""
+    return _run_async(_dispatch_broadcasts())
+
+
+async def _dispatch_broadcasts() -> int:
+    from app.services import broadcasts as bc_svc
+
+    async with session_scope() as session:
+        due = await bc_svc.claim_due(session)
+    for broadcast_id in due:
+        send_broadcast.delay(broadcast_id)
+    return len(due)
+
+
+@celery_app.task(name="app.worker.tasks.send_broadcast")
+def send_broadcast(broadcast_id: int) -> dict:
+    """Deliver one broadcast (rate-limited) with live progress for the admin."""
+    return _run_async(_send_broadcast(broadcast_id))
+
+
+async def _send_broadcast(broadcast_id: int) -> dict:
+    from aiogram import Bot
+    from aiogram.client.default import DefaultBotProperties
+    from aiogram.enums import ParseMode
+    from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    from app.database.models import Broadcast, BroadcastStatus
+    from app.services import broadcasts as bc_svc
+    from app.services.broadcasts import SendResult
+
+    bot = Bot(
+        token=settings.bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+    try:
+        async with session_scope() as session:
+            broadcast = await session.get(Broadcast, broadcast_id)
+            if broadcast is None or broadcast.status not in (
+                BroadcastStatus.SCHEDULED, BroadcastStatus.SENDING
+            ):
+                return {"id": broadcast_id, "skipped": True}
+
+            markup = None
+            if broadcast.button_text and broadcast.button_url:
+                markup = InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(text=broadcast.button_text, url=broadcast.button_url)
+                ]])
+
+            async def deliver(tg_id: int) -> SendResult:
+                for attempt in range(2):
+                    try:
+                        if broadcast.source_message_id:
+                            await bot.copy_message(
+                                chat_id=tg_id,
+                                from_chat_id=broadcast.source_chat_id,
+                                message_id=broadcast.source_message_id,
+                                reply_markup=markup,
+                            )
+                        else:
+                            await bot.send_message(tg_id, broadcast.text or "", reply_markup=markup)
+                        return SendResult.SENT
+                    except TelegramRetryAfter as exc:
+                        # Flood control: wait exactly as long as Telegram asks.
+                        await asyncio.sleep(exc.retry_after + 1)
+                        if attempt == 1:
+                            return SendResult.FAILED
+                    except TelegramForbiddenError:
+                        return SendResult.BLOCKED
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("Broadcast #{} to {} failed: {}", broadcast_id, tg_id, exc)
+                        return SendResult.FAILED
+                return SendResult.FAILED
+
+            async def progress(done: int, total: int) -> None:
+                if broadcast.status_chat_id and broadcast.status_message_id:
+                    await bot.edit_message_text(
+                        f"📢 Sende Broadcast #{broadcast.id}… <b>{done}/{total}</b>",
+                        chat_id=broadcast.status_chat_id,
+                        message_id=broadcast.status_message_id,
+                    )
+
+            await bc_svc.run_broadcast(session, broadcast, deliver, progress_fn=progress)
+
+            if broadcast.status_chat_id and broadcast.status_message_id:
+                try:
+                    await bot.edit_message_text(
+                        bc_svc.format_report(broadcast),
+                        chat_id=broadcast.status_chat_id,
+                        message_id=broadcast.status_message_id,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Broadcast report edit failed: {}", exc)
+            return {
+                "id": broadcast.id, "sent": broadcast.sent,
+                "blocked": broadcast.blocked, "failed": broadcast.failed,
+            }
+    finally:
+        await bot.session.close()

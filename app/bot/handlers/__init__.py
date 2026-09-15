@@ -6,6 +6,7 @@ from aiogram import Router
 
 from app.bot.handlers import (
     admin,
+    broadcast,
     edit_rule,
     flips,
     listings,
@@ -24,6 +25,7 @@ def build_router() -> Router:
     """Combine all feature routers. Order matters: specific before generic."""
     root = Router(name="root")
     root.include_router(admin.router)
+    root.include_router(broadcast.router)
     root.include_router(premium.router)
     root.include_router(support.router)
     root.include_router(flips.router)
