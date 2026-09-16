@@ -541,6 +541,452 @@ _TEXTS: dict[str, dict[str, str]] = {
         "ru": "🔐 Твои данные: /privacy · Выгрузка: /meinedaten · Удалить: /loeschen",
         "uk": "🔐 Твої дані: /privacy · Вивантаження: /meinedaten · Видалити: /loeschen",
     },
+    "privacy.page": {
+        "de": "🔐 <b>Deine Daten</b>\n\n"
+        "<b>Was gespeichert wird</b>\n"
+        "• Telegram-ID, Name/Username, Sprache\n"
+        "• Deine Suchen (Begriffe, Ort, Preisrahmen, Intervall)\n"
+        "• Gefundene Anzeigen deiner Suchen samt Favoriten und Preisverlauf\n"
+        "• Deine Flips (Kauf-/Verkaufspreis, Gewinn)\n"
+        "• Zahlungen: Betrag, Datum, Zahlungs-ID von Telegram\n\n"
+        "<b>Was NICHT gespeichert wird</b>\n"
+        "• Keine Telefonnummer, keine Adresse, keine Zahlungsdaten — "
+        "die Abwicklung läuft komplett bei Telegram\n\n"
+        "<b>Fotos</b>\n"
+        "Bilder für die Foto-Bewertung werden zur Erkennung an einen "
+        "KI-Dienst übertragen und danach nicht dauerhaft gespeichert.\n\n"
+        "<b>Deine Rechte</b>\n"
+        "• /meinedaten — Export als JSON-Datei\n"
+        "• /loeschen — alles endgültig löschen\n\n"
+        "Fragen? /support",
+        "en": "🔐 <b>Your data</b>\n\n"
+        "<b>What is stored</b>\n"
+        "• Telegram ID, name/username, language\n"
+        "• Your search rules (terms, place, price range, interval)\n"
+        "• Listings your rules found, including favorites and price history\n"
+        "• Your flips (buy/sell price, profit)\n"
+        "• Payments: amount, date, payment ID from Telegram\n\n"
+        "<b>What is NOT stored</b>\n"
+        "• No phone number, no address, no payment details — "
+        "Telegram handles the whole transaction\n\n"
+        "<b>Photos</b>\n"
+        "Images for the photo valuation are passed to an AI service for "
+        "recognition and are not kept permanently afterwards.\n\n"
+        "<b>Your rights</b>\n"
+        "• /meinedaten — export as a JSON file\n"
+        "• /loeschen — erase everything for good\n\n"
+        "Questions? /support",
+        "ru": "🔐 <b>Твои данные</b>\n\n"
+        "<b>Что сохраняется</b>\n"
+        "• Telegram-ID, имя/username, язык\n"
+        "• Твои правила поиска (запросы, место, диапазон цен, интервал)\n"
+        "• Найденные объявления вместе с избранным и историей цен\n"
+        "• Твои флипы (цена покупки/продажи, прибыль)\n"
+        "• Платежи: сумма, дата, ID платежа от Telegram\n\n"
+        "<b>Что НЕ сохраняется</b>\n"
+        "• Ни номера телефона, ни адреса, ни платёжных данных — "
+        "вся оплата проходит на стороне Telegram\n\n"
+        "<b>Фото</b>\n"
+        "Снимки для оценки по фото передаются на распознавание в ИИ-сервис "
+        "и после этого постоянно не хранятся.\n\n"
+        "<b>Твои права</b>\n"
+        "• /meinedaten — выгрузка в виде JSON-файла\n"
+        "• /loeschen — удалить всё окончательно\n\n"
+        "Вопросы? /support",
+        "uk": "🔐 <b>Твої дані</b>\n\n"
+        "<b>Що зберігається</b>\n"
+        "• Telegram-ID, ім'я/username, мова\n"
+        "• Твої правила пошуку (запити, місце, діапазон цін, інтервал)\n"
+        "• Знайдені оголошення разом з обраним та історією цін\n"
+        "• Твої фліпи (ціна купівлі/продажу, прибуток)\n"
+        "• Платежі: сума, дата, ID платежу від Telegram\n\n"
+        "<b>Що НЕ зберігається</b>\n"
+        "• Ні номера телефону, ні адреси, ні платіжних даних — "
+        "уся оплата проходить на боці Telegram\n\n"
+        "<b>Фото</b>\n"
+        "Знімки для оцінки за фото передаються на розпізнавання в ШІ-сервіс "
+        "і після цього постійно не зберігаються.\n\n"
+        "<b>Твої права</b>\n"
+        "• /meinedaten — вивантаження у вигляді JSON-файлу\n"
+        "• /loeschen — видалити все остаточно\n\n"
+        "Питання? /support",
+    },
+    "privacy.export_caption": {
+        "de": "📦 Das ist alles, was über dich gespeichert ist.",
+        "en": "📦 That is everything stored about you.",
+        "ru": "📦 Это всё, что о тебе сохранено.",
+        "uk": "📦 Це все, що про тебе збережено.",
+    },
+    #: Attachment name of the data export — ASCII only, it travels as a filename.
+    "privacy.export_filename": {
+        "de": "meine-daten-{id}.json",
+        "en": "my-data-{id}.json",
+        "ru": "moi-dannye-{id}.json",
+        "uk": "moi-dani-{id}.json",
+    },
+    "privacy.delete_confirm": {
+        "de": "🗑 <b>Alle Daten löschen?</b>\n\n"
+        "Das entfernt endgültig: dein Profil, alle Suchen, alle gefundenen "
+        "Anzeigen, Favoriten und Flips.\n\n"
+        "⚠️ Ein laufendes Premium-Abo musst du <b>vorher</b> in Telegram "
+        "kündigen — sonst läuft die Abbuchung weiter.\n"
+        "ℹ️ Zahlungsbelege bleiben anonymisiert erhalten (gesetzliche "
+        "Aufbewahrungspflicht), sie lassen sich dir dann nicht mehr zuordnen.",
+        "en": "🗑 <b>Delete all data?</b>\n\n"
+        "This permanently removes: your profile, every search rule, every "
+        "listing found for you, favorites and flips.\n\n"
+        "⚠️ A running Premium plan has to be cancelled in Telegram "
+        "<b>first</b> — otherwise the charges keep running.\n"
+        "ℹ️ Payment records stay in anonymised form (legal retention duty); "
+        "they can no longer be linked to you.",
+        "ru": "🗑 <b>Удалить все данные?</b>\n\n"
+        "Окончательно удаляются: твой профиль, все правила поиска, все "
+        "найденные объявления, избранное и флипы.\n\n"
+        "⚠️ Действующую подписку Premium нужно <b>сначала</b> отменить в "
+        "Telegram — иначе списания продолжатся.\n"
+        "ℹ️ Платёжные записи остаются обезличенными (требование закона о "
+        "хранении), связать их с тобой уже нельзя.",
+        "uk": "🗑 <b>Видалити всі дані?</b>\n\n"
+        "Остаточно видаляються: твій профіль, усі правила пошуку, усі "
+        "знайдені оголошення, обране та фліпи.\n\n"
+        "⚠️ Чинну підписку Premium треба <b>спершу</b> скасувати в "
+        "Telegram — інакше списання триватимуть.\n"
+        "ℹ️ Платіжні записи лишаються знеособленими (вимога закону про "
+        "зберігання), пов'язати їх із тобою вже не можна.",
+    },
+    "privacy.btn_delete_all": {
+        "de": "🗑 Ja, alles löschen", "en": "🗑 Yes, erase everything",
+        "ru": "🗑 Да, удалить всё", "uk": "🗑 Так, видалити все",
+    },
+    "privacy.delete_aborted": {
+        "de": "✅ Nichts gelöscht — alles bleibt wie es ist.",
+        "en": "✅ Nothing erased — everything stays as it is.",
+        "ru": "✅ Ничего не удалено — всё осталось как было.",
+        "uk": "✅ Нічого не видалено — усе лишилося як було.",
+    },
+    "privacy.deleted": {
+        "de": "🗑 Erledigt, {name}. Alle deine Daten sind gelöscht.\n\n"
+        "Mit /start kannst du jederzeit neu anfangen — dann wie ein "
+        "komplett neuer Nutzer.",
+        "en": "🗑 Done, {name}. All of your data is gone.\n\n"
+        "You can start over any time with /start — as a completely new user.",
+        "ru": "🗑 Готово, {name}. Все твои данные удалены.\n\n"
+        "Начать заново можно в любой момент через /start — уже как "
+        "совершенно новый пользователь.",
+        "uk": "🗑 Готово, {name}. Усі твої дані видалено.\n\n"
+        "Почати заново можна будь-коли через /start — уже як цілком "
+        "новий користувач.",
+    },
+    "privacy.deleted_toast": {
+        "de": "Gelöscht", "en": "Erased",
+        "ru": "Удалено", "uk": "Видалено",
+    },
+
+    # --- Support chat ------------------------------------------------------
+    "support.prompt": {
+        "de": "💬 <b>Support</b>\n\n"
+        "Schreib mir jetzt deine Frage oder dein Problem in EINER Nachricht — "
+        "ich leite sie direkt an das Team weiter.\n"
+        "(/cancel zum Abbrechen)",
+        "en": "💬 <b>Support</b>\n\n"
+        "Write your question or problem in ONE message now — I pass it "
+        "straight on to the team.\n"
+        "(/cancel to abort)",
+        "ru": "💬 <b>Поддержка</b>\n\n"
+        "Напиши свой вопрос или проблему ОДНИМ сообщением — я передам его "
+        "прямо команде.\n"
+        "(/cancel — отмена)",
+        "uk": "💬 <b>Підтримка</b>\n\n"
+        "Напиши своє питання або проблему ОДНИМ повідомленням — я передам "
+        "його прямо команді.\n"
+        "(/cancel — скасувати)",
+    },
+    "support.empty": {
+        "de": "⚠️ Leere Nachricht — bitte nochmal /support.",
+        "en": "⚠️ Empty message — please use /support again.",
+        "ru": "⚠️ Пустое сообщение — попробуй /support ещё раз.",
+        "uk": "⚠️ Порожнє повідомлення — спробуй /support ще раз.",
+    },
+    "support.delivered": {
+        "de": "✅ Deine Nachricht ist beim Team! Du bekommst die Antwort "
+        "direkt hier im Chat.",
+        "en": "✅ Your message reached the team! The answer lands right here "
+        "in the chat.",
+        "ru": "✅ Твоё сообщение у команды! Ответ придёт прямо сюда, в чат.",
+        "uk": "✅ Твоє повідомлення в команди! Відповідь прийде прямо сюди, "
+        "у чат.",
+    },
+    "support.undelivered": {
+        "de": "⚠️ Gerade ist leider kein Team-Mitglied erreichbar — deine "
+        "Nachricht konnte nicht zugestellt werden. Bitte versuch es "
+        "später nochmal.",
+        "en": "⚠️ No one from the team is reachable right now — your message "
+        "could not be delivered. Please try again later.",
+        "ru": "⚠️ Сейчас никто из команды недоступен — сообщение не "
+        "доставлено. Попробуй, пожалуйста, позже.",
+        "uk": "⚠️ Зараз ніхто з команди недоступний — повідомлення не "
+        "доставлено. Спробуй, будь ласка, пізніше.",
+    },
+    "support.answer": {
+        "de": "💬 <b>Antwort vom Support:</b>\n\n{text}\n\n"
+        "Weitere Fragen? Einfach nochmal /support.",
+        "en": "💬 <b>Reply from support:</b>\n\n{text}\n\n"
+        "More questions? Just use /support again.",
+        "ru": "💬 <b>Ответ поддержки:</b>\n\n{text}\n\n"
+        "Ещё вопросы? Просто снова /support.",
+        "uk": "💬 <b>Відповідь підтримки:</b>\n\n{text}\n\n"
+        "Ще питання? Просто знову /support.",
+    },
+
+    # --- Flip tracker (/flips, /profit) -------------------------------------
+    "flip.not_found": {
+        "de": "Nicht gefunden", "en": "Not found",
+        "ru": "Не найдено", "uk": "Не знайдено",
+    },
+    "flip.listing_gone": {
+        "de": "⚠️ Angebot nicht mehr gefunden.",
+        "en": "⚠️ That listing is gone.",
+        "ru": "⚠️ Объявление больше не найдено.",
+        "uk": "⚠️ Оголошення більше не знайдено.",
+    },
+    "flip.gone": {
+        "de": "⚠️ Flip nicht mehr gefunden.",
+        "en": "⚠️ That flip is gone.",
+        "ru": "⚠️ Флип больше не найден.",
+        "uk": "⚠️ Фліп більше не знайдено.",
+    },
+    "flip.need_amount": {
+        "de": "⚠️ Bitte einen Betrag senden, z. B. <code>{example}</code>.",
+        "en": "⚠️ Please send an amount, e.g. <code>{example}</code>.",
+        "ru": "⚠️ Пришли сумму, например <code>{example}</code>.",
+        "uk": "⚠️ Надішли суму, наприклад <code>{example}</code>.",
+    },
+    "flip.ask_buy_price": {
+        "de": "🛒 <b>{title}</b>\n\n"
+        "Für wie viel hast du gekauft? Angebotspreis: <b>{price}</b>\n"
+        "Zahl senden — oder <code>ok</code>, wenn du zum Angebotspreis "
+        "gekauft hast.\n"
+        "(/cancel zum Abbrechen)",
+        "en": "🛒 <b>{title}</b>\n\n"
+        "What did you pay? Listed price: <b>{price}</b>\n"
+        "Send a number — or <code>ok</code> if you paid the listed price.\n"
+        "(/cancel to abort)",
+        "ru": "🛒 <b>{title}</b>\n\n"
+        "За сколько ты купил? Цена объявления: <b>{price}</b>\n"
+        "Пришли число — или <code>ok</code>, если купил по цене "
+        "объявления.\n"
+        "(/cancel — отмена)",
+        "uk": "🛒 <b>{title}</b>\n\n"
+        "За скільки ти купив? Ціна оголошення: <b>{price}</b>\n"
+        "Надішли число — або <code>ok</code>, якщо купив за ціною "
+        "оголошення.\n"
+        "(/cancel — скасувати)",
+    },
+    "flip.expected_net": {
+        "de": "\n📈 Erwarteter Netto-Gewinn beim Verkauf zum Marktpreis "
+        "({market}): <b>{net}</b>",
+        "en": "\n📈 Expected net profit when sold at market price "
+        "({market}): <b>{net}</b>",
+        "ru": "\n📈 Ожидаемая чистая прибыль при продаже по рыночной цене "
+        "({market}): <b>{net}</b>",
+        "uk": "\n📈 Очікуваний чистий прибуток під час продажу за ринковою "
+        "ціною ({market}): <b>{net}</b>",
+    },
+    "flip.bought": {
+        "de": "✅ Gekauft für <b>{price}</b> — im Lager.{extra}\n\n"
+        "📦 Offen: {open} Flip(s), investiert {invested}\n"
+        "Verkauft? → /flips → {sold}",
+        "en": "✅ Bought for <b>{price}</b> — in your inventory.{extra}\n\n"
+        "📦 Open: {open} flip(s), {invested} invested\n"
+        "Sold it? → /flips → {sold}",
+        "ru": "✅ Куплено за <b>{price}</b> — на складе.{extra}\n\n"
+        "📦 Открыто: {open} флип(ов), вложено {invested}\n"
+        "Продал? → /flips → {sold}",
+        "uk": "✅ Куплено за <b>{price}</b> — на складі.{extra}\n\n"
+        "📦 Відкрито: {open} фліп(ів), вкладено {invested}\n"
+        "Продав? → /flips → {sold}",
+    },
+    "flip.title": {
+        "de": "📦 <b>Meine Flips</b>", "en": "📦 <b>My flips</b>",
+        "ru": "📦 <b>Мои флипы</b>", "uk": "📦 <b>Мої фліпи</b>",
+    },
+    "flip.mode_line": {
+        "de": "🎯 Flip-Modus: <b>{mode}</b>", "en": "🎯 Flip mode: <b>{mode}</b>",
+        "ru": "🎯 Режим флипа: <b>{mode}</b>", "uk": "🎯 Режим фліпа: <b>{mode}</b>",
+    },
+    "flip.mode_off": {"de": "aus", "en": "off", "ru": "выкл", "uk": "вимк"},
+    "flip.mode_min": {
+        "de": "≥ {amount} netto", "en": "≥ {amount} net",
+        "ru": "≥ {amount} чистыми", "uk": "≥ {amount} чистими",
+    },
+    "flip.realised": {
+        "de": "💰 Realisierter Gewinn: <b>{net}</b> ({count} verkauft) · "
+        "30 Tage: {net30}",
+        "en": "💰 Realised profit: <b>{net}</b> ({count} sold) · "
+        "30 days: {net30}",
+        "ru": "💰 Реализованная прибыль: <b>{net}</b> (продано {count}) · "
+        "30 дней: {net30}",
+        "uk": "💰 Реалізований прибуток: <b>{net}</b> (продано {count}) · "
+        "30 днів: {net30}",
+    },
+    "flip.in_stock": {
+        "de": "📦 Im Lager: <b>{count}</b> · investiert {invested}",
+        "en": "📦 In stock: <b>{count}</b> · {invested} invested",
+        "ru": "📦 На складе: <b>{count}</b> · вложено {invested}",
+        "uk": "📦 На складі: <b>{count}</b> · вкладено {invested}",
+    },
+    "flip.stock_header": {
+        "de": "<b>Im Lager:</b>", "en": "<b>In stock:</b>",
+        "ru": "<b>На складе:</b>", "uk": "<b>На складі:</b>",
+    },
+    "flip.stock_row": {
+        "de": "• <b>{title}</b> — gekauft {price} ({date})",
+        "en": "• <b>{title}</b> — bought {price} ({date})",
+        "ru": "• <b>{title}</b> — куплено {price} ({date})",
+        "uk": "• <b>{title}</b> — куплено {price} ({date})",
+    },
+    "flip.stock_empty": {
+        "de": "Noch nichts im Lager. Auf einer Deal-Karte 🛒 drücken.",
+        "en": "Nothing in stock yet. Tap 🛒 on a deal card.",
+        "ru": "На складе пока пусто. Нажми 🛒 на карточке сделки.",
+        "uk": "На складі поки порожньо. Натисни 🛒 на картці угоди.",
+    },
+    "flip.btn_sold": {
+        "de": "✅ Verkauft: {title}", "en": "✅ Sold: {title}",
+        "ru": "✅ Продано: {title}", "uk": "✅ Продано: {title}",
+    },
+    "flip.sold_word": {
+        "de": "✅ Verkauft", "en": "✅ Sold",
+        "ru": "✅ Продано", "uk": "✅ Продано",
+    },
+    "flip.btn_profit": {
+        "de": "📈 Gewinn-Statistik", "en": "📈 Profit stats",
+        "ru": "📈 Статистика прибыли", "uk": "📈 Статистика прибутку",
+    },
+    "flip.btn_mode": {
+        "de": "🎯 Flip-Modus", "en": "🎯 Flip mode",
+        "ru": "🎯 Режим флипа", "uk": "🎯 Режим фліпа",
+    },
+    "flip.btn_back_to_flips": {
+        "de": "⬅️ Zu den Flips", "en": "⬅️ Back to the flips",
+        "ru": "⬅️ К флипам", "uk": "⬅️ До фліпів",
+    },
+    "flip.removed": {
+        "de": "✖️ Entfernt", "en": "✖️ Removed",
+        "ru": "✖️ Удалено", "uk": "✖️ Видалено",
+    },
+    "flip.ask_sell_price": {
+        "de": "💸 <b>{title}</b>\n"
+        "Gekauft für {price}. Für wie viel verkauft?\n"
+        "(/cancel zum Abbrechen)",
+        "en": "💸 <b>{title}</b>\n"
+        "Bought for {price}. What did you sell it for?\n"
+        "(/cancel to abort)",
+        "ru": "💸 <b>{title}</b>\n"
+        "Куплено за {price}. За сколько продал?\n"
+        "(/cancel — отмена)",
+        "uk": "💸 <b>{title}</b>\n"
+        "Куплено за {price}. За скільки продав?\n"
+        "(/cancel — скасувати)",
+    },
+    "flip.sold_result": {
+        "de": "{icon} <b>Verkauft für {price}</b>\n\n"
+        "Einkauf {buy} · Gebühren+Versand {fees}\n"
+        "💰 Netto-Gewinn: <b>{net}</b> (ROI {roi})\n\n"
+        "📈 Gesamt realisiert: <b>{total}</b> aus {count} Flip(s)",
+        "en": "{icon} <b>Sold for {price}</b>\n\n"
+        "Purchase {buy} · fees+shipping {fees}\n"
+        "💰 Net profit: <b>{net}</b> (ROI {roi})\n\n"
+        "📈 Realised in total: <b>{total}</b> from {count} flip(s)",
+        "ru": "{icon} <b>Продано за {price}</b>\n\n"
+        "Покупка {buy} · комиссии+доставка {fees}\n"
+        "💰 Чистая прибыль: <b>{net}</b> (ROI {roi})\n\n"
+        "📈 Всего реализовано: <b>{total}</b> из {count} флип(ов)",
+        "uk": "{icon} <b>Продано за {price}</b>\n\n"
+        "Купівля {buy} · комісії+доставка {fees}\n"
+        "💰 Чистий прибуток: <b>{net}</b> (ROI {roi})\n\n"
+        "📈 Усього реалізовано: <b>{total}</b> з {count} фліп(ів)",
+    },
+    "flip.profit_title": {
+        "de": "📈 <b>Gewinn-Statistik</b>", "en": "📈 <b>Profit stats</b>",
+        "ru": "📈 <b>Статистика прибыли</b>", "uk": "📈 <b>Статистика прибутку</b>",
+    },
+    "flip.profit_empty": {
+        "de": "Noch keine Flips. Auf einer Deal-Karte 🛒 drücken, wenn du "
+        "kaufst — ab dann rechnet der Bot deinen echten Gewinn mit.",
+        "en": "No flips yet. Tap 🛒 on a deal card when you buy — from then "
+        "on the bot tracks your real profit.",
+        "ru": "Флипов пока нет. Нажми 🛒 на карточке сделки при покупке — "
+        "дальше бот считает твою реальную прибыль.",
+        "uk": "Фліпів поки немає. Натисни 🛒 на картці угоди під час "
+        "покупки — далі бот рахує твій реальний прибуток.",
+    },
+    "flip.profit_total": {
+        "de": "💰 Netto-Gewinn gesamt: <b>{net}</b>",
+        "en": "💰 Net profit in total: <b>{net}</b>",
+        "ru": "💰 Чистая прибыль всего: <b>{net}</b>",
+        "uk": "💰 Чистий прибуток усього: <b>{net}</b>",
+    },
+    "flip.profit_30d": {
+        "de": "📅 Letzte 30 Tage: <b>{net}</b>",
+        "en": "📅 Last 30 days: <b>{net}</b>",
+        "ru": "📅 Последние 30 дней: <b>{net}</b>",
+        "uk": "📅 Останні 30 днів: <b>{net}</b>",
+    },
+    "flip.profit_sold": {
+        "de": "🛒 Verkauft: {count} · Umsatz {revenue} · Gebühren {fees}",
+        "en": "🛒 Sold: {count} · revenue {revenue} · fees {fees}",
+        "ru": "🛒 Продано: {count} · оборот {revenue} · комиссии {fees}",
+        "uk": "🛒 Продано: {count} · оборот {revenue} · комісії {fees}",
+    },
+    "flip.profit_margin": {
+        "de": "📊 Ø Marge auf Einkauf: <b>{percent}%</b>",
+        "en": "📊 Avg. margin on purchase: <b>{percent}%</b>",
+        "ru": "📊 Средняя маржа к закупке: <b>{percent}%</b>",
+        "uk": "📊 Середня маржа до закупівлі: <b>{percent}%</b>",
+    },
+    "flip.profit_best": {
+        "de": "🏆 Bester Flip: {title} (+{net})",
+        "en": "🏆 Best flip: {title} (+{net})",
+        "ru": "🏆 Лучший флип: {title} (+{net})",
+        "uk": "🏆 Найкращий фліп: {title} (+{net})",
+    },
+    "flip.profit_stock": {
+        "de": "📦 Im Lager: {count} · gebunden {invested}",
+        "en": "📦 In stock: {count} · {invested} tied up",
+        "ru": "📦 На складе: {count} · заморожено {invested}",
+        "uk": "📦 На складі: {count} · заморожено {invested}",
+    },
+    "flip.mode_title": {
+        "de": "🎯 <b>Flip-Modus</b>", "en": "🎯 <b>Flip mode</b>",
+        "ru": "🎯 <b>Режим флипа</b>", "uk": "🎯 <b>Режим фліпа</b>",
+    },
+    "flip.mode_body": {
+        "de": "Nur Angebote liefern, deren <b>erwarteter Netto-Gewinn</b> "
+        "(Marktpreis − Gebühren − Versand − Kaufpreis) mindestens so hoch "
+        "ist:\n\nAlles andere wird still verworfen. Preisstürze zählen mit.",
+        "en": "Only deliver listings whose <b>expected net profit</b> "
+        "(market price − fees − shipping − purchase price) is at least "
+        "this high:\n\nEverything else is dropped silently. Price drops "
+        "count as well.",
+        "ru": "Присылать только объявления, у которых <b>ожидаемая чистая "
+        "прибыль</b> (рыночная цена − комиссии − доставка − цена покупки) "
+        "не ниже:\n\nВсё остальное тихо отбрасывается. Падения цен тоже "
+        "учитываются.",
+        "uk": "Надсилати лише оголошення, у яких <b>очікуваний чистий "
+        "прибуток</b> (ринкова ціна − комісії − доставка − ціна купівлі) "
+        "не нижчий:\n\nУсе інше тихо відкидається. Падіння цін теж "
+        "враховуються.",
+    },
+    "flip.mode_btn_off": {
+        "de": "Aus (alles zeigen)", "en": "Off (show everything)",
+        "ru": "Выкл (показывать всё)", "uk": "Вимк (показувати все)",
+    },
+    "flip.mode_set": {
+        "de": "🎯 Flip-Modus: {mode}", "en": "🎯 Flip mode: {mode}",
+        "ru": "🎯 Режим флипа: {mode}", "uk": "🎯 Режим фліпа: {mode}",
+    },
+
     # --- Quota wording (shared by /premium, /usage and every cap message) ----
     "quota.unlimited": {"de": "unbegrenzt", "en": "unlimited",
                         "ru": "\u0431\u0435\u0437 \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u0439",

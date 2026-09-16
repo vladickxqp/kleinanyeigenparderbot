@@ -18,39 +18,27 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot.texts import t
 from app.config.settings import settings
 from app.database.models import Flip, Listing, Payment, SearchRule, User
 
 router = Router(name="privacy")
 
-PRIVACY_TEXT = (
-    "🔐 <b>Deine Daten</b>\n\n"
-    "<b>Was gespeichert wird</b>\n"
-    "• Telegram-ID, Name/Username, Sprache\n"
-    "• Deine Suchen (Begriffe, Ort, Preisrahmen, Intervall)\n"
-    "• Gefundene Anzeigen deiner Suchen samt Favoriten und Preisverlauf\n"
-    "• Deine Flips (Kauf-/Verkaufspreis, Gewinn)\n"
-    "• Zahlungen: Betrag, Datum, Zahlungs-ID von Telegram\n\n"
-    "<b>Was NICHT gespeichert wird</b>\n"
-    "• Keine Telefonnummer, keine Adresse, keine Zahlungsdaten — "
-    "die Abwicklung läuft komplett bei Telegram\n\n"
-    "<b>Fotos</b>\n"
-    "Bilder für die Foto-Bewertung werden zur Erkennung an einen "
-    "KI-Dienst übertragen und danach nicht dauerhaft gespeichert.\n\n"
-    "<b>Deine Rechte</b>\n"
-    "• /meinedaten — Export als JSON-Datei\n"
-    "• /loeschen — alles endgültig löschen\n\n"
-    "Fragen? /support"
-)
+
+def privacy_text(lang: str | None = None) -> str:
+    """What the bot stores, in the reader's language."""
+    return t("privacy.page", lang)
 
 
 @router.message(Command("privacy", "datenschutz"))
-async def cmd_privacy(message: Message) -> None:
-    await message.answer(PRIVACY_TEXT, disable_web_page_preview=True)
+async def cmd_privacy(message: Message, lang: str) -> None:
+    await message.answer(privacy_text(lang), disable_web_page_preview=True)
 
 
 @router.message(Command("meinedaten", "mydata"))
-async def cmd_export(message: Message, user: User, session: AsyncSession) -> None:
+async def cmd_export(
+    message: Message, user: User, session: AsyncSession, lang: str
+) -> None:
     """Send everything stored about this user as one JSON file."""
     rules = (
         await session.execute(select(SearchRule).where(SearchRule.user_id == user.id))
@@ -126,37 +114,42 @@ async def cmd_export(message: Message, user: User, session: AsyncSession) -> Non
     }
     blob = json.dumps(export, ensure_ascii=False, indent=2).encode("utf-8")
     await message.answer_document(
-        BufferedInputFile(blob, filename=f"meine-daten-{user.telegram_id}.json"),
-        caption="📦 Das ist alles, was über dich gespeichert ist.",
+        BufferedInputFile(
+            blob,
+            filename=t("privacy.export_filename", lang, id=user.telegram_id),
+        ),
+        caption=t("privacy.export_caption", lang),
     )
 
 
-@router.message(Command("loeschen", "delete_my_data"))
-async def cmd_delete(message: Message) -> None:
+def delete_confirm_keyboard(lang: str | None = None):
     kb = InlineKeyboardBuilder()
-    kb.button(text="🗑 Ja, alles löschen", callback_data="privacy:delete:confirm")
-    kb.button(text="✖️ Abbrechen", callback_data="privacy:delete:cancel")
+    kb.button(
+        text=t("privacy.btn_delete_all", lang), callback_data="privacy:delete:confirm"
+    )
+    kb.button(text=t("btn.cancel", lang), callback_data="privacy:delete:cancel")
     kb.adjust(1)
+    return kb.as_markup()
+
+
+@router.message(Command("loeschen", "delete_my_data"))
+async def cmd_delete(message: Message, lang: str) -> None:
     await message.answer(
-        "🗑 <b>Alle Daten löschen?</b>\n\n"
-        "Das entfernt endgültig: dein Profil, alle Suchen, alle gefundenen "
-        "Anzeigen, Favoriten und Flips.\n\n"
-        "⚠️ Ein laufendes Premium-Abo musst du <b>vorher</b> in Telegram "
-        "kündigen — sonst läuft die Abbuchung weiter.\n"
-        "ℹ️ Zahlungsbelege bleiben anonymisiert erhalten (gesetzliche "
-        "Aufbewahrungspflicht), sie lassen sich dir dann nicht mehr zuordnen.",
-        reply_markup=kb.as_markup(),
+        t("privacy.delete_confirm", lang),
+        reply_markup=delete_confirm_keyboard(lang),
     )
 
 
 @router.callback_query(F.data == "privacy:delete:cancel")
-async def cb_cancel(cb: CallbackQuery) -> None:
-    await cb.message.edit_text("✅ Nichts gelöscht — alles bleibt wie es ist.")
+async def cb_cancel(cb: CallbackQuery, lang: str) -> None:
+    await cb.message.edit_text(t("privacy.delete_aborted", lang))
     await cb.answer()
 
 
 @router.callback_query(F.data == "privacy:delete:confirm")
-async def cb_confirm(cb: CallbackQuery, user: User, session: AsyncSession) -> None:
+async def cb_confirm(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str
+) -> None:
     telegram_id = user.telegram_id
     name = escape(user.display_name)
 
@@ -180,14 +173,11 @@ async def cb_confirm(cb: CallbackQuery, user: User, session: AsyncSession) -> No
     await session.flush()
 
     logger.info("PRIVACY: {} deleted their account and data", telegram_id)
-    await cb.message.edit_text(
-        f"🗑 Erledigt, {name}. Alle deine Daten sind gelöscht.\n\n"
-        "Mit /start kannst du jederzeit neu anfangen — dann wie ein "
-        "komplett neuer Nutzer."
-    )
-    await cb.answer("Gelöscht")
+    await cb.message.edit_text(t("privacy.deleted", lang, name=name))
+    await cb.answer(t("privacy.deleted_toast", lang))
     for admin_id in settings.admin_ids:
         try:
+            # Staff-facing notice: German, like the rest of the admin area.
             await cb.bot.send_message(
                 admin_id, f"🗑 Nutzer <code>{telegram_id}</code> hat sein Konto gelöscht."
             )

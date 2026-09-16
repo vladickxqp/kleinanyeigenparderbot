@@ -24,6 +24,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot.texts import DEFAULT_LANGUAGE, t
 from app.config.settings import settings
 from app.database.models import User, UserRole
 from app.services.roles import effective_role, has_role
@@ -57,40 +58,30 @@ async def _support_staff_ids(session: AsyncSession) -> list[int]:
 @router.message(Command("support"))
 async def cmd_support(message: Message, lang: str, state: FSMContext) -> None:
     await state.set_state(SupportState.waiting_message)
-    await message.answer(
-        "💬 <b>Support</b>\n\n"
-        "Schreib mir jetzt deine Frage oder dein Problem in EINER Nachricht — "
-        "ich leite sie direkt an das Team weiter.\n"
-        "(/cancel zum Abbrechen)"
-    )
+    await message.answer(t("support.prompt", lang))
 
 
 @router.callback_query(F.data == "menu:support")
 async def cb_support(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
     await state.set_state(SupportState.waiting_message)
-    await cb.message.answer(
-        "💬 <b>Support</b>\n\n"
-        "Schreib mir jetzt deine Frage oder dein Problem in EINER Nachricht — "
-        "ich leite sie direkt an das Team weiter.\n"
-        "(/cancel zum Abbrechen)"
-    )
+    await cb.message.answer(t("support.prompt", lang))
     await cb.answer()
 
 
 @router.message(SupportState.waiting_message, Command("cancel"))
-async def cmd_support_cancel(message: Message, state: FSMContext) -> None:
+async def cmd_support_cancel(message: Message, state: FSMContext, lang: str) -> None:
     await state.clear()
-    await message.answer("✖️ Abgebrochen.")
+    await message.answer("✖️ " + t("common.cancelled", lang))
 
 
 @router.message(SupportState.waiting_message, F.text)
 async def support_message(
-    message: Message, user: User, session: AsyncSession, state: FSMContext
+    message: Message, user: User, session: AsyncSession, state: FSMContext, lang: str
 ) -> None:
     await state.clear()
     text = (message.text or "").strip()[:MAX_SUPPORT_LENGTH]
     if not text:
-        await message.answer("⚠️ Leere Nachricht — bitte nochmal /support.")
+        await message.answer(t("support.empty", lang))
         return
 
     staff = await _support_staff_ids(session)
@@ -99,6 +90,7 @@ async def support_message(
     # would deliver the ticket to nobody while still claiming success.
     recipients = [s for s in staff if s != user.telegram_id] or staff
 
+    # Staff-facing, like the whole admin area: always German.
     ticket = (
         "💬 <b>Support-Anfrage</b>\n"
         f"Von: <b>{escape(user.display_name)}</b> "
@@ -119,17 +111,10 @@ async def support_message(
         user.telegram_id, delivered, len(recipients),
     )
     if delivered:
-        await message.answer(
-            "✅ Deine Nachricht ist beim Team! Du bekommst die Antwort "
-            "direkt hier im Chat."
-        )
+        await message.answer(t("support.delivered", lang))
     else:
         # Never claim success when nothing was delivered.
-        await message.answer(
-            "⚠️ Gerade ist leider kein Team-Mitglied erreichbar — deine "
-            "Nachricht konnte nicht zugestellt werden. Bitte versuch es "
-            "später nochmal."
-        )
+        await message.answer(t("support.undelivered", lang))
 
 
 # --- Admin side ------------------------------------------------------------------
@@ -153,11 +138,18 @@ async def cmd_reply(
         return
     answer_text = args[1].strip()[:MAX_SUPPORT_LENGTH]
 
+    # The answer is read by the user, not by the staff member typing it, so it
+    # goes out in the recipient's language.
+    target_lang = (
+        await session.scalar(
+            select(User.language_code).where(User.telegram_id == target_id)
+        )
+        or DEFAULT_LANGUAGE
+    )
+
     try:
         await message.bot.send_message(
-            target_id,
-            f"💬 <b>Antwort vom Support:</b>\n\n{escape(answer_text)}\n\n"
-            "Weitere Fragen? Einfach nochmal /support.",
+            target_id, t("support.answer", target_lang, text=escape(answer_text))
         )
     except Exception as exc:  # noqa: BLE001
         await message.answer(

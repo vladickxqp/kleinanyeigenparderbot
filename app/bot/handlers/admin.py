@@ -49,6 +49,11 @@ from app.services.roles import ASSIGNABLE_ROLES, effective_role, has_role, role_
 
 router = Router(name="admin")
 
+#: How far back the dashboard looks at the listings table. Without a bound the
+#: counts turn into a full-table scan on every refresh, and the panel's refresh
+#: button invites exactly that.
+DASHBOARD_WINDOW_DAYS = 30
+
 #: Tiers that can be assigned via /settier (legacy values are not offered).
 ASSIGNABLE_TIERS = {
     "free": SubscriptionTier.FREE,
@@ -92,6 +97,11 @@ async def _tier_pressure(session: AsyncSession) -> tuple[str, int, int, int]:
     Delivered cards are counted from the listings themselves rather than from
     the Redis meters: one query answers it for every user at once, and the
     ledger survives a metering outage.
+
+    Users the metering exempts (``app.services.quota``: everyone in
+    ``settings.admin_ids``) are left out of the pressure counts — they are never
+    capped, so measuring them against a cap invented pressure that does not
+    exist.
     """
     levels = ent.all_tiers()
     spread = {e.tier: 0 for e in levels}
@@ -106,15 +116,20 @@ async def _tier_pressure(session: AsyncSession) -> tuple[str, int, int, int]:
     midnight = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
+    exempt = set(settings.admin_ids)
     delivered = await session.execute(
-        select(User.subscription, func.count(Listing.id))
+        select(User.telegram_id, User.subscription, func.count(Listing.id))
         .join(SearchRule, SearchRule.user_id == User.id)
         .join(Listing, Listing.rule_id == SearchRule.id)
+        # Bounded by the delivery timestamp: only today's cards can press
+        # against today's quota, so the join never walks the whole table.
         .where(Listing.notified_at >= midnight)
-        .group_by(User.id, User.subscription)
+        .group_by(User.id, User.telegram_id, User.subscription)
     )
     near = at_limit = 0
-    for tier, sent in delivered:
+    for telegram_id, tier, sent in delivered:
+        if telegram_id in exempt:
+            continue
         limit = cap[tier.canonical]
         if ent.is_unlimited(limit):
             continue
@@ -175,7 +190,15 @@ async def _dashboard_text(session: AsyncSession) -> str:
         )
         or 0
     )
-    total_listings = await session.scalar(select(func.count(Listing.id))) or 0
+    # Bounded on purpose: an all-time count over `listings` is the one query
+    # here that grows without limit, and the panel has a refresh button.
+    listings_since = datetime.now(timezone.utc) - timedelta(days=DASHBOARD_WINDOW_DAYS)
+    recent_listings = (
+        await session.scalar(
+            select(func.count(Listing.id)).where(Listing.created_at >= listings_since)
+        )
+        or 0
+    )
 
     tiers, near_quota, at_quota, withheld_today = await _tier_pressure(session)
 
@@ -199,7 +222,7 @@ async def _dashboard_text(session: AsyncSession) -> str:
         + "\n\n"
         f"{format_metrics(metrics)}\n\n"
         f"📋 Suchen: <b>{active_rules}</b>/{total_rules} aktiv\n"
-        f"🛒 Angebote gesamt: <b>{total_listings}</b>\n"
+        f"🛒 Angebote ({DASHBOARD_WINDOW_DAYS} Tage): <b>{recent_listings}</b>\n"
         f"🔄 Suchläufe heute: <b>{status.runs_today}</b>\n"
         f"📨 Karten heute: <b>{status.cards_sent_today}</b>\n\n"
         f"⚙️ Worker: {worker}"
