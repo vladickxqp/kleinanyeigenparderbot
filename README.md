@@ -85,7 +85,9 @@ New good deals → formatted card → sent to the user in Telegram
 ```bash
 cp .env.example .env
 # 1) put your @BotFather token into BOT_TOKEN
-# 2) set POSTGRES_PASSWORD / JWT_SECRET_KEY
+# 2) generate real secrets — the app refuses to start in production otherwise:
+#    python -c "import secrets;print(secrets.token_urlsafe(48))"   -> JWT_SECRET_KEY
+#    python -c "import secrets;print(secrets.token_urlsafe(24))"   -> POSTGRES_PASSWORD
 # 3) (optional) enable the admin panel login — see "Admin panel" below
 docker compose up -d --build
 docker compose logs -f bot
@@ -98,10 +100,32 @@ Services after `up`:
 | Bot        | (Telegram)                     | the Telegram bot itself        |
 | API        | http://localhost:8001/docs     | admin backend + Swagger        |
 | Admin panel| http://localhost:8080          | React dashboard (nginx)        |
+| Readiness  | http://localhost:8001/health/ready | DB, cache and pipeline state |
 | Metrics    | http://localhost:8001/metrics  | Prometheus metrics             |
 
-The `api` service auto-creates the database tables on first boot (or applies
-Alembic migrations if any exist — see `docker/entrypoint.sh`).
+PostgreSQL and Redis are published on `127.0.0.1` only, so nothing on the
+local network can reach them.
+
+### Schema, backups and monitoring
+
+The schema belongs to Alembic. A one-shot `migrate` service runs
+`alembic upgrade head` before anything else starts, and every other service
+waits for it. A database created by the older `create_all` bootstrap is adopted
+by the baseline revision, so upgrading needs no manual step.
+
+The `backup` service writes a compressed dump into `./backups` once a day and
+deletes dumps older than `BACKUP_KEEP_DAYS`. Restore one with:
+
+```bash
+gunzip -c backups/parserbot-YYYYMMDD-HHMM.sql.gz | docker compose exec -T postgres psql -U parserbot -d parserbot
+```
+
+A watchdog task checks every minute whether searches are still being
+dispatched, whether the queue is draining and whether the disk is filling up,
+and alerts the admins in Telegram. Because it runs on the same machine that can
+fail, it also pings an external dead-man's switch: set `HEALTHCHECK_PING_URL`
+to a free healthchecks.io check and you get an alert when the laptop, Docker or
+the database dies — the one failure the bot can never report itself.
 
 ### Admin panel login
 
@@ -144,10 +168,11 @@ dashboard with charts, and pages for search rules, listings and parsers.
 ### Telegram Mini App (`/app`)
 
 The same frontend also serves a **Telegram Mini App** at `/app`: deals,
-searches (with on/off toggle), flips & profit, premium status with the exact
-charge dates and the full payment history — all inside Telegram, no login.
-Authentication is Telegram's signed `initData` (verified server-side in
-`app/api/webapp_auth.py`), so a user can only ever see their own data.
+searches (create, edit, pause, delete), flips & profit, premium status with the
+exact charge dates and the full payment history — all inside Telegram, no
+login. Authentication is Telegram's signed `initData` (verified server-side in
+`app/api/webapp_auth.py`), so a user can only ever see their own data, and the
+check interval is clamped to their tier on the server.
 
 Telegram only loads Mini Apps from a **public HTTPS URL**. Cheapest setup
 (free): a domain + Cloudflare Tunnel — nothing is exposed on your router.
@@ -187,6 +212,26 @@ edited with live progress and a final report (sent / blocked / failed).
 - `/broadcast <text>` — one-liner to everyone, no wizard.
 - `/broadcasts` — history with delivery stats; scheduled ones can be cancelled.
 - The admin panel (`/admin`) has the same list under **📢 Broadcasts**.
+
+---
+
+## 💎 Plans, trials and privacy
+
+Two plans are on sale, both as real Telegram Stars subscriptions: **Pro**
+(`PRO_PRICE_STARS`, limited number of searches) and **Unlimited**
+(`PREMIUM_PRICE_STARS`, everything plus photo valuation). Prices, quotas and
+intervals live in settings — nothing is hardcoded. Paying users' searches run
+on a separate worker queue, so priority processing is a real behaviour and not
+just a bullet point.
+
+Every grant lands in the payment ledger, including trials, coupons and referral
+rewards, and a charge is booked exactly once even if Telegram redelivers the
+update. Quotas are re-applied on every downgrade, expiry, cancellation or
+refund.
+
+Users can see what is stored about them (`/privacy`), export it as JSON
+(`/meinedaten`) and delete their account and data (`/loeschen`); the financial
+ledger is kept but loses its personal link.
 
 ---
 
