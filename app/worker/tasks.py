@@ -21,7 +21,7 @@ from loguru import logger
 
 from app.bot.notifier import notify_user_about_listings
 from app.config.settings import settings
-from app.database.models import User
+from app.database.models import SubscriptionTier, User
 from app.database.session import dispose_engine, session_scope
 from app.services.repositories import SearchRuleRepository
 from app.services.search_service import SearchService
@@ -54,6 +54,47 @@ def _next_run_key(rule_id: int) -> str:
     return f"rule:next_run:{rule_id}"
 
 
+#: Runs one owner may start per day, as (settings prefix, fallback). This is an
+#: infrastructure brake that keeps the promise affordable when a few accounts
+#: run hundreds of rules — it is deliberately never shown or sold, and sits far
+#: above what normal use of a level reaches.
+_RUN_BUDGET: dict[SubscriptionTier, tuple[str, int]] = {
+    SubscriptionTier.FREE: ("free", 500),
+    SubscriptionTier.STARTER: ("starter", 4000),
+    SubscriptionTier.PRO: ("pro", 12000),
+    SubscriptionTier.UNLIMITED: ("dealer", 30000),
+}
+
+
+def _runs_key(user_id: int) -> str:
+    return f"budget:runs:{user_id}:{time.strftime('%Y%m%d')}"
+
+
+def _daily_run_budget(owner: User) -> int:
+    prefix, fallback = _RUN_BUDGET[owner.subscription.canonical]
+    return int(getattr(settings, f"{prefix}_max_runs_per_day", fallback))
+
+
+def _take_run_budget(owner: User) -> bool:
+    """Claim one of today's runs for ``owner``; False once the budget is spent.
+
+    Fails OPEN: a Redis problem must never stop the searches people paid for.
+    """
+    budget = _daily_run_budget(owner)
+    if budget < 0:  # the ladder's "unlimited" convention
+        return True
+    try:
+        key = _runs_key(owner.id)
+        if int(_redis.get(key) or 0) >= budget:
+            return False
+        if _redis.incr(key) == 1:
+            _redis.expire(key, 2 * 86400)
+        return True
+    except Exception as exc:  # noqa: BLE001 - fail open
+        logger.debug("Run budget check failed for user {}: {}", owner.id, exc)
+        return True
+
+
 # --- Dispatcher -------------------------------------------------------------
 @celery_app.task(name="app.worker.tasks.dispatch_due_searches")
 def dispatch_due_searches() -> int:
@@ -74,6 +115,7 @@ async def _dispatch_due_searches() -> int:
 
     now = time.time()
     dispatched = 0
+    over_budget = 0
     # A suspected block widens every interval for a while: a ban would hit
     # exactly the paying users who were sold speed.
     backoff = await health.block_multiplier()
@@ -104,15 +146,22 @@ async def _dispatch_due_searches() -> int:
             interval = max(rule.interval_seconds, floor) * backoff
             # Jitter keeps many rules of the same interval from lining up.
             _redis.set(_next_run_key(rule.id), now + interval + random.uniform(0, 5))
+            # Reschedule BEFORE the budget check: a skipped rule that stayed due
+            # would sort first forever and starve everyone else out of the tick.
+            if owner is not None and not _take_run_budget(owner):
+                over_budget += 1
+                continue
             # Each level has its own queue; "express" is served first.
             queue = owner.entitlements.queue_name if owner is not None else "celery"
             run_search_rule.apply_async(args=[rule.id], queue=queue)
             dispatched += 1
 
     await health.mark_dispatch()
-    if dispatched:
+    if dispatched or over_budget:
         logger.info(
-            "Dispatched {}/{} due search rule(s)", dispatched, len(due)
+            "Dispatched {}/{} due search rule(s){}",
+            dispatched, len(due),
+            f", {over_budget} over their daily run budget" if over_budget else "",
         )
     return dispatched
 
@@ -631,6 +680,31 @@ async def _flush_unnotified() -> int:
     if rescued:
         logger.info("Rescued {} undelivered listing(s)", rescued)
     return rescued
+
+
+# --- Data retention ---------------------------------------------------------------
+@celery_app.task(name="app.worker.tasks.purge_old_data")
+def purge_old_data() -> dict:
+    """Delete finds, price points and delivery records past their owner's window."""
+    return _run_async(_purge_old_data())
+
+
+async def _purge_old_data() -> dict:
+    from app.services import retention
+
+    async with session_scope() as session:
+        stats = await retention.sweep(session)
+
+    # Unbounded growth once filled this project's production disk, and from the
+    # outside a sweep that silently stopped working looks exactly like a sweep
+    # with nothing to do — so the numbers go into the health stats every night.
+    await retention.record_sweep(stats)
+    return {
+        "listings": stats.listings,
+        "price_points": stats.price_points,
+        "notifications": stats.notifications,
+        "capped": stats.capped,
+    }
 
 
 # --- Broadcasts -------------------------------------------------------------------

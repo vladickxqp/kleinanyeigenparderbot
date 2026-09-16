@@ -59,6 +59,9 @@ class EbayParser(BaseParser):
         html = await self.fetch_text(url)
         listings = self._parse_results(html)
 
+        # query.shipping_available is deliberately NOT enforced here: eBay's
+        # result cards never state whether an item ships, and filtering on an
+        # unknown value would return zero results for every rule that sets it.
         result: list[ParsedListing] = []
         for item in listings:
             if not query.matches_text(item.title):

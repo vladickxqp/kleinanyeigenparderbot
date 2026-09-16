@@ -19,6 +19,7 @@ from app.bot.handlers import (
     settings,
     start,
     support,
+    usage,
 )
 
 
@@ -28,6 +29,7 @@ def build_router() -> Router:
     root.include_router(admin.router)
     root.include_router(broadcast.router)
     root.include_router(premium.router)
+    root.include_router(usage.router)
     root.include_router(support.router)
     root.include_router(flips.router)
     root.include_router(photo_eval.router)

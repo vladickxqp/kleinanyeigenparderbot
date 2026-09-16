@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     scraper_max_retries: int = 3
     scraper_proxies: str = ""
     playwright_headless: bool = True
+    #: Vinted ships a JSON catalog API whose field names are still unverified,
+    #: and a rule with an empty site list runs on EVERY registered parser — so
+    #: the parser stays unregistered until this is switched on deliberately.
+    vinted_enabled: bool = False
 
     # --- AI -----------------------------------------------------------------
     ai_enabled: bool = False

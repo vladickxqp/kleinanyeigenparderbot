@@ -2,7 +2,8 @@
 
 Runs the fast (non-browser) parsers once, applies the same relevance filter and
 deal scoring as the pipeline, and answers with a compact result list. Nothing
-is persisted.
+is persisted. Each run costs one unit of the level's daily quota and is paced
+by the level's cooldown — a quick search is real scrape load.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.models import User
 from app.parsers import registry
 from app.parsers.schemas import ParsedListing, SearchQuery
+from app.services import quota
 from app.services.deal_scorer import score_listing
 from app.services.price_analysis import compute_price_stats
 from app.services.relevance import filter_relevant
@@ -28,6 +30,33 @@ from app.services.throttle import manual_run_allowed
 router = Router(name="quick_search")
 
 MAX_RESULTS = 8
+
+
+def _quota_footer(user: User, state: quota.QuotaState) -> str:
+    """The remaining searches, plus the way to get more once they run out."""
+    if state.unlimited:
+        return ""
+    line = (
+        f"\n🧮 Noch <b>{state.remaining}</b> von {state.limit} Schnell-Suchen "
+        f"{state.window_label}."
+    )
+    if state.remaining == 0:
+        hint = quota.upgrade_hint(quota.KIND_QUICK, user)
+        if hint:
+            line += f"\nMehr davon: {hint}"
+    return line
+
+
+def _exhausted_text(user: User, state: quota.QuotaState) -> str:
+    lines = [
+        f"🔍 Deine Schnell-Suchen sind {state.window_label} aufgebraucht "
+        f"({state.used}/{state.limit}).",
+        "Deine Dauer-Suchen laufen davon unberührt weiter: /menu",
+    ]
+    hint = quota.upgrade_hint(quota.KIND_QUICK, user)
+    if hint:
+        lines.append(f"Mehr davon: {hint}")
+    return "\n".join(lines)
 
 
 @router.message(Command("suche"))
@@ -42,13 +71,23 @@ async def cmd_suche(
         )
         return
 
-    wait = await manual_run_allowed(user.telegram_id)
+    wait = await manual_run_allowed(
+        user.telegram_id, user.entitlements.quick_search_cooldown_seconds
+    )
     if wait:
         await message.answer(
             f"⏳ Kurz durchatmen — noch {wait}s. "
             "Zu viele Suchen hintereinander riskieren eine Sperre der Marktplätze."
         )
         return
+
+    # Checked before booking: consume() reports "exhausted" both when it refused
+    # and when it handed out the last unit.
+    usage = await quota.check(quota.KIND_QUICK, user)
+    if usage.exhausted:
+        await message.answer(_exhausted_text(user, usage))
+        return
+    usage = await quota.consume(quota.KIND_QUICK, user)
 
     status = await message.answer(f"🔍 Suche nach <b>{escape(keywords)}</b> läuft…")
 
@@ -67,7 +106,7 @@ async def cmd_suche(
     if not parsed:
         await status.edit_text(
             f"😕 Nichts gefunden für <b>{escape(keywords)}</b>. "
-            "Andere Suchbegriffe probieren?"
+            "Andere Suchbegriffe probieren?" + _quota_footer(user, usage)
         )
         return
 
@@ -90,10 +129,15 @@ async def cmd_suche(
         if item.location:
             meta.append(escape(item.location))
         lines.append(
-            f"• <a href=\"{escape(item.url, quote=True)}\">{escape(item.title[:70])}</a>\n"
+            # Parsers hand back a pydantic Url; escape() only speaks str.
+            f"• <a href=\"{escape(str(item.url), quote=True)}\">"
+            f"{escape(item.title[:70])}</a>\n"
             f"   {'  ·  '.join(meta)}"
         )
     lines.append("\n💡 Dauerhaft überwachen? Ein Tipp auf den Knopf genügt.")
+    footer = _quota_footer(user, usage)
+    if footer:
+        lines.append(footer)
 
     # Remember the query so the button below can turn it into a real rule.
     await state.update_data(qs_keywords=keywords[:256])

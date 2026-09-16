@@ -3,21 +3,51 @@
 Creates a short-lived Bot instance, sends each notable listing as a card (photo
 with caption when an image is available, otherwise a text message) and marks the
 listing as notified. Price history is recorded by the search service.
+
+This module is the single delivery funnel, so it is also where the daily card
+quota is enforced, where every delivery attempt is written to ``notifications``
+for auditing, and where a capped user gets one named teaser per day — silence
+is the worst possible answer from a deal bot.
 """
 
 from __future__ import annotations
+
+from datetime import datetime, timezone
+from html import escape
 
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from loguru import logger
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.formatting import format_deal_card, format_resale_line
 from app.bot.keyboards import listing_actions_keyboard
 from app.config.settings import settings
-from app.database.models import Listing, User
+from app.database.models import (
+    Listing,
+    Notification,
+    NotificationChannel,
+    SearchRule,
+    User,
+)
 from app.database.session import session_scope
+from app.services import quota
+from app.services.flips import estimated_net_profit
+from app.services.formatting_helpers import money
+
+#: How long the per-user duplicate-send guard remembers an ad.
+SENT_GUARD_TTL_SECONDS = 14 * 86400
+#: One cap teaser per user per day: inform once, never nag.
+CAP_TEASER_COOLDOWN_SECONDS = 86400
+#: Ad titles are scraped text; keep the teaser readable on a phone.
+TEASER_TITLE_CHARS = 80
+#: Width of ``notifications.title``.
+AUDIT_TITLE_CHARS = 256
+#: Upper bound for the error text stored on a failed delivery.
+ERROR_TEXT_CHARS = 500
 
 
 async def notify_user_about_listings(
@@ -44,14 +74,40 @@ async def notify_user_about_listings(
     sent = 0
     try:
         async with session_scope() as session:
+            user = await _user_by_telegram_id(session, user_telegram_id)
+            withheld: list[Listing] = []
             for listing_id in listing_ids:
                 listing = await session.get(Listing, listing_id)
                 if listing is None or listing.is_ignored:
                     continue
-                ok = await _send_one(bot, user_telegram_id, listing, lang)
-                if ok:
+
+                if await _duplicate_send(user_telegram_id, listing):
+                    # Nothing left to deliver, but the row must never come back
+                    # through the rescue sweep.
                     listing.notified = True
                     sent += 1
+                    continue
+
+                if user is not None and not await _claim_card_slot(user):
+                    listing.withheld = True
+                    # flush_unnotified() hunts for notified=False, so a capped
+                    # card would otherwise be re-queued for the rest of its life.
+                    listing.notified = True
+                    withheld.append(listing)
+                    continue
+
+                error = await _deliver(bot, user_telegram_id, listing, lang)
+                if error is None:
+                    listing.notified = True
+                    listing.notified_at = datetime.now(timezone.utc)
+                    sent += 1
+                elif user is not None:
+                    await quota.release(quota.KIND_CARDS, user)
+                if user is not None:
+                    _record_attempt(session, user, listing, error)
+
+            if withheld and user is not None:
+                await _send_cap_teaser(bot, session, user, withheld)
     finally:
         await bot.session.close()
 
@@ -70,6 +126,110 @@ async def send_listing_card(
     return await _send_one(bot, chat_id, listing, lang)
 
 
+# --- Quota ----------------------------------------------------------------------------
+async def _claim_card_slot(user: User) -> bool:
+    """Book one unit of the daily card quota. False = the cap is reached.
+
+    The decision is taken on the state BEFORE booking: ``consume`` reports
+    ``exhausted`` both when it refused and when it just handed out the last
+    unit, so trusting its return value alone would swallow one card every day.
+    """
+    if (await quota.check(quota.KIND_CARDS, user)).exhausted:
+        return False
+    await quota.consume(quota.KIND_CARDS, user)
+    return True
+
+
+async def _user_by_telegram_id(session: AsyncSession, telegram_id: int) -> User | None:
+    result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+    return result.scalar_one_or_none()
+
+
+def _estimated_profit(listing: Listing) -> float | None:
+    """Expected net profit of a flip, or None when the market price is unknown."""
+    if listing.price is None or listing.estimated_market_price is None:
+        return None
+    return estimated_net_profit(listing.price, listing.estimated_market_price)
+
+
+async def _withheld_today(session: AsyncSession, user_id: int) -> int:
+    """How many of today's finds the cap held back — the figure the teaser names."""
+    midnight = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    # The rows were marked in this transaction; autoflush is off on this session.
+    await session.flush()
+    total = await session.scalar(
+        select(func.count(Listing.id))
+        .join(SearchRule, SearchRule.id == Listing.rule_id)
+        .where(
+            SearchRule.user_id == user_id,
+            Listing.withheld.is_(True),
+            Listing.created_at >= midnight,
+        )
+    )
+    return int(total or 0)
+
+
+async def _send_cap_teaser(
+    bot: Bot, session: AsyncSession, user: User, withheld: list[Listing]
+) -> None:
+    """Name the best find the cap swallowed, once a day.
+
+    A user who receives nothing assumes the bot is broken and churns; a user who
+    learns that the best withheld find was worth +85 € has a reason to upgrade.
+    """
+    if not settings.notification_cap_teaser_enabled:
+        return
+
+    from app.services import throttle  # lazy: avoid import cycles
+
+    if await throttle.cooldown(
+        f"captease:{user.telegram_id}", CAP_TEASER_COOLDOWN_SECONDS
+    ):
+        return
+
+    best = max(withheld, key=lambda item: (_estimated_profit(item) or 0.0, item.deal_score))
+    profit = _estimated_profit(best)
+    detail = f"bester: <b>{escape(best.title[:TEASER_TITLE_CHARS])}</b>"
+    if profit is not None and profit > 0:
+        detail += f", ca. +{money(profit)} netto"
+    elif best.price is not None:
+        detail += f", {money(best.price)}"
+
+    # Never name fewer finds than the batch that was just held back.
+    total = max(len(withheld), await _withheld_today(session, user.id))
+    noun = "weiterer Treffer" if total == 1 else "weitere Treffer"
+    lines = [f"🔒 Tageslimit erreicht — {total} {noun} heute, {detail}."]
+    hint = quota.upgrade_hint(quota.KIND_CARDS, user)
+    if hint:
+        lines.append(f"Mehr Karten pro Tag: {hint}")
+
+    try:
+        await bot.send_message(
+            user.telegram_id, "\n".join(lines), disable_web_page_preview=True
+        )
+    except Exception as exc:  # noqa: BLE001 - a failed teaser must not fail the batch
+        logger.warning("Cap teaser to {} failed: {}", user.telegram_id, exc)
+
+
+# --- Auditing -------------------------------------------------------------------------
+def _record_attempt(
+    session: AsyncSession, user: User, listing: Listing, error: str | None
+) -> None:
+    """Write the delivery attempt to ``notifications`` (history + support)."""
+    session.add(
+        Notification(
+            user_id=user.id,
+            listing_id=listing.id,
+            channel=NotificationChannel.TELEGRAM,
+            title=listing.title[:AUDIT_TITLE_CHARS],
+            is_sent=error is None,
+            error=error,
+        )
+    )
+
+
 async def _count_sent() -> None:
     """Feed the daily 'cards sent' counter (never raises)."""
     try:
@@ -80,10 +240,7 @@ async def _count_sent() -> None:
         pass
 
 
-#: How long the per-user duplicate-send guard remembers an ad.
-SENT_GUARD_TTL_SECONDS = 14 * 86400
-
-
+# --- Delivery -------------------------------------------------------------------------
 async def _duplicate_send(chat_id: int, listing: Listing) -> bool:
     """Atomic last-line duplicate guard (Redis), shared by ALL delivery paths.
 
@@ -124,7 +281,16 @@ async def _send_one(bot: Bot, chat_id: int, listing: Listing, lang: str) -> bool
     if await _duplicate_send(chat_id, listing):
         # Report success so callers mark the row notified and never retry it.
         return True
+    return await _deliver(bot, chat_id, listing, lang) is None
 
+
+async def _deliver(bot: Bot, chat_id: int, listing: Listing, lang: str) -> str | None:
+    """Put one card on the wire. None on success, else the error for the audit row.
+
+    The duplicate guard lives in the callers: it claims its Redis key on the
+    first call, so asking it twice for the same ad would report a duplicate and
+    drop a card that was never sent.
+    """
     caption = format_deal_card(listing, lang)
     resale = format_resale_line(listing, lang)
     if resale:
@@ -138,7 +304,7 @@ async def _send_one(bot: Bot, chat_id: int, listing: Listing, lang: str) -> bool
                     chat_id, listing.image_url, caption=caption, reply_markup=markup
                 )
                 await _count_sent()
-                return True
+                return None
             except TelegramBadRequest:
                 # Image URL rejected by Telegram; fall back to text.
                 pass
@@ -146,20 +312,23 @@ async def _send_one(bot: Bot, chat_id: int, listing: Listing, lang: str) -> bool
             chat_id, caption, reply_markup=markup, disable_web_page_preview=False
         )
         await _count_sent()
-        return True
-    except TelegramForbiddenError:
-        # User blocked the bot: mark them inactive.
+        return None
+    except TelegramForbiddenError as exc:
         logger.info("User {} blocked the bot", chat_id)
-        async with session_scope() as session:
-            from sqlalchemy import select
-
-            result = await session.execute(
-                select(User).where(User.telegram_id == chat_id)
-            )
-            user = result.scalar_one_or_none()
-            if user:
-                user.is_active = False
-        return False
+        await _deactivate(chat_id)
+        return _error_text(exc)
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to send card to {}: {}", chat_id, exc)
-        return False
+        return _error_text(exc)
+
+
+def _error_text(exc: BaseException) -> str:
+    return (str(exc) or exc.__class__.__name__)[:ERROR_TEXT_CHARS]
+
+
+async def _deactivate(chat_id: int) -> None:
+    """Stop addressing a user who blocked the bot."""
+    async with session_scope() as session:
+        user = await _user_by_telegram_id(session, chat_id)
+        if user:
+            user.is_active = False

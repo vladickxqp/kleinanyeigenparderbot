@@ -3,6 +3,10 @@
 Entry point is the "✏️ Bearbeiten" button on a rule; each field opens a small
 FSM interaction (the rule id is carried in the FSM data as ``edit_rule_id``).
 Sending ``-`` clears optional fields (exclude words, location).
+
+Zustand / Versand / Auktionen live here and nowhere else: they need the paid
+``rule_power`` capability, and the creation wizard is already eight questions
+long before a user sees a single result.
 """
 
 from __future__ import annotations
@@ -14,19 +18,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.handlers.rules import _render_rule
 from app.bot.keyboards import (
+    AUCTION_VALUES,
     CATEGORY_CHOICES,
+    CONDITION_CHOICES,
     INTERVAL_CHOICES,
     RADIUS_CHOICES,
+    SHIPPING_VALUES,
+    auction_short,
+    auctions_keyboard,
     cancel_keyboard,
     category_keyboard,
+    condition_keyboard,
+    condition_short,
     interval_keyboard,
     radius_keyboard,
     rule_actions_keyboard,
     rule_edit_keyboard,
+    shipping_keyboard,
+    shipping_short,
 )
 from app.bot.states import EditWizard
 from app.bot.texts import t
+from app.config.settings import settings
 from app.database.models import SearchRule, User
+from app.database.models.enums import Condition
+from app.services import entitlements as ent
 from app.services.parsing import parse_price_range
 from app.services.repositories import SearchRuleRepository
 
@@ -34,6 +50,75 @@ router = Router(name="edit_rule")
 
 #: Marker the user sends to clear an optional field.
 CLEAR_MARKER = "-"
+
+#: Edit-menu fields that need the paid "rule_power" capability.
+POWER_FIELDS: frozenset[str] = frozenset({"condition", "shipping", "auctions"})
+
+#: Longest rule id we pass on to the database. Callback data is user-controlled
+#: and a 40-digit number would blow up the BIGINT column, not return "not found".
+_MAX_ID_DIGITS = 18
+
+
+# --- Paid filters: gate + upsell copy -------------------------------------------
+def _has_rule_power(user: User) -> bool:
+    """Admins get the paid filters so they can test them without a plan."""
+    if user.telegram_id in settings.admin_ids:
+        return True
+    return user.has_feature(ent.FEATURE_RULE_POWER)
+
+
+def _rule_power_level() -> str:
+    """Label of the cheapest level that unlocks the filters (config-driven)."""
+    tiers = ent.all_tiers()
+    for tier in tiers:
+        if tier.has(ent.FEATURE_RULE_POWER):
+            return tier.label
+    return tiers[-1].label
+
+
+def _rule_power_pitch() -> str:
+    """HTML block for the edit menu — what the upgrade actually buys."""
+    return (
+        f"\n\n🔒 <b>Zustand, Versand &amp; Auktionen</b> gibt es ab "
+        f"<b>{_rule_power_level()}</b>:\n"
+        "• nur Neu/OVP — oder gezielt Defekt &amp; Bastler zum Herrichten\n"
+        "• nur Anzeigen mit Versand — oder nur Abholung in deiner Nähe\n"
+        "• Auktionen ausblenden und nur Festpreise sehen\n"
+        "→ /premium"
+    )
+
+
+def _rule_power_alert() -> str:
+    """Plain one-liner — Telegram alerts render no HTML and are short."""
+    return (
+        f"🔒 Zustand-, Versand- und Auktions-Filter gibt es ab "
+        f"{_rule_power_level()}. Mehr dazu: /premium"
+    )
+
+
+# --- German copy for the three filters (kept next to their handlers) -------------
+ASK_CONDITION = (
+    "🏷 <b>Zustand</b>\n\n"
+    "Kleinanzeigen schreibt den Zustand nicht in die Trefferliste — ich lese "
+    "ihn aus Titel und Beschreibung („neu“, „OVP“, „versiegelt“, „defekt“, "
+    "„Bastler“). Anzeigen ohne solche Wörter zählen als <b>gebraucht</b>, "
+    "einzelne Treffer können dir also durchrutschen oder fehlen.\n"
+    "Auf eBay filtert eBay selbst, Idealo liefert bei „gebraucht“ und "
+    "„defekt“ nichts — dort gibt es nur Neuware."
+)
+
+ASK_SHIPPING = (
+    "📦 <b>Versand</b>\n\n"
+    "Zieht bei Kleinanzeigen, wo „Versand möglich“ auf der Karte steht. "
+    "Plattformen, die nichts dazu sagen (z. B. eBay), werden nicht gefiltert "
+    "— sonst wäre deine Regel dort schlagartig leer."
+)
+
+ASK_AUCTIONS = (
+    "🔨 <b>Auktionen</b>\n\n"
+    "Ein Auktionspreis ist bis zum letzten Gebot nicht echt und verzerrt den "
+    "Deal-Score. Blende Auktionen aus, wenn du nur Festpreise willst."
+)
 
 
 # --- Menu ---------------------------------------------------------------------
@@ -48,17 +133,36 @@ async def cb_edit_menu(
         return
     from html import escape
 
+    power = _has_rule_power(user)
+    text = t("edit.menu", lang, name=escape(rule.name))
+    if not power:
+        text += _rule_power_pitch()
     await cb.message.edit_text(
-        t("edit.menu", lang, name=escape(rule.name)),
-        reply_markup=rule_edit_keyboard(rule, lang),
+        text, reply_markup=rule_edit_keyboard(rule, lang, has_rule_power=power)
     )
     await cb.answer()
 
 
 # --- Field dispatch -------------------------------------------------------------
 @router.callback_query(F.data.startswith("edit:"))
-async def cb_edit_field(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
-    _, field, raw_id = cb.data.split(":")
+async def cb_edit_field(
+    cb: CallbackQuery, user: User, lang: str, state: FSMContext
+) -> None:
+    parts = (cb.data or "").split(":")
+    if len(parts) != 3 or not parts[1] or not parts[2].isdigit():
+        await cb.answer()
+        return
+    field, raw_id = parts[1], parts[2]
+    if len(raw_id) > _MAX_ID_DIGITS:
+        await cb.answer()
+        return
+
+    # The keyboard hides the paid filters, but callback data is user-controlled:
+    # the entitlement decides, not the button that was tapped.
+    if (field in POWER_FIELDS or field == "locked") and not _has_rule_power(user):
+        await cb.answer(_rule_power_alert(), show_alert=True)
+        return
+
     await state.update_data(edit_rule_id=int(raw_id))
 
     if field == "name":
@@ -91,6 +195,15 @@ async def cb_edit_field(cb: CallbackQuery, lang: str, state: FSMContext) -> None
     elif field == "minscore":
         await state.set_state(EditWizard.min_score)
         await cb.message.answer(t("edit.ask_minscore", lang), reply_markup=cancel_keyboard(lang))
+    elif field == "condition":
+        await state.set_state(EditWizard.condition)
+        await cb.message.answer(ASK_CONDITION, reply_markup=condition_keyboard(lang))
+    elif field == "shipping":
+        await state.set_state(EditWizard.shipping)
+        await cb.message.answer(ASK_SHIPPING, reply_markup=shipping_keyboard(lang))
+    elif field == "auctions":
+        await state.set_state(EditWizard.auctions)
+        await cb.message.answer(ASK_AUCTIONS, reply_markup=auctions_keyboard(lang))
     await cb.answer()
 
 
@@ -111,10 +224,13 @@ async def _finish(
     state: FSMContext,
     rule: SearchRule,
     lang: str,
+    note: str | None = None,
 ) -> None:
     await session.flush()
     await state.clear()
-    await message.answer(t("edit.saved", lang))
+    # The rule card has no line for the filter fields, so the confirmation is
+    # the only place the new value is ever shown back to the user.
+    await message.answer(t("edit.saved", lang) + (f"\n{note}" if note else ""))
     await message.answer(_render_rule(rule), reply_markup=rule_actions_keyboard(rule, lang))
 
 
@@ -281,3 +397,80 @@ async def edit_interval(
         await cb.answer(tier_note, show_alert=True)
     else:
         await cb.answer()
+
+
+# --- Paid filters ---------------------------------------------------------------
+async def _load_for_power_edit(
+    cb: CallbackQuery, user: User, session: AsyncSession, state: FSMContext
+) -> SearchRule | None:
+    """Load the rule for a paid-filter edit, or end the interaction."""
+    if not _has_rule_power(user):
+        await state.clear()
+        await cb.answer(_rule_power_alert(), show_alert=True)
+        return None
+    rule = await _load_rule(session, state, user)
+    if rule is None:
+        await state.clear()
+        await cb.answer()
+    return rule
+
+
+@router.callback_query(EditWizard.condition, F.data.startswith("wizcond:"))
+async def edit_condition(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
+) -> None:
+    rule = await _load_for_power_edit(cb, user, session, state)
+    if rule is None:
+        return
+    slug = cb.data.split(":")[-1]
+    if slug not in {s for s, _ in CONDITION_CHOICES}:
+        await cb.answer()
+        return
+    try:
+        rule.condition = Condition(slug)
+    except ValueError:  # UI choice no longer exists in the enum
+        await cb.answer()
+        return
+    await _finish(
+        cb.message, session, state, rule, lang,
+        note=f"🏷 Zustand: {condition_short(rule.condition)}",
+    )
+    await cb.answer()
+
+
+@router.callback_query(EditWizard.shipping, F.data.startswith("wizship:"))
+async def edit_shipping(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
+) -> None:
+    rule = await _load_for_power_edit(cb, user, session, state)
+    if rule is None:
+        return
+    slug = cb.data.split(":")[-1]
+    if slug not in SHIPPING_VALUES:
+        await cb.answer()
+        return
+    rule.shipping_available = SHIPPING_VALUES[slug]
+    await _finish(
+        cb.message, session, state, rule, lang,
+        note=f"📦 Versand: {shipping_short(rule.shipping_available)}",
+    )
+    await cb.answer()
+
+
+@router.callback_query(EditWizard.auctions, F.data.startswith("wizauc:"))
+async def edit_auctions(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
+) -> None:
+    rule = await _load_for_power_edit(cb, user, session, state)
+    if rule is None:
+        return
+    slug = cb.data.split(":")[-1]
+    if slug not in AUCTION_VALUES:
+        await cb.answer()
+        return
+    rule.exclude_auctions = AUCTION_VALUES[slug]
+    await _finish(
+        cb.message, session, state, rule, lang,
+        note=f"🔨 Auktionen: {auction_short(rule.exclude_auctions)}",
+    )
+    await cb.answer()

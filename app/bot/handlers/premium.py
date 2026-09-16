@@ -16,11 +16,13 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bot.texts import t
+from app.bot.handlers.usage import upgrade_nudge
+from app.bot.texts import feature_label, t
 from app.config.settings import settings
-from app.database.models import PlanType, User
+from app.database.models import PlanType, SubscriptionTier, User
 from app.services import coupons as coupon_svc
-from app.services import premium
+from app.services import entitlements as ent
+from app.services import premium, quota
 from app.services import referrals as referral_svc
 
 router = Router(name="premium")
@@ -65,7 +67,8 @@ def _billing_text(info, sub) -> str:
     return "\n".join(lines)
 
 
-def _premium_text(user: User, sub, billing: str = "", lang: str = "de") -> str:
+def _status_text(user: User, sub, billing: str, lang: str) -> str:
+    """Where the user stands today — before the comparison of all levels."""
     if user.is_paid_tier and sub is not None:
         if sub.payment_status == premium.CANCEL_AT_PERIOD_END:
             return (
@@ -89,45 +92,82 @@ def _premium_text(user: User, sub, billing: str = "", lang: str = "de") -> str:
         )
     if user.is_paid_tier:
         return (
-            "💎 <b>Du hast Premium</b> (vom Admin freigeschaltet).\n"
-            "Unbegrenzte Suchen und das schnellste Prüf-Intervall sind aktiv. "
+            f"💎 <b>Stufe {escape(user.tier_label)}</b> (vom Admin freigeschaltet).\n"
             "Viel Spaß!"
         )
-    lines = [
-        t("premium.title", lang) + "\n",
-        t(
-            "premium.free_line",
-            lang,
-            rules=settings.free_max_rules,
-            minutes=settings.free_min_interval_seconds // 60,
+    return t("premium.title", lang)
+
+
+def _level_block(e: ent.Entitlements, current: bool, lang: str) -> list[str]:
+    """One level of the comparison — every figure read from its entitlements."""
+    if e.is_paid:
+        plan = premium.plan_for_tier(e.tier)
+        price = t(
+            "premium.compare_price", lang,
+            stars=plan.price_stars, eur=f"{plan.price_eur:.2f}",
         )
-        + "\n",
+    else:
+        price = t("premium.compare_free_price", lang)
+    head = f"<b>{escape(e.label)}</b> — {price}"
+    if current:
+        head += t("premium.compare_current", lang)
+    fast = (
+        t("premium.compare_fast", lang,
+          slots=e.fast_slots, minutes=e.interval_floor(fast=True) // 60)
+        if e.fast_slots
+        else t("premium.compare_fast_none", lang)
+    )
+    return [
+        head,
+        t("premium.compare_searches", lang,
+          rules=e.max_rules, minutes=e.interval_floor(fast=False) // 60),
+        fast,
+        t("premium.compare_cards", lang,
+          cards=ent.fmt_quota(e.daily_notifications),
+          photos=ent.fmt_quota(e.photo_evals_per_month)),
+        t("premium.compare_quick", lang,
+          quick=ent.fmt_quota(e.quick_searches_per_day),
+          history=ent.fmt_quota(e.history_days, " Tage")),
     ]
-    for plan in premium.available_plans():
-        rules = (
-            t("premium.plan_rules_unlimited", lang)
-            if plan.max_rules >= 1_000
-            else t("premium.plan_rules", lang, count=plan.max_rules)
-        )
-        extra = t("premium.plan_extra_photo", lang) if plan.key == "unlimited" else ""
-        lines.append(
-            f"<b>{plan.label}</b> — {plan.price_stars} ⭐ "
-            f"(~{plan.price_eur:.2f} €)/Monat\n"
-            + t(
-                "premium.plan_line",
-                lang,
-                rules=rules,
-                minutes=plan.min_interval_seconds // 60,
-                extra=extra,
+
+
+def _comparison_text(user: User, lang: str) -> str:
+    """All four levels, cheapest first, with what each one adds."""
+    current = user.subscription.canonical
+    blocks = [t("premium.compare_title", lang)]
+    inherited: frozenset[str] = frozenset()
+    for e in ent.all_tiers():
+        lines = _level_block(e, e.tier is current, lang)
+        added = e.features - inherited
+        if added:
+            lines.append(
+                t("premium.compare_adds", lang,
+                  features=", ".join(feature_label(f, lang) for f in sorted(added)))
             )
+        inherited = e.features
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+def _premium_text(user: User, sub, billing: str = "", lang: str = "de",
+                  nudge: str | None = None) -> str:
+    parts = [_status_text(user, sub, billing, lang), _comparison_text(user, lang)]
+    if not premium.dealer_on_sale():
+        # Naming the gap beats a silently missing plan: users notice the hole.
+        parts.append(
+            t("premium.not_bookable", lang,
+              plan=escape(premium.plan_for_tier(SubscriptionTier.UNLIMITED).label))
         )
-    lines.append("\n" + t("premium.cancel_anytime", lang))
-    if settings.trial_enabled:
-        lines.append("\n" + t("premium.try_free", lang, days=settings.trial_days))
-    lines.append(t("premium.coupon_hint", lang))
+    if nudge:
+        parts.append(nudge)
+    footer = [t("premium.cancel_anytime", lang)]
+    if settings.trial_enabled and not user.is_paid_tier:
+        footer.append(t("premium.try_free", lang, days=settings.trial_days))
+    footer.append(t("premium.coupon_hint", lang))
     if settings.referral_enabled:
-        lines.append(t("premium.referral_hint", lang))
-    return "\n".join(lines)
+        footer.append(t("premium.referral_hint", lang))
+    parts.append("\n".join(footer))
+    return "\n\n".join(parts)
 
 
 async def _premium_keyboard(
@@ -186,6 +226,9 @@ async def _premium_keyboard(
                 text=t("premium.btn_history", lang), callback_data="premium:history"
             )
         )
+    kb.row(
+        InlineKeyboardButton(text=t("btn.usage", lang), callback_data="menu:usage")
+    )
     kb.row(InlineKeyboardButton(text=t("btn.back", lang), callback_data="menu:home"))
     return kb.as_markup()
 
@@ -195,7 +238,8 @@ async def _premium_view(user: User, session: AsyncSession, lang: str):
     sub = await premium.get_active_subscription(session, user.telegram_id)
     info = await premium.billing_info(session, user.telegram_id)
     has_payments = bool(await premium.payment_history(session, user.telegram_id, limit=1))
-    text = _premium_text(user, sub, _billing_text(info, sub), lang)
+    nudge = upgrade_nudge(user, lang, await quota.snapshot(user))
+    text = _premium_text(user, sub, _billing_text(info, sub), lang, nudge)
     markup = await _premium_keyboard(user, lang, sub=sub, has_payments=has_payments)
     return text, markup
 

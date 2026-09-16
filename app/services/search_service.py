@@ -10,6 +10,7 @@ This is the heart of the pipeline used by the Celery worker:
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,6 +58,13 @@ class SearchService:
     # --- Public API ---------------------------------------------------------
     async def run_rule(self, rule: SearchRule) -> list[Listing]:
         """Execute ``rule``, persist new listings, return notable new ones."""
+        # Stamped before the first early return: a rule that finds nothing is
+        # exactly the one whose owner asks whether it runs at all, and silence
+        # must be distinguishable from a stalled worker.
+        started_at = datetime.now(timezone.utc)
+        rule.last_run_at = started_at
+        rule.run_count = (rule.run_count or 0) + 1
+
         query = self._build_query(rule)
         parsed = await self._collect(rule, query)
         if not parsed:
@@ -126,6 +134,8 @@ class SearchService:
             await self._refine_with_ai(pairs, stats, rule.min_deal_score)
 
         await self.listings.add_all(new_rows)
+        if new_rows:
+            rule.last_found_at = started_at
 
         # Seed the price history for every new listing that has a price.
         for row in new_rows:
@@ -346,6 +356,9 @@ class SearchService:
             seller_rating=item.seller_rating,
             is_auction=item.is_auction,
             is_negotiable=item.is_negotiable,
+            # Without the marketplace's own posting time the card cannot claim
+            # "gefunden X Minuten nach Inserat" — the number would be invented.
+            posted_at=item.posted_at,
             deal_score=deal.score,
             deal_verdict=deal.verdict,
             estimated_market_price=deal.estimated_market_price,

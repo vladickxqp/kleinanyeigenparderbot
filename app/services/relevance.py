@@ -12,6 +12,7 @@ import re
 
 from loguru import logger
 
+from app.database.models.enums import Condition
 from app.parsers.schemas import ParsedListing, SearchQuery
 
 #: Accessory / noise words filtered out by default. A word is only applied if it
@@ -29,11 +30,22 @@ ACCESSORY_WORDS: tuple[str, ...] = (
 #: Titles starting with these are wanted-ads ("Suche iPhone..."), not offers.
 _WANTED_AD_PREFIXES: tuple[str, ...] = ("suche ", "gesuch", "kaufe ", "ich suche")
 
+#: Noise for a normal search, but the actual target of a defect hunt: broken
+#: units, boards and spare-part lots are where a repairer makes their margin.
+_REPAIR_WORDS: frozenset[str] = frozenset(
+    {"reparatur", "ersatzteil", "ersatzdisplay", "ersatzakku", "platine"}
+)
+
 
 def _active_accessory_words(query: SearchQuery) -> list[str]:
     """Accessory words that are safe to filter for this query."""
     kw = query.keywords.lower()
-    return [w for w in ACCESSORY_WORDS if w not in kw]
+    words = [w for w in ACCESSORY_WORDS if w not in kw]
+    if query.condition is Condition.DEFECTIVE:
+        # This pass runs before anything else sees the batch — leaving the
+        # repair words in would throw away exactly the ads the rule asks for.
+        words = [w for w in words if w not in _REPAIR_WORDS]
+    return words
 
 
 def is_relevant(query: SearchQuery, item: ParsedListing) -> bool:

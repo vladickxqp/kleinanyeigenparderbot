@@ -22,6 +22,12 @@ from app.parsers.schemas import ParsedListing, SearchQuery
 BASE_URL = "https://www.idealo.de"
 _RESULT_SELECTOR = "[data-testid='resultItem'], .sr-resultList__item"
 
+#: Conditions a price-comparison portal cannot serve. Answering such a rule
+#: with brand-new retail offers would pull the 30-day market median — which the
+#: whole deal score rests on — up to shop level and make every real second-hand
+#: bargain look ordinary.
+_UNAVAILABLE_CONDITIONS = (Condition.USED, Condition.DEFECTIVE)
+
 
 @register_parser
 class IdealoParser(BaseParser):
@@ -35,6 +41,13 @@ class IdealoParser(BaseParser):
         return f"{BASE_URL}/preisvergleich/MainSearchProductCategory.html?q={quote_plus(query.keywords)}"
 
     async def search(self, query: SearchQuery) -> list[ParsedListing]:
+        if query.condition in _UNAVAILABLE_CONDITIONS:
+            logger.debug(
+                "[idealo] skipped: rule asks for {} offers, Idealo lists new "
+                "retail only", query.condition.value,
+            )
+            return []
+
         url = self._build_url(query)
         logger.debug("[idealo] render {}", url)
         html = await self.fetch_rendered(url, wait_selector=_RESULT_SELECTOR)

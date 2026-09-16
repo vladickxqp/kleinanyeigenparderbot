@@ -1,4 +1,8 @@
-"""Actions on a deal card: favorite, ignore, track price."""
+"""Actions on a deal card: favorite, negotiate, ignore, track price.
+
+The negotiation helper is metered (Free gets a few per month, paid levels
+negotiate without a cap); everything else here is free of charge.
+"""
 
 from __future__ import annotations
 
@@ -8,9 +12,32 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import Listing, PriceHistory, User
+from app.services import quota
 from app.services.repositories import ListingRepository
 
 router = Router(name="listings")
+
+
+def _nego_footer(state: quota.QuotaState) -> str:
+    """What is left after this suggestion (paid levels negotiate without a cap)."""
+    if state.unlimited:
+        return ""
+    return (
+        f"\n\n🧮 Noch <b>{state.remaining}</b> von {state.limit} Verhandlungen "
+        f"{state.window_label}."
+    )
+
+
+def _nego_exhausted_text(user: User, state: quota.QuotaState) -> str:
+    lines = [
+        f"🤝 <b>Verhandlungs-Hilfe</b> — dein Kontingent ist {state.window_label} "
+        f"aufgebraucht ({state.used}/{state.limit}).",
+    ]
+    hint = quota.upgrade_hint(quota.KIND_NEGO, user)
+    lines.append(
+        f"Unbegrenzt verhandeln: {hint}" if hint else "Nächsten Monat geht es weiter."
+    )
+    return "\n".join(lines)
 
 
 async def _get(session: AsyncSession, listing_id: int, user: User) -> Listing | None:
@@ -44,6 +71,15 @@ async def cb_negotiate(cb: CallbackQuery, user: User, session: AsyncSession) -> 
         await cb.answer("Kein verhandelbarer Preis hinterlegt.", show_alert=True)
         return
 
+    # Checked before booking: consume() reports "exhausted" both when it refused
+    # and when it handed out the last unit.
+    state = await quota.check(quota.KIND_NEGO, user)
+    if state.exhausted:
+        await cb.message.answer(_nego_exhausted_text(user, state))
+        await cb.answer()
+        return
+    state = await quota.consume(quota.KIND_NEGO, user)
+
     offer = suggest_offer(listing.price)
     message_text = build_message(listing.title, listing.price, offer)
     await cb.message.answer(
@@ -51,7 +87,8 @@ async def cb_negotiate(cb: CallbackQuery, user: User, session: AsyncSession) -> 
         f"Preis: {listing.price:,.0f} € → Dein Angebot: <b>{offer:,} €</b>\n\n"
         "Nachricht zum Kopieren (antippen):\n"
         f"<code>{escape(message_text)}</code>\n\n"
-        f"🔗 Direkt zur Anzeige: {escape(listing.url)}".replace(",", "."),
+        f"🔗 Direkt zur Anzeige: {escape(listing.url)}".replace(",", ".")
+        + _nego_footer(state),
         disable_web_page_preview=True,
     )
     await cb.answer()

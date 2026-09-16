@@ -328,6 +328,207 @@ _TEXTS: dict[str, dict[str, str]] = {
                             "ru": "📜 История платежей", "uk": "📜 Історія платежів"},
     "premium.btn_cancel": {"de": "❌ Abo kündigen", "en": "❌ Cancel subscription",
                            "ru": "❌ Отменить подписку", "uk": "❌ Скасувати підписку"},
+    "premium.active": {
+        "de": "💎 <b>Premium ist aktiv</b>",
+        "en": "💎 <b>Premium is active</b>",
+        "ru": "💎 <b>Премиум активен</b>",
+        "uk": "💎 <b>Преміум активний</b>",
+    },
+    "premium.active_until": {
+        "de": "✅ Aktiv bis: <b>{date}</b>",
+        "en": "✅ Active until: <b>{date}</b>",
+        "ru": "✅ Активен до: <b>{date}</b>",
+        "uk": "✅ Активний до: <b>{date}</b>",
+    },
+
+    # --- Level comparison --------------------------------------------------
+    "premium.compare_title": {
+        "de": "📊 <b>Die vier Stufen im Vergleich</b>",
+        "en": "📊 <b>The four levels side by side</b>",
+        "ru": "📊 <b>Четыре уровня — сравнение</b>",
+        "uk": "📊 <b>Чотири рівні — порівняння</b>",
+    },
+    "premium.compare_current": {
+        "de": "  ← deine Stufe",
+        "en": "  ← your level",
+        "ru": "  ← твой уровень",
+        "uk": "  ← твій рівень",
+    },
+    "premium.compare_free_price": {
+        "de": "kostenlos", "en": "free of charge",
+        "ru": "бесплатно", "uk": "безкоштовно",
+    },
+    "premium.compare_price": {
+        "de": "{stars} ⭐ (~{eur} €)/Monat",
+        "en": "{stars} ⭐ (~{eur} €)/month",
+        "ru": "{stars} ⭐ (~{eur} €)/мес",
+        "uk": "{stars} ⭐ (~{eur} €)/міс",
+    },
+    "premium.compare_searches": {
+        "de": "• Suchen: <b>{rules}</b> · Prüfung alle {minutes} Min",
+        "en": "• Searches: <b>{rules}</b> · checked every {minutes} min",
+        "ru": "• Поиски: <b>{rules}</b> · проверка каждые {minutes} мин",
+        "uk": "• Пошуки: <b>{rules}</b> · перевірка кожні {minutes} хв",
+    },
+    "premium.compare_fast": {
+        "de": "• Schnell-Slots: <b>{slots}</b> ab {minutes} Min",
+        "en": "• Fast slots: <b>{slots}</b> from {minutes} min",
+        "ru": "• Быстрые слоты: <b>{slots}</b> от {minutes} мин",
+        "uk": "• Швидкі слоти: <b>{slots}</b> від {minutes} хв",
+    },
+    "premium.compare_fast_none": {
+        "de": "• Keine Schnell-Slots",
+        "en": "• No fast slots",
+        "ru": "• Без быстрых слотов",
+        "uk": "• Без швидких слотів",
+    },
+    "premium.compare_cards": {
+        "de": "• Karten: <b>{cards}</b> · Foto-Bewertungen: {photos}",
+        "en": "• Cards: <b>{cards}</b> · photo valuations: {photos}",
+        "ru": "• Карточки: <b>{cards}</b> · оценок по фото: {photos}",
+        "uk": "• Картки: <b>{cards}</b> · оцінок за фото: {photos}",
+    },
+    "premium.compare_quick": {
+        "de": "• Schnell-Suchen: {quick} · Verlauf: {history}",
+        "en": "• Quick searches: {quick} · history: {history}",
+        "ru": "• Быстрые поиски: {quick} · история: {history}",
+        "uk": "• Швидкі пошуки: {quick} · історія: {history}",
+    },
+    "premium.compare_adds": {
+        "de": "• Neu ab hier: {features}",
+        "en": "• New from here: {features}",
+        "ru": "• Новое с этого уровня: {features}",
+        "uk": "• Нове з цього рівня: {features}",
+    },
+    "premium.not_bookable": {
+        "de": "ℹ️ <b>{plan}</b> ist gerade nicht buchbar: die Stufe braucht einen "
+        "Proxy-Pool, und der steht noch nicht bereit.",
+        "en": "ℹ️ <b>{plan}</b> is not on sale right now: the level needs a proxy "
+        "pool and that is not ready yet.",
+        "ru": "ℹ️ <b>{plan}</b> сейчас не купить: уровню нужен пул прокси, а он "
+        "ещё не готов.",
+        "uk": "ℹ️ <b>{plan}</b> зараз не придбати: рівню потрібен пул проксі, а він "
+        "ще не готовий.",
+    },
+    "premium.not_bookable_short": {
+        "de": "Nicht buchbar: Proxy-Pool fehlt.",
+        "en": "Not on sale: proxy pool missing.",
+        "ru": "Не продаётся: нет пула прокси.",
+        "uk": "Не продається: немає пулу проксі.",
+    },
+    "premium.feature.flip_mode": {
+        "de": "Flip-Modus", "en": "Flip mode",
+        "ru": "Режим перепродажи", "uk": "Режим перепродажу",
+    },
+    "premium.feature.rule_power": {
+        "de": "Profi-Filter", "en": "Power filters",
+        "ru": "Профи-фильтры", "uk": "Профі-фільтри",
+    },
+    "premium.feature.export": {
+        "de": "Export", "en": "Export", "ru": "Экспорт", "uk": "Експорт",
+    },
+    "premium.feature.market_report": {
+        "de": "Marktbericht", "en": "Market report",
+        "ru": "Отчёт по рынку", "uk": "Звіт по ринку",
+    },
+    "premium.feature.forwarding": {
+        "de": "Weiterleitung in Kanäle", "en": "Forwarding to channels",
+        "ru": "Пересылка в каналы", "uk": "Пересилання в канали",
+    },
+
+    # --- Usage (/usage) ----------------------------------------------------
+    "usage.title": {
+        "de": "📈 <b>Dein Verbrauch</b>",
+        "en": "📈 <b>Your usage</b>",
+        "ru": "📈 <b>Твой расход</b>",
+        "uk": "📈 <b>Твоя витрата</b>",
+    },
+    "usage.level": {
+        "de": "Stufe: <b>{label}</b>",
+        "en": "Level: <b>{label}</b>",
+        "ru": "Уровень: <b>{label}</b>",
+        "uk": "Рівень: <b>{label}</b>",
+    },
+    "usage.kind.cards": {
+        "de": "Deal-Karten", "en": "Deal cards",
+        "ru": "Карточки сделок", "uk": "Картки угод",
+    },
+    "usage.kind.photo": {
+        "de": "Foto-Bewertungen", "en": "Photo valuations",
+        "ru": "Оценки по фото", "uk": "Оцінки за фото",
+    },
+    "usage.kind.quick": {
+        "de": "Schnell-Suchen", "en": "Quick searches",
+        "ru": "Быстрые поиски", "uk": "Швидкі пошуки",
+    },
+    "usage.kind.nego": {
+        "de": "Verhandlungen", "en": "Negotiations",
+        "ru": "Переговоры", "uk": "Перемовини",
+    },
+    "usage.row_head": {
+        "de": "<b>{name}</b> {window}",
+        "en": "<b>{name}</b> {window}",
+        "ru": "<b>{name}</b> {window}",
+        "uk": "<b>{name}</b> {window}",
+    },
+    "usage.row_capped": {
+        "de": "{bar} {used}/{limit} · {remaining} übrig",
+        "en": "{bar} {used}/{limit} · {remaining} left",
+        "ru": "{bar} {used}/{limit} · осталось {remaining}",
+        "uk": "{bar} {used}/{limit} · залишилось {remaining}",
+    },
+    "usage.row_exhausted": {
+        "de": "{bar} {used}/{limit} · aufgebraucht",
+        "en": "{bar} {used}/{limit} · used up",
+        "ru": "{bar} {used}/{limit} · исчерпано",
+        "uk": "{bar} {used}/{limit} · вичерпано",
+    },
+    "usage.row_unlimited": {
+        "de": "unbegrenzt · {used} genutzt",
+        "en": "unlimited · {used} used",
+        "ru": "без лимита · использовано {used}",
+        "uk": "без ліміту · використано {used}",
+    },
+    "usage.fast_title": {
+        "de": "⚡ <b>Schnell-Slots</b> ({used}/{total})",
+        "en": "⚡ <b>Fast slots</b> ({used}/{total})",
+        "ru": "⚡ <b>Быстрые слоты</b> ({used}/{total})",
+        "uk": "⚡ <b>Швидкі слоти</b> ({used}/{total})",
+    },
+    "usage.fast_row": {
+        "de": "• {name} — alle {minutes} Min",
+        "en": "• {name} — every {minutes} min",
+        "ru": "• {name} — каждые {minutes} мин",
+        "uk": "• {name} — кожні {minutes} хв",
+    },
+    "usage.fast_none": {
+        "de": "Gerade belegt keine Suche einen Schnell-Slot.",
+        "en": "No search is holding a fast slot right now.",
+        "ru": "Сейчас ни один поиск не занимает быстрый слот.",
+        "uk": "Зараз жоден пошук не займає швидкий слот.",
+    },
+    "usage.fast_locked": {
+        "de": "⚡ Deine Stufe hat keine Schnell-Slots.",
+        "en": "⚡ Your level has no fast slots.",
+        "ru": "⚡ На твоём уровне нет быстрых слотов.",
+        "uk": "⚡ На твоєму рівні немає швидких слотів.",
+    },
+    "usage.upgrade": {
+        "de": "⬆️ <b>Nächste Stufe</b>\n{hint}",
+        "en": "⬆️ <b>Next level</b>\n{hint}",
+        "ru": "⬆️ <b>Следующий уровень</b>\n{hint}",
+        "uk": "⬆️ <b>Наступний рівень</b>\n{hint}",
+    },
+    "usage.top_level": {
+        "de": "🏆 Du bist auf der höchsten Stufe — mehr geht nicht.",
+        "en": "🏆 You are on the top level — there is nothing above.",
+        "ru": "🏆 Ты на высшем уровне — выше некуда.",
+        "uk": "🏆 Ти на найвищому рівні — вище нікуди.",
+    },
+    "btn.usage": {"de": "📈 Verbrauch", "en": "📈 Usage",
+                  "ru": "📈 Расход", "uk": "📈 Витрата"},
+    "btn.premium": {"de": "💎 Premium", "en": "💎 Premium",
+                    "ru": "💎 Премиум", "uk": "💎 Преміум"},
 
     # --- Privacy / data ----------------------------------------------------
     "privacy.commands": {
@@ -337,6 +538,13 @@ _TEXTS: dict[str, dict[str, str]] = {
         "uk": "🔐 Твої дані: /privacy · Вивантаження: /meinedaten · Видалити: /loeschen",
     },
 }
+
+
+def feature_label(key: str, lang: str | None = None) -> str:
+    """Name of a tier feature flag. A flag added in settings but not yet
+    translated shows its raw key instead of a broken lookup string."""
+    label = t(f"premium.feature.{key}", lang)
+    return key if label.startswith("premium.feature.") else label
 
 
 def t(key: str, lang: str | None = None, /, **kwargs: object) -> str:

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from app.database.models.enums import SiteName
+from app.config.settings import settings
+from app.database.models.enums import DealVerdict, SiteName
 from app.parsers import registry
 from app.services import ai
 from app.services.ai import AIScore, _parse_response
-from app.database.models.enums import DealVerdict
 
 
 def test_registry_has_registered_parsers():
@@ -19,6 +19,20 @@ def test_registry_has_registered_parsers():
 def test_registry_resolve_all_when_empty():
     assert len(registry.resolve([])) == len(registry)
     assert len(registry.resolve([SiteName.EBAY])) == 1
+
+
+def test_flagged_parser_stays_out_of_the_all_sites_fallback():
+    """A rule with ``sites=[]`` runs on EVERY registered parser.
+
+    That is why Vinted registers itself only behind ``VINTED_ENABLED``: an
+    unconditional registration would put an unverified parser in front of every
+    existing user on the next deploy, because every rule resolves to "all".
+    """
+    registered = SiteName.VINTED in registry.available_sites
+    assert registered is settings.vinted_enabled
+    if not settings.vinted_enabled:
+        assert registry.resolve([SiteName.VINTED]) == []
+        assert all(p.site is not SiteName.VINTED for p in registry.resolve([]))
 
 
 def test_ai_disabled_by_default(monkeypatch):

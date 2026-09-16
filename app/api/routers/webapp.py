@@ -15,11 +15,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.webapp_auth import current_webapp_user
+from app.bot.texts import feature_label, t
 from app.config.settings import settings
 from app.database.models import Listing, SearchRule, User
 from app.database.session import get_session
+from app.services import entitlements as ent
 from app.services import flips as flip_svc
-from app.services import premium
+from app.services import premium, quota
 from app.services.repositories import SearchRuleRepository
 from app.services.roles import effective_role
 
@@ -27,6 +29,40 @@ router = APIRouter(prefix="/webapp", tags=["webapp"])
 
 
 # --- Schemas ----------------------------------------------------------------------
+class QuotaOut(BaseModel):
+    """One metered quota with its window, as the usage bars need it."""
+
+    kind: str
+    label: str
+    used: int
+    limit: int          # -1 = unlimited
+    remaining: int      # -1 = unlimited
+    unlimited: bool
+    exhausted: bool
+    window: str
+
+
+class LevelOut(BaseModel):
+    """One level of the ladder — every figure resolved from its entitlements."""
+
+    tier: str
+    label: str
+    price_stars: int
+    price_eur: float
+    purchasable: bool
+    note: str | None
+    max_rules: int
+    base_interval_seconds: int
+    min_interval_seconds: int
+    fast_slots: int
+    daily_notifications: int
+    photo_evals_per_month: int
+    quick_searches_per_day: int
+    negotiations_per_month: int
+    history_days: int
+    features: list[str]
+
+
 class MeOut(BaseModel):
     telegram_id: int
     name: str
@@ -40,6 +76,9 @@ class MeOut(BaseModel):
     flip_min_net: float | None
     price_stars: int
     price_eur: float
+    entitlements: LevelOut
+    usage: list[QuotaOut]
+    levels: list[LevelOut]
 
 
 class RuleOut(BaseModel):
@@ -154,6 +193,48 @@ class PaymentOut(BaseModel):
     created_at: datetime
 
 
+# --- Level and usage payloads -------------------------------------------------------
+def level_out(e: ent.Entitlements, lang: str) -> LevelOut:
+    """Serialise one level; Free carries no price and is never purchasable."""
+    plan = premium.plan_for_tier(e.tier) if e.is_paid else None
+    on_sale = plan is not None and plan.key in {p.key for p in premium.available_plans()}
+    return LevelOut(
+        tier=e.tier.value,
+        label=e.label,
+        price_stars=plan.price_stars if plan else 0,
+        price_eur=plan.price_eur if plan else 0.0,
+        purchasable=on_sale,
+        note=None if on_sale or plan is None else t("premium.not_bookable_short", lang),
+        max_rules=e.max_rules,
+        base_interval_seconds=e.interval_floor(fast=False),
+        min_interval_seconds=e.interval_floor(fast=True),
+        fast_slots=e.fast_slots,
+        daily_notifications=e.daily_notifications,
+        photo_evals_per_month=e.photo_evals_per_month,
+        quick_searches_per_day=e.quick_searches_per_day,
+        negotiations_per_month=e.negotiations_per_month,
+        history_days=e.history_days,
+        features=[feature_label(f, lang) for f in sorted(e.features)],
+    )
+
+
+def usage_out(states: dict[str, quota.QuotaState], lang: str) -> list[QuotaOut]:
+    """The quota snapshot in the order the bot's /usage page shows it."""
+    return [
+        QuotaOut(
+            kind=state.kind,
+            label=t(f"usage.kind.{state.kind}", lang),
+            used=state.used,
+            limit=state.limit,
+            remaining=state.remaining,
+            unlimited=state.unlimited,
+            exhausted=state.exhausted,
+            window=state.window_label,
+        )
+        for state in states.values()
+    ]
+
+
 # --- Endpoints ----------------------------------------------------------------------
 @router.get("/me", response_model=MeOut)
 async def me(
@@ -167,6 +248,7 @@ async def me(
         and sub.payment_provider == "telegram_stars"
         and sub.payment_status != premium.CANCEL_AT_PERIOD_END
     )
+    lang = user.language_code
     return MeOut(
         telegram_id=user.telegram_id,
         name=user.display_name,
@@ -180,6 +262,9 @@ async def me(
         flip_min_net=await flip_svc.get_flip_min(user.telegram_id),
         price_stars=settings.premium_price_stars,
         price_eur=settings.premium_price_eur,
+        entitlements=level_out(user.entitlements, lang),
+        usage=usage_out(await quota.snapshot(user), lang),
+        levels=[level_out(e, lang) for e in ent.all_tiers()],
     )
 
 

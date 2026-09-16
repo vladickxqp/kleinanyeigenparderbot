@@ -53,6 +53,38 @@ async function wa<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** One metered quota. `limit`/`remaining` carry -1 when the level has no cap. */
+export interface WaQuota {
+  kind: string;
+  label: string;
+  used: number;
+  limit: number;
+  remaining: number;
+  unlimited: boolean;
+  exhausted: boolean;
+  window: string;
+}
+
+/** One level of the ladder, with every figure resolved on the server. */
+export interface WaLevel {
+  tier: string;
+  label: string;
+  price_stars: number;
+  price_eur: number;
+  purchasable: boolean;
+  note: string | null;
+  max_rules: number;
+  base_interval_seconds: number;
+  min_interval_seconds: number;
+  fast_slots: number;
+  daily_notifications: number;
+  photo_evals_per_month: number;
+  quick_searches_per_day: number;
+  negotiations_per_month: number;
+  history_days: number;
+  features: string[];
+}
+
 export interface Me {
   telegram_id: number;
   name: string;
@@ -66,6 +98,9 @@ export interface Me {
   flip_min_net: number | null;
   price_stars: number;
   price_eur: number;
+  entitlements: WaLevel;
+  usage: WaQuota[];
+  levels: WaLevel[];
 }
 
 export interface WaRule {
@@ -176,3 +211,16 @@ export const eur = (v: number | null | undefined) =>
 
 export const dateDE = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleDateString("de-DE") : "—";
+
+/** Mirrors entitlements.fmt_quota: -1 is a cap that does not exist. */
+export const quotaText = (value: number, unit = "") =>
+  value < 0 ? "unbegrenzt" : `${value.toLocaleString("de-DE")}${unit}`;
+
+/** How full a capped quota is, as a 0…1 share for the usage bars. */
+export const quotaShare = (q: WaQuota) =>
+  q.unlimited ? 0 : q.limit <= 0 ? 1 : Math.min(1, q.used / q.limit);
+
+export const everyMinutes = (seconds: number) =>
+  seconds < 3600
+    ? `${Math.max(1, Math.round(seconds / 60))} Min`
+    : `${Math.round(seconds / 3600)} Std`;

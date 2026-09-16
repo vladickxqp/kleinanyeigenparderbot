@@ -54,6 +54,7 @@ async def _set_commands(bot: Bot) -> None:
             BotCommand(command="menu", description="Hauptmenü öffnen"),
             BotCommand(command="suche", description="Schnell-Suche ohne Regel"),
             BotCommand(command="premium", description="Premium-Status & Upgrade"),
+            BotCommand(command="usage", description="Verbrauch & Limits"),
             BotCommand(command="flips", description="Meine Flips & Gewinn"),
             BotCommand(command="payments", description="Zahlungsverlauf & Abbuchungen"),
             BotCommand(command="support", description="Support kontaktieren"),

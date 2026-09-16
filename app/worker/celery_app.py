@@ -92,4 +92,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.worker.tasks.dispatch_broadcasts",
         "schedule": 15.0,  # pick up immediate + due scheduled broadcasts
     },
+    "purge-old-data": {
+        "task": "app.worker.tasks.purge_old_data",
+        # Nightly and off-peak: deleting competes with the live pipeline for
+        # the same tables, and nobody hunts deals at 03:30.
+        "schedule": crontab(hour=3, minute=30),
+    },
 }

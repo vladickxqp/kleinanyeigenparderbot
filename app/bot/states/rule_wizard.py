@@ -20,7 +20,11 @@ class RuleWizard(StatesGroup):
 
 
 class EditWizard(StatesGroup):
-    """Edit a single field of an existing rule (rule id kept in FSM data)."""
+    """Edit a single field of an existing rule (rule id kept in FSM data).
+
+    The three filter states below exist only here: the creation wizard already
+    asks eight questions before it shows a single result.
+    """
 
     name = State()
     keywords = State()
@@ -31,3 +35,6 @@ class EditWizard(StatesGroup):
     radius = State()
     interval = State()
     min_score = State()
+    condition = State()
+    shipping = State()
+    auctions = State()

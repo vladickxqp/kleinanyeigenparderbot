@@ -25,13 +25,18 @@ import {
   SDK_URL,
   WebAppError,
   dateDE,
+  everyMinutes,
+  quotaShare,
+  quotaText,
   tg,
   webapp,
   type Me,
   type RuleInput,
   type WaFlips,
+  type WaLevel,
   type WaListing,
   type WaPayment,
+  type WaQuota,
   type WaRule,
 } from "../lib/webapp";
 
@@ -690,6 +695,102 @@ function Line({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** How full one quota is. A hairline track, no label of its own — the row says it. */
+function QuotaBar({ quota }: { quota: WaQuota }) {
+  const share = quotaShare(quota);
+  return (
+    <div
+      style={{
+        height: 3,
+        borderRadius: 2,
+        marginTop: 9,
+        background: "var(--dh-fill)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          width: `${Math.max(quota.used > 0 ? 3 : 0, share * 100)}%`,
+          height: "100%",
+          background: quota.exhausted ? "var(--dh-warn)" : "var(--dh-accent)",
+          opacity: quota.unlimited ? 0.3 : 1,
+        }}
+      />
+    </div>
+  );
+}
+
+function UsageRow({ quota }: { quota: WaQuota }) {
+  const left = quota.unlimited
+    ? `${quota.used} genutzt`
+    : quota.exhausted
+      ? "aufgebraucht"
+      : `${quota.remaining} übrig`;
+
+  return (
+    <div className="dh-row">
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
+        <span style={{ fontSize: 14.5, fontWeight: 500 }}>{quota.label}</span>
+        <span className="dh-num" style={{ fontSize: 13.5, fontWeight: 500 }}>
+          {quota.unlimited ? quotaText(-1) : `${quota.used} / ${quota.limit}`}
+        </span>
+      </div>
+      <QuotaBar quota={quota} />
+      <div className="dh-meta" style={{ marginTop: 7 }}>
+        {quota.window} · {left}
+      </div>
+    </div>
+  );
+}
+
+function LevelRow({ level, current, added }: { level: WaLevel; current: boolean; added: string[] }) {
+  const facts = [
+    `${level.max_rules} Suchen`,
+    `alle ${everyMinutes(level.base_interval_seconds)}`,
+    level.fast_slots > 0
+      ? `${level.fast_slots} Schnell-Slots ab ${everyMinutes(level.min_interval_seconds)}`
+      : "keine Schnell-Slots",
+    `${quotaText(level.daily_notifications)} Karten/Tag`,
+    `${quotaText(level.photo_evals_per_month)} Fotos/Monat`,
+    `${quotaText(level.quick_searches_per_day)} Schnell-Suchen/Tag`,
+    `Verlauf ${quotaText(level.history_days, " Tage")}`,
+  ];
+
+  return (
+    <div className="dh-row">
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+          <span style={{ fontSize: 14.5, fontWeight: 500 }}>{level.label}</span>
+          {current && <span className="dh-pill">aktuell</span>}
+        </span>
+        <span className="dh-num" style={{ fontSize: 13.5, fontWeight: 500, flex: "none" }}>
+          {level.price_stars > 0 ? `${level.price_stars} Stars` : "kostenlos"}
+        </span>
+      </div>
+
+      <div className="dh-muted" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.5 }}>
+        {facts.join(" · ")}
+      </div>
+
+      {added.length > 0 && (
+        <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
+          {added.map((f) => (
+            <span key={f} className="dh-chip">
+              {f}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {level.note && (
+        <div className="dh-meta" style={{ marginTop: 8, whiteSpace: "normal", color: "var(--dh-warn)" }}>
+          {level.note}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AccountTab({ me }: { me: Me | null }) {
   const { data, error, loading } = useLoad<WaPayment[]>(() => webapp.payments(), []);
 
@@ -700,10 +801,10 @@ function AccountTab({ me }: { me: Me | null }) {
           <div className="dh-row" style={{ padding: "14px 14px 16px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div className="dh-label">Tarif</div>
-              <span className="dh-pill">{me.is_paid ? me.tier : "free"}</span>
+              <span className="dh-pill">{me.entitlements.tier}</span>
             </div>
             <div className="dh-figure-sm" style={{ marginTop: 6, fontSize: 22 }}>
-              {me.is_paid ? me.tier.charAt(0).toUpperCase() + me.tier.slice(1) : "Free"}
+              {me.entitlements.label}
             </div>
 
             {me.is_paid ? (
@@ -723,6 +824,36 @@ function AccountTab({ me }: { me: Me | null }) {
             )}
           </div>
         </div>
+      )}
+
+      {me && me.usage.length > 0 && (
+        <>
+          <div className="dh-label">Verbrauch</div>
+          <div className="dh-group">
+            {me.usage.map((q) => (
+              <UsageRow key={q.kind} quota={q} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {me && me.levels.length > 0 && (
+        <>
+          <div className="dh-label">Stufen</div>
+          <div className="dh-group">
+            {me.levels.map((level, i) => (
+              <LevelRow
+                key={level.tier}
+                level={level}
+                current={level.tier === me.entitlements.tier}
+                added={level.features.filter((f) => !(me.levels[i - 1]?.features ?? []).includes(f))}
+              />
+            ))}
+          </div>
+          <div className="dh-muted" style={{ fontSize: 12.5 }}>
+            Stufe wechseln im Chat mit /premium, Verbrauch im Detail mit /usage.
+          </div>
+        </>
       )}
 
       <div className="dh-label">Zahlungen</div>
@@ -790,7 +921,7 @@ export function MiniApp() {
       <header className="dh-header">
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
           <span className="dh-wordmark">Deal Hunter</span>
-          {me.data && <span className="dh-pill">{me.data.is_paid ? me.data.tier : "free"}</span>}
+          {me.data && <span className="dh-pill">{me.data.entitlements.label}</span>}
         </div>
         {me.data && (
           <span className="dh-meta" style={{ fontSize: 12.5 }}>

@@ -217,17 +217,44 @@ edited with live progress and a final report (sent / blocked / failed).
 
 ## 💎 Plans, trials and privacy
 
-Two plans are on sale, both as real Telegram Stars subscriptions: **Pro**
-(`PRO_PRICE_STARS`, limited number of searches) and **Unlimited**
-(`PREMIUM_PRICE_STARS`, everything plus photo valuation). Prices, quotas and
-intervals live in settings — nothing is hardcoded. Paying users' searches run
-on a separate worker queue, so priority processing is a real behaviour and not
-just a bullet point.
+Four levels, all as real Telegram Stars subscriptions. The ladder is
+denominated in the resource that actually runs out: scrape requests per minute.
+A single home connection carries roughly thirty per minute, so a plan that
+promised everyone a one-minute interval would be selling the same capacity
+several times over.
+
+Every level therefore has a **base interval** for its searches plus a number of
+**fast slots**: searches allowed to run at that level's fastest interval. The
+top level does not buy a faster interval than the one below it, because below
+one minute the marketplaces simply start blocking. It buys more fast searches,
+a shorter base interval and its own worker queue.
+
+| | Free | Starter | Profi | Händler |
+|---|---|---|---|---|
+| Searches | 3 | 10 | 30 | 100 |
+| Base interval | 10 min | 5 min | 5 min | 3 min |
+| Fast slots | – | 3 × 2 min | 10 × 1 min | 25 × 1 min |
+| Cards per day | 10 | 100 | 500 | unlimited |
+| Photo valuations | 1/month | 5/month | 30/month | unlimited |
+| Quick searches | 3/day | 20/day | 100/day | unlimited |
+| History kept | 14 days | 90 days | 1 year | 3 years |
+| Price | – | 350 ⭐ | 750 ⭐ | 1500 ⭐ |
+
+Every number in that table comes from settings; the bot renders it from
+`app/services/entitlements.py`, so changing a price or a quota is a
+configuration change. Usage is metered per user and shown in `/usage`. When a
+cap is reached the bot says so and names what is being withheld — silence is
+the worst failure mode for a deal bot.
+
+The Händler plan only goes on sale once a proxy pool is configured
+(`DEALER_REQUIRES_PROXIES`): at full speed one dealer needs more requests per
+minute than a single address can carry.
 
 Every grant lands in the payment ledger, including trials, coupons and referral
 rewards, and a charge is booked exactly once even if Telegram redelivers the
-update. Quotas are re-applied on every downgrade, expiry, cancellation or
-refund.
+update. A subscription records which level was bought, so a renewal can never
+guess it. Quotas and fast slots are re-applied on every downgrade, expiry,
+cancellation or refund, oldest searches first.
 
 Users can see what is stored about them (`/privacy`), export it as JSON
 (`/meinedaten`) and delete their account and data (`/loeschen`); the financial
@@ -239,9 +266,52 @@ ledger is kept but loses its personal link.
 
 1. Create `app/parsers/sites/<site>.py`.
 2. Subclass `BaseParser`, set `site = SiteName.<SITE>` and implement `search()`.
-3. Decorate the class with `@register_parser` — that's it, the scheduler will use it.
+3. Register the class — `@register_parser` for a verified parser, or the flagged
+   form below while the extraction is still a guess.
 
-See `app/parsers/sites/kleinanzeigen.py` for a complete reference implementation.
+**Register behind a flag until the parser has seen a live response.** A
+`SearchRule` stores `sites=[]` by default and the registry resolves that to
+*every* registered parser, so an unconditional `@register_parser` puts a new
+parser in front of all existing users on the next deploy. Declare the class
+undecorated and register it at the end of the module instead — `register_parser`
+is a plain function, not only a decorator:
+
+```python
+if settings.<site>_enabled:      # default False in app/config/settings.py
+    register_parser(MyParser)
+```
+
+**A JSON API site needs more than new selectors.** `app/parsers/sites/vinted.py`
+is the reference for that case:
+
+- **Own headers.** Override `_headers()` and call `super()._headers()` first, so
+  the rotating user agent and language survive, then set a JSON `Accept` — the
+  base one asks for HTML and an API typically answers that with an error page.
+- **Own cookie handling.** `BaseParser.fetch` opens a fresh client per call and
+  can therefore never carry a session. If the endpoint demands one, write a
+  private `_fetch_json` that still `await self._throttle()`s (the politeness
+  budget is shared and Redis-coordinated), uses `self._random_proxy()`, and runs
+  the cookie-minting request and the API request through **one** client.
+- **Only plain data on `self`.** Parser instances are process-wide singletons
+  while the worker gives every task its own event loop, so cache a cookie dict
+  and an expiry float — never a client, lock or any other asyncio primitive
+  (see the note in `app/parsers/base.py`).
+- **Separate "empty" from "blocked".** An empty result array is an honest
+  "nothing matched"; a body without the expected array at all is a block or a
+  schema change and must call `self.mark_suspected_block()`. Keep the 403 / 429
+  / 503 marking `fetch` does; a 401 from an expired anonymous token deserves one
+  silent refresh and retry first.
+- **Keep extraction pure.** Put the mapping in a function over an
+  already-decoded payload (no I/O) so tests can drive it from an inline fixture.
+- **Never invent numbers.** Watch the decimal separator (a JSON API usually
+  sends `12.50`, the German HTML pages send `12,50`), and let a filter the API
+  cannot express be a no-op rather than one that silently empties the result.
+- **`posted_at`.** Only add the site to `freshness.DATE_AWARE_SITES` once the
+  timestamp semantics are confirmed against live data — a misread field there
+  marks every listing stale and the site delivers nothing.
+
+See `app/parsers/sites/kleinanzeigen.py` for a complete HTML reference
+implementation and `app/parsers/sites/vinted.py` for the JSON API variant.
 
 ---
 

@@ -38,6 +38,109 @@ CATEGORY_IDS: dict[str, str] = {
     "fahrraeder": "217",      # Fahrräder & Zubehör
 }
 
+# --- Condition heuristic ------------------------------------------------------
+# Kleinanzeigen result cards carry no condition field, and the detail page would
+# cost one extra request per ad. The condition filter is therefore a text
+# heuristic over title + description, with the same word boundaries the
+# relevance filter uses.
+
+#: "neu" is listed WITHOUT its inflected forms on purpose: "neuer Akku" and
+#: "neue Schutzfolie" appear in a large share of used-phone ads and would flip
+#: every one of them to NEW.
+_NEW_MARKERS: tuple[str, ...] = (
+    "neu",
+    "ovp",
+    "versiegelt", "versiegelte", "versiegelter", "versiegeltes",
+    "ungeöffnet", "ungeöffnete", "ungeöffneter", "ungeöffnetes",
+    "originalverpackt", "originalverpackte", "originalverpackter",
+    "unbenutzt", "unbenutzte", "unbenutzter", "unbenutztes",
+)
+
+#: German adjective endings are spelled out: sellers write "defekte Kamera" as
+#: often as "Kamera defekt", and a strict word boundary would miss the former.
+_DEFECTIVE_MARKERS: tuple[str, ...] = (
+    "defekt", "defekte", "defekter", "defektes", "defekten",
+    "kaputt", "kaputte", "kaputter", "kaputtes", "kaputten",
+    "bastler",
+    "ersatzteilträger",
+)
+
+#: Conditions this heuristic can actually decide. A rule carrying anything else
+#: (LIKE_NEW, REFURBISHED — values older versions could store) keeps every ad
+#: instead of silently returning nothing.
+_DECIDABLE_CONDITIONS: frozenset[Condition] = frozenset(
+    {Condition.NEW, Condition.USED, Condition.DEFECTIVE}
+)
+
+
+def _marker_pattern(words: tuple[str, ...]) -> re.Pattern[str]:
+    """Build a word-boundary alternation for ``words``.
+
+    Both boundaries matter: plain substring matching makes "neu" match
+    "Neupreis" and "neuwertig", which would mark half of all used ads as new.
+    """
+    alternation = "|".join(re.escape(word) for word in words)
+    return re.compile(rf"(?<![a-zäöüß])(?:{alternation})(?![a-zäöüß])")
+
+
+_NEW_RE = _marker_pattern(_NEW_MARKERS)
+_DEFECTIVE_RE = _marker_pattern(_DEFECTIVE_MARKERS)
+
+
+def guess_condition(title: str, description: str | None = None) -> Condition:
+    """Best-effort item condition from the ad text.
+
+    Defect wins over new, because "iPhone 14 neu, Display defekt" is a defect
+    ad. Everything without a marker counts as USED: on a classifieds site
+    second-hand is the default, and claiming NEW without evidence would be the
+    more expensive mistake.
+    """
+    text = f"{title} {description or ''}".lower()
+    if _DEFECTIVE_RE.search(text):
+        return Condition.DEFECTIVE
+    if _NEW_RE.search(text):
+        return Condition.NEW
+    return Condition.USED
+
+
+def matches_condition(
+    wanted: Condition, title: str, description: str | None = None
+) -> bool:
+    """Whether an ad survives the rule's condition filter."""
+    if wanted not in _DECIDABLE_CONDITIONS:
+        return True
+    guessed = guess_condition(title, description)
+    if wanted is Condition.USED:
+        # "Gebraucht" on a classifieds site means "not broken" — an ad that
+        # never mentions its condition must not be thrown away.
+        return guessed is not Condition.DEFECTIVE
+    return guessed is wanted
+
+
+def shipping_flag(item: ParsedListing) -> bool:
+    """Whether a Kleinanzeigen card offers shipping.
+
+    ``shipping_cost == 0.0`` is this parser's marker for "Versand möglich" (a
+    real shipping price would cost one extra request per ad). The site prints
+    that hint whenever the seller offers shipping, so a card without it is a
+    "no", not a shrug — which is what makes the filter worth having here.
+
+    Sites that cannot tell at all must pass ``None`` to :func:`matches_shipping`
+    instead of guessing a value for their ads.
+    """
+    return item.shipping_cost is not None
+
+
+def matches_shipping(wanted: bool | None, offered: bool | None) -> bool:
+    """Tri-state shipping filter.
+
+    An ad may only be dropped when BOTH sides are known. Treating unknown as a
+    "no" would silently empty every marketplace that does not report the flag.
+    """
+    if wanted is None or offered is None:
+        return True
+    return wanted is offered
+
 
 @register_parser
 class KleinanzeigenParser(BaseParser):
@@ -193,6 +296,10 @@ class KleinanzeigenParser(BaseParser):
             if not query.matches_text(item.title, item.description):
                 continue
             if query.exclude_auctions and item.is_auction:
+                continue
+            if not matches_condition(query.condition, item.title, item.description):
+                continue
+            if not matches_shipping(query.shipping_available, shipping_flag(item)):
                 continue
             if query.max_price is not None and item.price is not None:
                 if item.price > query.max_price:

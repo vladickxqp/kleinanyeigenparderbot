@@ -42,6 +42,7 @@ from app.database.models import (
 )
 from app.database.models.enums import SubscriptionTier
 from app.services import coupons as coupon_svc
+from app.services import entitlements as ent
 from app.services import health
 from app.services import premium as premium_svc
 from app.services.roles import ASSIGNABLE_ROLES, effective_role, has_role, role_badge
@@ -85,6 +86,54 @@ async def _broadcasts_text(session: AsyncSession) -> str:
 
 
 # --- Panel text builders -------------------------------------------------------
+async def _tier_pressure(session: AsyncSession) -> tuple[str, int, int, int]:
+    """How the users spread over the four levels and how hard the card quota bites.
+
+    Delivered cards are counted from the listings themselves rather than from
+    the Redis meters: one query answers it for every user at once, and the
+    ledger survives a metering outage.
+    """
+    levels = ent.all_tiers()
+    spread = {e.tier: 0 for e in levels}
+    cap = {e.tier: e.daily_notifications for e in levels}
+    rows = await session.execute(
+        select(User.subscription, func.count(User.id)).group_by(User.subscription)
+    )
+    for tier, count in rows:
+        spread[tier.canonical] += count
+    labels = " · ".join(f"{e.label} <b>{spread[e.tier]}</b>" for e in levels)
+
+    midnight = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    delivered = await session.execute(
+        select(User.subscription, func.count(Listing.id))
+        .join(SearchRule, SearchRule.user_id == User.id)
+        .join(Listing, Listing.rule_id == SearchRule.id)
+        .where(Listing.notified_at >= midnight)
+        .group_by(User.id, User.subscription)
+    )
+    near = at_limit = 0
+    for tier, sent in delivered:
+        limit = cap[tier.canonical]
+        if ent.is_unlimited(limit):
+            continue
+        if sent >= limit:
+            at_limit += 1
+        elif sent * 2 > limit:
+            # Past halfway is the warning band: a share that needs no tuning knob.
+            near += 1
+    withheld = (
+        await session.scalar(
+            select(func.count(Listing.id)).where(
+                Listing.withheld.is_(True), Listing.created_at >= midnight
+            )
+        )
+        or 0
+    )
+    return labels, near, at_limit, withheld
+
+
 async def _dashboard_text(session: AsyncSession) -> str:
     total_users = await session.scalar(select(func.count(User.id))) or 0
     active_users = (
@@ -128,6 +177,8 @@ async def _dashboard_text(session: AsyncSession) -> str:
     )
     total_listings = await session.scalar(select(func.count(Listing.id))) or 0
 
+    tiers, near_quota, at_quota, withheld_today = await _tier_pressure(session)
+
     status = await health.get_status()
     worker = "🟢 läuft" if status.worker_alive else "🔴 KEIN Lebenszeichen"
     queue = await health.queue_depth()
@@ -140,7 +191,12 @@ async def _dashboard_text(session: AsyncSession) -> str:
         "👑 <b>Admin-Dashboard</b>\n\n"
         f"👥 Nutzer: <b>{total_users}</b> (aktiv: {active_users})\n"
         f"💎 Premium: <b>{paid_users}</b> · aktive Abos: {active_subs}\n"
+        f"🏷 Stufen: {tiers}\n"
         f"💰 Gesamt: <b>{payments_count}</b> Zahlungen ≈ {revenue_eur:.2f} €\n\n"
+        f"📨 Karten-Limit heute: <b>{at_quota}</b> am Limit · "
+        f"{near_quota} über der Hälfte"
+        + (f" · {withheld_today} zurückgehalten" if withheld_today else "")
+        + "\n\n"
         f"{format_metrics(metrics)}\n\n"
         f"📋 Suchen: <b>{active_rules}</b>/{total_rules} aktiv\n"
         f"🛒 Angebote gesamt: <b>{total_listings}</b>\n"
