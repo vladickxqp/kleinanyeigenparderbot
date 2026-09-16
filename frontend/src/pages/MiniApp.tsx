@@ -1,10 +1,16 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { VerdictBadge } from "../components/VerdictBadge";
+import {
+  DealCard,
+  DealHero,
+  DealSkeleton,
+  money,
+  since,
+  type DealLike,
+} from "../components/DealCard";
 import {
   SDK_URL,
   WebAppError,
   dateDE,
-  eur,
   tg,
   webapp,
   type Me,
@@ -17,19 +23,12 @@ import {
 
 type Tab = "deals" | "rules" | "flips" | "premium";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "deals", label: "🔥 Deals" },
-  { id: "rules", label: "📋 Suchen" },
-  { id: "flips", label: "📦 Flips" },
-  { id: "premium", label: "💎 Premium" },
+const TABS: { id: Tab; icon: string; label: string }[] = [
+  { id: "deals", icon: "🔥", label: "Deals" },
+  { id: "rules", icon: "🎯", label: "Suchen" },
+  { id: "flips", icon: "📦", label: "Flips" },
+  { id: "premium", icon: "💎", label: "Konto" },
 ];
-
-// Telegram injects --tg-theme-* CSS variables on the root once the SDK runs;
-// the fallbacks keep the page readable in a normal browser.
-const BG = "bg-[var(--tg-theme-bg-color,#f8fafc)] text-[var(--tg-theme-text-color,#0f172a)]";
-const CARD = "rounded-2xl p-4 bg-[var(--tg-theme-secondary-bg-color,#ffffff)] shadow-sm";
-const HINT = "text-[var(--tg-theme-hint-color,#64748b)] text-sm";
-const BTN = "rounded-xl px-4 py-2 text-sm font-medium bg-[var(--tg-theme-button-color,#2563eb)] text-[var(--tg-theme-button-text-color,#ffffff)]";
 
 function useTelegramSdk(): boolean {
   const [ready, setReady] = useState(!!tg());
@@ -77,65 +76,124 @@ function useLoad<T>(fn: () => Promise<T>, deps: unknown[]) {
   return state;
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function haptic(style = "light") {
+  tg()?.HapticFeedback?.impactOccurred(style);
+}
+
+// --- Small building blocks ----------------------------------------------------------
+function Screen({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <div className="space-y-3">
-      <h2 className="text-lg font-semibold">{title}</h2>
+    <section style={{ display: "grid", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <h2 style={{ fontSize: 17, fontWeight: 620, margin: 0 }}>{title}</h2>
+        {action}
+      </div>
       {children}
+    </section>
+  );
+}
+
+/** Empty states explain what to do next instead of just stating a fact. */
+function EmptyState({ icon, title, hint }: { icon: string; title: string; hint: string }) {
+  return (
+    <div className="dh-card" style={{ padding: "28px 18px", textAlign: "center" }}>
+      <div style={{ fontSize: 30, lineHeight: 1 }}>{icon}</div>
+      <div style={{ fontWeight: 600, marginTop: 10 }}>{title}</div>
+      <div className="dh-muted" style={{ fontSize: 13, marginTop: 4, lineHeight: 1.45 }}>
+        {hint}
+      </div>
     </div>
   );
 }
 
-function Notice({ text }: { text: string }) {
-  return <div className={`${CARD} ${HINT}`}>{text}</div>;
-}
-
-// --- Tabs ---------------------------------------------------------------------------
-function DealsTab() {
-  const [favs, setFavs] = useState(false);
-  const { data, error, loading } = useLoad<WaListing[]>(() => webapp.listings(favs), [favs]);
+function ErrorState({ text }: { text: string }) {
   return (
-    <Section title={favs ? "⭐ Favoriten" : "🔥 Deine letzten Deals"}>
-      <div className="flex gap-2">
-        <button className={favs ? `${BTN} opacity-60` : BTN} onClick={() => setFavs(false)}>
-          Alle
-        </button>
-        <button className={favs ? BTN : `${BTN} opacity-60`} onClick={() => setFavs(true)}>
-          ⭐ Favoriten
-        </button>
-      </div>
-      {loading && <Notice text="Lädt…" />}
-      {error && <Notice text={`⚠️ ${error}`} />}
-      {data && data.length === 0 && <Notice text="Noch keine Deals — leg im Bot eine Suche an." />}
-      {data?.map((l) => (
-        <a key={l.id} href={l.url} target="_blank" rel="noreferrer" className={`${CARD} block`}>
-          <div className="flex gap-3">
-            {l.image_url && (
-              <img src={l.image_url} alt="" className="h-20 w-20 flex-none rounded-xl object-cover" />
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-start justify-between gap-2">
-                <div className="line-clamp-2 font-medium">{l.title}</div>
-                <VerdictBadge verdict={l.deal_verdict} />
-              </div>
-              <div className="mt-1 text-lg font-semibold">{eur(l.price)}</div>
-              <div className={HINT}>
-                Score {l.deal_score}
-                {l.estimated_market_price ? ` · Markt ~${eur(l.estimated_market_price)}` : ""}
-                {l.location ? ` · 📍 ${l.location}` : ""} · {dateDE(l.created_at)}
-              </div>
-            </div>
-          </div>
-        </a>
-      ))}
-    </Section>
+    <div
+      className="dh-card"
+      style={{ padding: "12px 14px", fontSize: 13, borderColor: "color-mix(in srgb, var(--dh-steal) 40%, transparent)" }}
+    >
+      <span style={{ color: "var(--dh-steal)", fontWeight: 600 }}>Fehler</span>{" "}
+      <span className="dh-muted">{text}</span>
+    </div>
   );
 }
 
-const INPUT =
-  "w-full rounded-xl px-3 py-2 text-sm bg-[var(--tg-theme-bg-color,#ffffff)] " +
-  "border border-[var(--tg-theme-hint-color,#cbd5e1)]/40 outline-none";
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="dh-card dh-stat">
+      <div className="dh-meta">{label}</div>
+      <div className="dh-stat-value dh-num" style={{ marginTop: 3 }}>
+        {value}
+      </div>
+      {sub && (
+        <div className="dh-muted" style={{ fontSize: 12, marginTop: 2 }}>
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+}
 
+// --- Deals ---------------------------------------------------------------------------
+function DealsTab() {
+  const [favs, setFavs] = useState(false);
+  const { data, error, loading } = useLoad<WaListing[]>(() => webapp.listings(favs), [favs]);
+  const deals = (data ?? []) as unknown as DealLike[];
+  const [hero, ...rest] = deals;
+
+  return (
+    <Screen
+      title={favs ? "Favoriten" : "Neueste Funde"}
+      action={
+        <div className="dh-seg">
+          <button
+            data-active={favs ? 0 : 1}
+            onClick={() => {
+              haptic();
+              setFavs(false);
+            }}
+          >
+            Alle
+          </button>
+          <button
+            data-active={favs ? 1 : 0}
+            onClick={() => {
+              haptic();
+              setFavs(true);
+            }}
+          >
+            ★ Favoriten
+          </button>
+        </div>
+      }
+    >
+      {loading && (
+        <>
+          <DealSkeleton />
+          <DealSkeleton />
+          <DealSkeleton />
+        </>
+      )}
+      {error && <ErrorState text={error} />}
+      {!loading && !error && deals.length === 0 && (
+        <EmptyState
+          icon={favs ? "☆" : "🔍"}
+          title={favs ? "Noch nichts gemerkt" : "Noch keine Funde"}
+          hint={
+            favs
+              ? "Tippe auf den Stern an einer Karte, um Angebote hier zu sammeln."
+              : "Leg unter „Suchen“ deine erste Suche an — die Treffer landen dann hier und als Nachricht im Chat."
+          }
+        />
+      )}
+      {/* The best current find gets the big treatment, the rest stay scannable. */}
+      {!loading && hero && !favs && <DealHero deal={hero} />}
+      {!loading && (favs ? deals : rest).map((d) => <DealCard key={d.id} deal={d} />)}
+    </Screen>
+  );
+}
+
+// --- Rules ----------------------------------------------------------------------------
 const EMPTY_RULE: RuleInput = {
   name: "",
   keywords: "",
@@ -165,6 +223,15 @@ function num(value: string): number | null {
   return value.trim() === "" || Number.isNaN(parsed) ? null : parsed;
 }
 
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label style={{ display: "grid", gap: 5 }}>
+      <span className="dh-meta">{label}</span>
+      {children}
+    </label>
+  );
+}
+
 /** Create/edit form. The bot's wizard asks eight questions; here it is one screen. */
 function RuleForm({
   initial,
@@ -185,7 +252,7 @@ function RuleForm({
 
   async function save() {
     if (!form.name.trim() || !form.keywords.trim()) {
-      setError("Name und Suchbegriffe sind Pflicht.");
+      setError("Name und Suchbegriffe brauche ich mindestens.");
       return;
     }
     setSaving(true);
@@ -193,7 +260,7 @@ function RuleForm({
     try {
       if (initial.id === null) await webapp.createRule(form);
       else await webapp.updateRule(initial.id, form);
-      tg()?.HapticFeedback?.impactOccurred("medium");
+      haptic("medium");
       onSaved();
     } catch (e) {
       setError(e instanceof WebAppError ? e.message : "Speichern fehlgeschlagen");
@@ -203,81 +270,184 @@ function RuleForm({
   }
 
   return (
-    <div className={`${CARD} space-y-3`}>
-      <div className="font-medium">
-        {initial.id === null ? "➕ Neue Suche" : "✏️ Suche bearbeiten"}
+    <div className="dh-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+      <div style={{ fontWeight: 620 }}>
+        {initial.id === null ? "Neue Suche" : "Suche bearbeiten"}
       </div>
-      <input
-        className={INPUT}
-        placeholder="Name, z. B. Tesla Model 3"
-        value={form.name}
-        onChange={(e) => set("name", e.target.value)}
-      />
-      <input
-        className={INPUT}
-        placeholder="Suchbegriffe, z. B. tesla model 3 performance"
-        value={form.keywords}
-        onChange={(e) => set("keywords", e.target.value)}
-      />
-      <div className="flex gap-2">
+
+      <Field label="NAME">
         <input
-          className={INPUT}
-          inputMode="decimal"
-          placeholder="Preis von"
-          value={form.min_price ?? ""}
-          onChange={(e) => set("min_price", num(e.target.value))}
+          className="dh-input"
+          placeholder="Tesla Model 3"
+          value={form.name}
+          onChange={(e) => set("name", e.target.value)}
         />
+      </Field>
+
+      <Field label="SUCHBEGRIFFE">
         <input
-          className={INPUT}
-          inputMode="decimal"
-          placeholder="Preis bis"
-          value={form.max_price ?? ""}
-          onChange={(e) => set("max_price", num(e.target.value))}
+          className="dh-input"
+          placeholder="tesla model 3 performance"
+          value={form.keywords}
+          onChange={(e) => set("keywords", e.target.value)}
         />
+      </Field>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <Field label="PREIS VON">
+          <input
+            className="dh-input dh-num"
+            inputMode="decimal"
+            placeholder="—"
+            value={form.min_price ?? ""}
+            onChange={(e) => set("min_price", num(e.target.value))}
+          />
+        </Field>
+        <Field label="PREIS BIS">
+          <input
+            className="dh-input dh-num"
+            inputMode="decimal"
+            placeholder="—"
+            value={form.max_price ?? ""}
+            onChange={(e) => set("max_price", num(e.target.value))}
+          />
+        </Field>
       </div>
-      <div className="flex gap-2">
-        <input
-          className={INPUT}
-          placeholder="PLZ oder Ort"
-          value={form.location ?? ""}
-          onChange={(e) => set("location", e.target.value || null)}
-        />
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <Field label="PLZ ODER ORT">
+          <input
+            className="dh-input"
+            placeholder="67550"
+            value={form.location ?? ""}
+            onChange={(e) => set("location", e.target.value || null)}
+          />
+        </Field>
+        <Field label="UMKREIS">
+          <select
+            className="dh-input"
+            value={form.max_distance_km ?? ""}
+            onChange={(e) =>
+              set("max_distance_km", e.target.value === "" ? null : Number(e.target.value))
+            }
+          >
+            <option value="">egal</option>
+            <option value="25">25 km</option>
+            <option value="50">50 km</option>
+            <option value="100">100 km</option>
+            <option value="200">200 km</option>
+          </select>
+        </Field>
+      </div>
+
+      <Field label="WIE OFT PRÜFEN">
         <select
-          className={INPUT}
-          value={form.max_distance_km ?? ""}
-          onChange={(e) =>
-            set("max_distance_km", e.target.value === "" ? null : Number(e.target.value))
-          }
+          className="dh-input"
+          value={form.interval_seconds}
+          onChange={(e) => set("interval_seconds", Number(e.target.value))}
         >
-          <option value="">Umkreis</option>
-          <option value="25">25 km</option>
-          <option value="50">50 km</option>
-          <option value="100">100 km</option>
-          <option value="200">200 km</option>
+          <option value={60}>jede Minute — Premium</option>
+          <option value={300}>alle 5 Minuten</option>
+          <option value={600}>alle 10 Minuten</option>
+          <option value={1800}>alle 30 Minuten</option>
+          <option value={3600}>stündlich</option>
         </select>
-      </div>
-      <select
-        className={INPUT}
-        value={form.interval_seconds}
-        onChange={(e) => set("interval_seconds", Number(e.target.value))}
-      >
-        <option value={60}>alle 1 min (Premium)</option>
-        <option value={300}>alle 5 min</option>
-        <option value={600}>alle 10 min</option>
-        <option value={1800}>alle 30 min</option>
-        <option value={3600}>stündlich</option>
-      </select>
-      {error && <div className="text-sm text-red-500">{error}</div>}
-      <div className="flex gap-2">
-        <button className={BTN} disabled={saving} onClick={save}>
-          {saving ? "Speichert…" : "💾 Speichern"}
+      </Field>
+
+      {error && <ErrorState text={error} />}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="dh-btn" disabled={saving} onClick={save} style={{ flex: 1 }}>
+          {saving ? "Speichert…" : "Speichern"}
         </button>
-        <button className={`${BTN} opacity-60`} disabled={saving} onClick={onCancel}>
+        <button className="dh-btn dh-btn-quiet" disabled={saving} onClick={onCancel}>
           Abbrechen
         </button>
       </div>
-      <div className={HINT}>
+
+      <div className="dh-muted" style={{ fontSize: 12 }}>
         Das Intervall wird automatisch an deinen Tarif angepasst.
+      </div>
+    </div>
+  );
+}
+
+function everyText(seconds: number): string {
+  if (seconds < 120) return "jede Minute";
+  if (seconds < 3600) return `alle ${Math.round(seconds / 60)} Min`;
+  return `alle ${Math.round(seconds / 3600)} Std`;
+}
+
+function RuleRow({
+  rule,
+  busy,
+  onToggle,
+  onEdit,
+  onDelete,
+}: {
+  rule: WaRule;
+  busy: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const criteria = [
+    rule.max_price ? `bis ${money(rule.max_price)}` : null,
+    rule.location ? `${rule.location}${rule.max_distance_km ? ` +${rule.max_distance_km} km` : ""}` : null,
+    everyText(rule.interval_seconds),
+  ].filter(Boolean);
+
+  return (
+    <div
+      className="dh-card"
+      style={{ ["--rail" as string]: rule.is_active ? "var(--dh-great)" : "var(--dh-overpriced)" }}
+    >
+      <div style={{ padding: "11px 12px 11px 15px" }}>
+        <div style={{ position: "absolute", inset: "0 auto 0 0", width: 3, background: "var(--rail)" }} />
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{rule.name}</div>
+            <div className="dh-meta" style={{ marginTop: 3 }}>
+              {rule.keywords}
+            </div>
+          </div>
+          <button
+            className="dh-btn dh-btn-sm dh-btn-quiet"
+            disabled={busy}
+            onClick={onToggle}
+            style={{
+              color: rule.is_active ? "var(--dh-great)" : "var(--dh-muted)",
+              borderColor: "var(--dh-line)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {rule.is_active ? "● aktiv" : "○ Pause"}
+          </button>
+        </div>
+
+        <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
+          {criteria.map((c) => (
+            <span key={c as string} className="dh-tag">
+              {c}
+            </span>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
+          <button
+            onClick={onEdit}
+            style={{ border: 0, background: "none", padding: 0, color: "var(--dh-accent)", fontSize: 13, fontWeight: 550, cursor: "pointer" }}
+          >
+            Bearbeiten
+          </button>
+          <button
+            onClick={onDelete}
+            disabled={busy}
+            style={{ border: 0, background: "none", padding: 0, color: "var(--dh-muted)", fontSize: 13, cursor: "pointer" }}
+          >
+            Löschen
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -287,9 +457,7 @@ function RulesTab() {
   const [version, setVersion] = useState(0);
   const { data, error, loading } = useLoad<WaRule[]>(() => webapp.rules(), [version]);
   const [busy, setBusy] = useState<number | null>(null);
-  const [editing, setEditing] = useState<{ id: number | null; values: RuleInput } | null>(
-    null,
-  );
+  const [editing, setEditing] = useState<{ id: number | null; values: RuleInput } | null>(null);
 
   const reload = () => setVersion((v) => v + 1);
 
@@ -297,7 +465,7 @@ function RulesTab() {
     setBusy(id);
     try {
       await webapp.toggleRule(id);
-      tg()?.HapticFeedback?.impactOccurred("light");
+      haptic();
       reload();
     } finally {
       setBusy(null);
@@ -305,7 +473,7 @@ function RulesTab() {
   }
 
   async function remove(id: number, name: string) {
-    if (!window.confirm(`Suche "${name}" wirklich löschen?`)) return;
+    if (!window.confirm(`Suche „${name}“ löschen?`)) return;
     setBusy(id);
     try {
       await webapp.deleteRule(id);
@@ -317,7 +485,7 @@ function RulesTab() {
 
   if (editing) {
     return (
-      <Section title="📋 Meine Suchen">
+      <Screen title="Suchen">
         <RuleForm
           initial={editing}
           onCancel={() => setEditing(null)}
@@ -326,199 +494,297 @@ function RulesTab() {
             reload();
           }}
         />
-      </Section>
+      </Screen>
     );
   }
 
+  const rules = data ?? [];
+  const active = rules.filter((r) => r.is_active).length;
+
   return (
-    <Section title="📋 Meine Suchen">
-      {loading && <Notice text="Lädt…" />}
-      {error && <Notice text={`⚠️ ${error}`} />}
-      {data && data.length === 0 && (
-        <Notice text="Noch keine Suchen — leg unten deine erste an." />
+    <Screen
+      title="Suchen"
+      action={
+        rules.length > 0 ? (
+          <button className="dh-btn dh-btn-sm" onClick={() => setEditing({ id: null, values: EMPTY_RULE })}>
+            + Neu
+          </button>
+        ) : undefined
+      }
+    >
+      {loading && (
+        <>
+          <div className="dh-card dh-skel" style={{ height: 112 }} />
+          <div className="dh-card dh-skel" style={{ height: 112 }} />
+        </>
       )}
-      {data?.map((r) => (
-        <div key={r.id} className={CARD}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="truncate font-medium">{r.name}</div>
-              <div className={HINT}>
-                <code>{r.keywords}</code>
-                {r.max_price ? ` · bis ${eur(r.max_price)}` : ""}
-                {r.location ? ` · 📍 ${r.location}${r.max_distance_km ? ` ±${r.max_distance_km} km` : ""}` : ""}
-                {` · ⏱ ${Math.round(r.interval_seconds / 60)} min`}
-              </div>
-            </div>
-            <button
-              className={r.is_active ? BTN : `${BTN} opacity-50`}
-              disabled={busy === r.id}
-              onClick={() => toggle(r.id)}
-            >
-              {r.is_active ? "🟢 aktiv" : "⚪️ pausiert"}
-            </button>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <button
-              className={`${BTN} opacity-80`}
-              onClick={() => setEditing({ id: r.id, values: toInput(r) })}
-            >
-              ✏️ Bearbeiten
-            </button>
-            <button
-              className={`${BTN} opacity-60`}
-              disabled={busy === r.id}
-              onClick={() => remove(r.id, r.name)}
-            >
-              🗑 Löschen
-            </button>
-          </div>
+      {error && <ErrorState text={error} />}
+      {!loading && rules.length === 0 && (
+        <>
+          <EmptyState
+            icon="🎯"
+            title="Noch keine Suche"
+            hint="Sag mir, wonach ich suchen soll — ich prüfe die Marktplätze rund um die Uhr und melde mich, sobald etwas unter Marktpreis auftaucht."
+          />
+          <button className="dh-btn" onClick={() => setEditing({ id: null, values: EMPTY_RULE })}>
+            Erste Suche anlegen
+          </button>
+        </>
+      )}
+      {!loading && rules.length > 0 && (
+        <div className="dh-meta">
+          {active} von {rules.length} aktiv
         </div>
+      )}
+      {rules.map((r) => (
+        <RuleRow
+          key={r.id}
+          rule={r}
+          busy={busy === r.id}
+          onToggle={() => toggle(r.id)}
+          onEdit={() => setEditing({ id: r.id, values: toInput(r) })}
+          onDelete={() => remove(r.id, r.name)}
+        />
       ))}
-      <button className={BTN} onClick={() => setEditing({ id: null, values: EMPTY_RULE })}>
-        ➕ Neue Suche
-      </button>
-    </Section>
+    </Screen>
   );
 }
 
+// --- Flips ----------------------------------------------------------------------------
 function FlipsTab() {
   const { data, error, loading } = useLoad<WaFlips>(() => webapp.flips(), []);
   const s = data?.stats;
+
   return (
-    <Section title="📦 Flips & Gewinn">
-      {loading && <Notice text="Lädt…" />}
-      {error && <Notice text={`⚠️ ${error}`} />}
+    <Screen title="Flips & Gewinn">
+      {loading && <div className="dh-card dh-skel" style={{ height: 150 }} />}
+      {error && <ErrorState text={error} />}
+
       {s && (
-        <div className="grid grid-cols-2 gap-3">
-          <div className={CARD}>
-            <div className={HINT}>Netto-Gewinn gesamt</div>
-            <div className="text-2xl font-semibold">{eur(s.net_profit)}</div>
+        <>
+          <div
+            className="dh-card"
+            style={{ padding: "16px 14px", ["--rail" as string]: "var(--dh-great)" }}
+          >
+            <div style={{ position: "absolute", inset: "0 auto 0 0", width: 3, background: "var(--rail)" }} />
+            <div className="dh-meta">NETTO-GEWINN GESAMT</div>
+            <div className="dh-num" style={{ fontSize: 34, fontWeight: 680, lineHeight: 1.1, marginTop: 4 }}>
+              {money(s.net_profit)}
+            </div>
+            <div className="dh-muted" style={{ fontSize: 13, marginTop: 4 }}>
+              davon {money(s.net_last_30d)} in den letzten 30 Tagen
+            </div>
           </div>
-          <div className={CARD}>
-            <div className={HINT}>Letzte 30 Tage</div>
-            <div className="text-2xl font-semibold">{eur(s.net_last_30d)}</div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <Stat
+              label="VERKAUFT"
+              value={String(s.sold_count)}
+              sub={s.avg_margin_pct == null ? "—" : `Ø Marge ${Math.round(s.avg_margin_pct)} %`}
+            />
+            <Stat label="IM LAGER" value={String(s.open_count)} sub={`${money(s.invested_open)} gebunden`} />
           </div>
-          <div className={CARD}>
-            <div className={HINT}>Verkauft</div>
-            <div className="text-2xl font-semibold">{s.sold_count}</div>
-            <div className={HINT}>Ø Marge {s.avg_margin_pct == null ? "—" : `${Math.round(s.avg_margin_pct)}%`}</div>
-          </div>
-          <div className={CARD}>
-            <div className={HINT}>Im Lager</div>
-            <div className="text-2xl font-semibold">{s.open_count}</div>
-            <div className={HINT}>gebunden {eur(s.invested_open)}</div>
-          </div>
-        </div>
+
+          {s.best_title && (
+            <div className="dh-card" style={{ padding: "11px 13px" }}>
+              <div className="dh-meta">BESTER FLIP</div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 3 }}>
+                <span style={{ fontWeight: 560, fontSize: 14 }}>{s.best_title}</span>
+                <span className="dh-num" style={{ color: "var(--dh-great)", fontWeight: 650 }}>
+                  +{money(s.best_net)}
+                </span>
+              </div>
+            </div>
+          )}
+        </>
       )}
-      {s?.best_title && (
-        <Notice text={`🏆 Bester Flip: ${s.best_title} (+${eur(s.best_net)})`} />
-      )}
-      {data?.open.map((f) => (
-        <div key={f.id} className={CARD}>
-          <div className="font-medium">{f.title}</div>
-          <div className={HINT}>
-            gekauft {eur(f.buy_price)} am {dateDE(f.bought_at)}
+
+      {data && data.open.length > 0 && (
+        <>
+          <div className="dh-meta" style={{ marginTop: 4 }}>
+            OFFEN IM LAGER
           </div>
-        </div>
-      ))}
-      <Notice text="Kaufen/Verkaufen buchst du im Bot: 🛒 auf der Karte bzw. /flips." />
-    </Section>
+          {data.open.map((f) => (
+            <div key={f.id} className="dh-card" style={{ padding: "11px 13px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                <span style={{ fontWeight: 560, fontSize: 14 }}>{f.title}</span>
+                <span className="dh-num" style={{ fontWeight: 620 }}>
+                  {money(f.buy_price)}
+                </span>
+              </div>
+              <div className="dh-meta" style={{ marginTop: 3 }}>
+                gekauft {since(f.bought_at)}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {!loading && !error && s?.sold_count === 0 && data?.open.length === 0 && (
+        <EmptyState
+          icon="📦"
+          title="Noch keine Flips"
+          hint="Wenn du ein gefundenes Angebot kaufst, tippe im Chat auf 🛒 — danach rechne ich dir Gewinn und Marge automatisch aus."
+        />
+      )}
+
+      <div className="dh-muted" style={{ fontSize: 12 }}>
+        Kaufen und Verkaufen buchst du im Chat: 🛒 auf der Karte oder /flips.
+      </div>
+    </Screen>
   );
 }
+
+// --- Account ---------------------------------------------------------------------------
+const PROVIDER_LABEL: Record<string, string> = {
+  telegram_stars: "Telegram Stars",
+  admin_grant: "Geschenk",
+  trial: "Testphase",
+  coupon: "Gutschein",
+  referral: "Empfehlung",
+};
 
 function PremiumTab({ me }: { me: Me | null }) {
   const { data, error, loading } = useLoad<WaPayment[]>(() => webapp.payments(), []);
+
   return (
-    <Section title="💎 Premium & Zahlungen">
+    <Screen title="Konto">
       {me && (
-        <div className={CARD}>
-          <div className="text-lg font-semibold">
-            {me.is_paid ? "💎 Premium aktiv" : "Free-Tarif"}
+        <div
+          className="dh-card"
+          style={{
+            padding: "16px 14px",
+            ["--rail" as string]: me.is_paid ? "var(--dh-great)" : "var(--dh-overpriced)",
+          }}
+        >
+          <div style={{ position: "absolute", inset: "0 auto 0 0", width: 3, background: "var(--rail)" }} />
+          <div className="dh-meta">TARIF</div>
+          <div style={{ fontSize: 22, fontWeight: 650, marginTop: 3 }}>
+            {me.is_paid ? me.tier.charAt(0).toUpperCase() + me.tier.slice(1) : "Free"}
           </div>
-          {me.premium_until && <div className={HINT}>Aktiv bis {dateDE(me.premium_until)}</div>}
-          {me.is_paid && (
-            <div className={HINT}>
-              {me.renews
-                ? `🔄 Nächste Abbuchung: ${dateDE(me.next_charge_at)}`
-                : "⏳ Verlängert sich nicht (läuft aus)"}
+
+          {me.is_paid ? (
+            <div style={{ display: "grid", gap: 4, marginTop: 10 }}>
+              <Line label="Aktiv bis" value={dateDE(me.premium_until)} />
+              <Line
+                label={me.renews ? "Nächste Abbuchung" : "Läuft aus am"}
+                value={dateDE(me.renews ? me.next_charge_at : me.premium_until)}
+              />
+              {me.last_charge_at && <Line label="Letzte Abbuchung" value={dateDE(me.last_charge_at)} />}
             </div>
-          )}
-          {me.last_charge_at && <div className={HINT}>💳 Letzte Abbuchung: {dateDE(me.last_charge_at)}</div>}
-          {!me.is_paid && (
-            <div className={`${HINT} mt-2`}>
-              {me.price_stars} ⭐ (~{me.price_eur.toFixed(2)} €)/Monat — Upgrade im Bot mit /premium
+          ) : (
+            <div className="dh-muted" style={{ fontSize: 13, marginTop: 8, lineHeight: 1.45 }}>
+              Mehr Suchen und Prüfung im Minutentakt gibt es ab {me.price_stars} ⭐ (~
+              {me.price_eur.toFixed(2)} €) im Monat. Buchen im Chat mit /premium.
             </div>
           )}
         </div>
       )}
-      <h3 className="font-semibold">📜 Zahlungsverlauf</h3>
-      {loading && <Notice text="Lädt…" />}
-      {error && <Notice text={`⚠️ ${error}`} />}
-      {data && data.length === 0 && <Notice text="Noch keine Zahlungen." />}
+
+      <div className="dh-meta" style={{ marginTop: 4 }}>
+        ZAHLUNGEN
+      </div>
+      {loading && <div className="dh-card dh-skel" style={{ height: 70 }} />}
+      {error && <ErrorState text={error} />}
+      {data && data.length === 0 && (
+        <EmptyState icon="🧾" title="Noch keine Zahlungen" hint="Hier erscheint jede Abbuchung mit Datum und Betrag." />
+      )}
       {data?.map((p) => (
-        <div key={p.id} className={`${CARD} flex items-center justify-between`}>
-          <div>
-            <div className="font-medium">
-              {p.provider === "telegram_stars"
-                ? `${p.amount_stars} ⭐${p.is_renewal ? " · Verlängerung" : " · Kauf"}`
-                : p.provider === "admin_grant"
-                  ? "🎁 Geschenk"
-                  : p.provider}
-              {p.coupon_code ? ` · 🎟 ${p.coupon_code}` : ""}
-            </div>
-            <div className={HINT}>{new Date(p.created_at).toLocaleString("de-DE")}</div>
+        <div key={p.id} className="dh-card" style={{ padding: "11px 13px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+            <span style={{ fontWeight: 560, fontSize: 14 }}>
+              {p.amount_stars > 0 ? `${p.amount_stars} ⭐` : PROVIDER_LABEL[p.provider] ?? p.provider}
+              {p.coupon_code ? ` · ${p.coupon_code}` : ""}
+            </span>
+            <span
+              className="dh-meta"
+              style={{ color: p.refunded ? "var(--dh-steal)" : undefined }}
+            >
+              {p.refunded ? "erstattet" : p.is_renewal ? "Verlängerung" : p.status === "granted" ? "geschenkt" : "bezahlt"}
+            </span>
           </div>
-          <div className={p.refunded ? "text-rose-500" : HINT}>
-            {p.refunded ? "erstattet" : p.status}
+          <div className="dh-meta" style={{ marginTop: 3 }}>
+            {new Date(p.created_at).toLocaleDateString("de-DE", {
+              day: "2-digit",
+              month: "long",
+              year: "numeric",
+            })}
+            {p.amount_eur > 0 ? ` · ${p.amount_eur.toFixed(2)} €` : ""}
           </div>
         </div>
       ))}
-    </Section>
+    </Screen>
   );
 }
 
-// --- Page -----------------------------------------------------------------------
+function Line({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+      <span className="dh-muted">{label}</span>
+      <span className="dh-num" style={{ fontWeight: 560 }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+// --- Page -----------------------------------------------------------------------------
 export function MiniApp() {
   const sdkReady = useTelegramSdk();
   const [tab, setTab] = useState<Tab>("deals");
   const me = useLoad<Me>(() => webapp.me(), [sdkReady]);
 
   return (
-    <div className={`min-h-screen ${BG}`}>
-      <header className="sticky top-0 z-10 px-4 pt-4 pb-2 backdrop-blur bg-[var(--tg-theme-bg-color,#f8fafc)]/90">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-xl font-bold">🛒 Deal Hunter</div>
-            <div className={HINT}>
-              {me.data ? `${me.data.name} · ${me.data.is_paid ? "💎 Premium" : "Free"}` : " "}
-            </div>
+    <div className="dh-app" style={{ paddingBottom: 78 }}>
+      <header className="dh-header">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em" }}>Deal Hunter</span>
+            {me.data && (
+              <span
+                className="dh-meta"
+                style={{
+                  padding: "1px 6px",
+                  border: "1px solid var(--dh-line)",
+                  borderRadius: 5,
+                  color: me.data.is_paid ? "var(--dh-great)" : "var(--dh-muted)",
+                  borderColor: me.data.is_paid ? "color-mix(in srgb, var(--dh-great) 45%, transparent)" : undefined,
+                }}
+              >
+                {me.data.is_paid ? me.data.tier.toUpperCase() : "FREE"}
+              </span>
+            )}
           </div>
+          {me.data && <span className="dh-meta">{me.data.name}</span>}
         </div>
-        <nav className="mt-3 flex gap-2 overflow-x-auto">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`whitespace-nowrap rounded-full px-3 py-1.5 text-sm ${
-                tab === t.id ? BTN : `${CARD} !p-0 px-3 py-1.5`
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
       </header>
 
-      <main className="space-y-4 px-4 pb-8 pt-2">
-        {!sdkReady && <Notice text="Verbinde mit Telegram…" />}
+      <main style={{ padding: "12px 14px 24px", display: "grid", gap: 10 }}>
+        {!sdkReady && <div className="dh-card dh-skel" style={{ height: 46 }} />}
         {me.error && (
-          <Notice text={`⚠️ ${me.error} — diese Seite funktioniert nur innerhalb von Telegram (Bot-Menü → 🌐 App).`} />
+          <ErrorState text={`${me.error} — diese Seite läuft nur in Telegram (Bot-Menü → App).`} />
         )}
         {tab === "deals" && <DealsTab />}
         {tab === "rules" && <RulesTab />}
         {tab === "flips" && <FlipsTab />}
         {tab === "premium" && <PremiumTab me={me.data} />}
       </main>
+
+      <nav className="dh-tabbar">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            data-active={tab === t.id ? 1 : 0}
+            onClick={() => {
+              haptic();
+              setTab(t.id);
+            }}
+          >
+            <span className="dh-tab-icon">{t.icon}</span>
+            {t.label}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }

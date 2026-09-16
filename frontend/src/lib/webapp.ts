@@ -94,6 +94,9 @@ export interface WaListing {
   location: string | null;
   is_favorite: boolean;
   created_at: string;
+  discount_percent: number | null;
+  is_negotiable: boolean;
+  shipping_cost: number | null;
 }
 
 export interface WaFlip {

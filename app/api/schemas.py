@@ -71,7 +71,12 @@ class ListingOut(BaseModel):
     site: str
     title: str
     url: str
+    image_url: str | None = None
     price: float | None
+    estimated_market_price: float | None = None
+    discount_percent: float | None = None
+    is_negotiable: bool = False
+    shipping_cost: float | None = None
     deal_score: int
     deal_verdict: str
     location: str | None

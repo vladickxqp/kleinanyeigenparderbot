@@ -103,6 +103,10 @@ class ListingOut(BaseModel):
     location: str | None
     is_favorite: bool
     created_at: datetime
+    # Signals the card shows: how far below market, negotiable price, shipping.
+    discount_percent: float | None = None
+    is_negotiable: bool = False
+    shipping_cost: float | None = None
 
 
 class FlipOut(BaseModel):

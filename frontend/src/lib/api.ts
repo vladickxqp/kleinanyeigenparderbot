@@ -76,7 +76,12 @@ export interface Listing {
   site: string;
   title: string;
   url: string;
+  image_url: string | null;
   price: number | null;
+  estimated_market_price: number | null;
+  discount_percent: number | null;
+  is_negotiable: boolean;
+  shipping_cost: number | null;
   deal_score: number;
   deal_verdict: string;
   location: string | null;

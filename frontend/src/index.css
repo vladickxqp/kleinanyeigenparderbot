@@ -1,3 +1,7 @@
+/* The design tokens must be imported before Tailwind: a CSS @import has to
+   precede every other rule, otherwise PostCSS drops it silently. */
+@import "./styles/deal.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -35,4 +39,11 @@ body {
   .badge {
     @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
+}
+
+/* The Mini App brings its own surface colours (Telegram theme), so it must not
+   inherit the admin panel's body background. */
+.dh-app {
+  background: var(--dh-bg);
+  color: var(--dh-ink);
 }

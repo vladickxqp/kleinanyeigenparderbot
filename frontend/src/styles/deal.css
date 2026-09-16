@@ -1,0 +1,414 @@
+/* Deal Hunter visual language.
+ *
+ * One set of tokens drives two surfaces: the Telegram Mini App (which inherits
+ * the user's Telegram theme through --tg-theme-*) and the desktop admin panel
+ * (which falls back to its own palette). Deliberately flat and dense: photos
+ * and prices carry the page, colour is reserved for one thing only — how good
+ * a deal is. No decorative gradients, no drop shadows, no pastel chips.
+ */
+
+:root {
+  /* Fallbacks apply outside Telegram; inside, the theme variables win. */
+  --dh-bg-fallback: #f4f5f7;
+  --dh-surface-fallback: #ffffff;
+  --dh-ink-fallback: #0d1117;
+  --dh-muted-fallback: #6b7280;
+
+  --dh-bg: var(--tg-theme-bg-color, var(--dh-bg-fallback));
+  --dh-surface: var(--tg-theme-secondary-bg-color, var(--dh-surface-fallback));
+  --dh-ink: var(--tg-theme-text-color, var(--dh-ink-fallback));
+  --dh-muted: var(--tg-theme-hint-color, var(--dh-muted-fallback));
+  --dh-accent: var(--tg-theme-button-color, #2f6fed);
+  --dh-accent-ink: var(--tg-theme-button-text-color, #ffffff);
+  --dh-line: color-mix(in srgb, var(--dh-muted) 24%, transparent);
+  --dh-line-soft: color-mix(in srgb, var(--dh-muted) 12%, transparent);
+  --dh-fill: color-mix(in srgb, var(--dh-muted) 8%, transparent);
+
+  /* Deal quality — the only colour scale in the product. */
+  --dh-steal: #ff4d2d;
+  --dh-great: #10b981;
+  --dh-good: #57a05a;
+  --dh-fair: #d99a00;
+  --dh-overpriced: #8a94a6;
+  --dh-unknown: #8a94a6;
+
+  --dh-radius: 14px;
+  --dh-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+/* Opened in a normal browser with a dark system theme, the page must not stay
+   white. Inside Telegram these values are overridden by the theme variables. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --dh-bg-fallback: #0e1116;
+    --dh-surface-fallback: #171b22;
+    --dh-ink-fallback: #e8eaed;
+    --dh-muted-fallback: #9aa3af;
+  }
+}
+
+/* ---------- Layout primitives ---------- */
+.dh-app {
+  min-height: 100vh;
+  background: var(--dh-bg);
+  color: var(--dh-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.dh-card {
+  position: relative;
+  background: var(--dh-surface);
+  border: 1px solid var(--dh-line-soft);
+  border-radius: var(--dh-radius);
+  overflow: hidden;
+}
+
+.dh-muted {
+  color: var(--dh-muted);
+}
+
+.dh-meta {
+  font-family: var(--dh-mono);
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: var(--dh-muted);
+  /* One line, always: a wrapped "vor 10 Std" breaks the card's rhythm. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.dh-num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* ---------- Deal card ---------- */
+.dh-deal {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px 10px 15px;
+  text-decoration: none;
+  color: inherit;
+}
+
+/* The rail is the card's signature: quality read before a single word. */
+.dh-deal::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--rail, var(--dh-unknown));
+}
+
+.dh-deal:active {
+  background: var(--dh-fill);
+}
+
+.dh-thumb {
+  position: relative;
+  flex: none;
+  width: 92px;
+  height: 92px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--dh-fill);
+}
+
+.dh-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.dh-thumb-empty {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-family: var(--dh-mono);
+  font-size: 10px;
+  color: var(--dh-muted);
+}
+
+/* Saving sits on the photo, where the eye already is. */
+.dh-save {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  padding: 2px 6px;
+  font-family: var(--dh-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--rail, var(--dh-unknown));
+  border-top-right-radius: 8px;
+}
+
+.dh-title {
+  font-size: 14px;
+  font-weight: 560;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.dh-price {
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+.dh-price-was {
+  font-size: 12px;
+  color: var(--dh-muted);
+  text-decoration: line-through;
+}
+
+.dh-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--dh-line);
+  border-radius: 6px;
+  font-family: var(--dh-mono);
+  font-size: 10px;
+  color: var(--dh-muted);
+}
+
+/* ---------- Score meter ---------- */
+.dh-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dh-score-bars {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.dh-score-bar {
+  width: 4px;
+  height: 10px;
+  border-radius: 1px;
+  background: var(--dh-line);
+}
+
+.dh-score-bar[data-on="1"] {
+  background: var(--rail, var(--dh-unknown));
+}
+
+.dh-score-value {
+  font-family: var(--dh-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ---------- Hero (best current deal) ---------- */
+.dh-hero {
+  display: block;
+  position: relative;
+  text-decoration: none;
+  color: inherit;
+}
+
+.dh-hero-media {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--dh-fill);
+}
+
+.dh-hero-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.dh-hero-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.1) 55%, transparent 100%);
+}
+
+.dh-hero-body {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 12px 14px;
+  color: #fff;
+}
+
+.dh-hero-flag {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  padding: 3px 8px;
+  font-family: var(--dh-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #fff;
+  background: var(--rail, var(--dh-steal));
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+/* ---------- Controls ---------- */
+.dh-seg {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--dh-fill);
+  border-radius: 10px;
+}
+
+.dh-seg button {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dh-muted);
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.dh-seg button[data-active="1"] {
+  background: var(--dh-surface);
+  color: var(--dh-ink);
+}
+
+.dh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--dh-accent);
+  color: var(--dh-accent-ink);
+  font-size: 14px;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.dh-btn[disabled] {
+  opacity: 0.55;
+}
+
+.dh-btn-quiet {
+  background: transparent;
+  color: var(--dh-ink);
+  border-color: var(--dh-line);
+}
+
+.dh-btn-sm {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.dh-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--dh-line);
+  border-radius: 10px;
+  background: var(--dh-bg);
+  color: var(--dh-ink);
+  font-size: 14px;
+  outline: none;
+}
+
+.dh-input:focus {
+  border-color: var(--dh-accent);
+}
+
+/* ---------- Tab bar ---------- */
+.dh-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  background: color-mix(in srgb, var(--dh-surface) 92%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--dh-line-soft);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.dh-tabbar button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 9px 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--dh-muted);
+  font-size: 10px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.dh-tabbar button[data-active="1"] {
+  color: var(--dh-accent);
+}
+
+.dh-tabbar .dh-tab-icon {
+  font-size: 17px;
+  line-height: 1;
+}
+
+/* ---------- Header ---------- */
+.dh-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 12px 14px 10px;
+  background: color-mix(in srgb, var(--dh-bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--dh-line-soft);
+}
+
+/* ---------- Stats ---------- */
+.dh-stat {
+  padding: 12px 13px;
+}
+
+.dh-stat-value {
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.15;
+}
+
+/* ---------- Skeletons ---------- */
+.dh-skel {
+  background: linear-gradient(
+    90deg,
+    var(--dh-fill) 25%,
+    color-mix(in srgb, var(--dh-muted) 16%, transparent) 37%,
+    var(--dh-fill) 63%
+  );
+  background-size: 400% 100%;
+  animation: dh-shimmer 1.3s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+@keyframes dh-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dh-skel { animation: none; }
+}
