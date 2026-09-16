@@ -1,11 +1,13 @@
-/** Deal card — the one component the whole product is judged by.
+/** The deal row and the hero card.
  *
- * The photo comes first because that is how people scan a marketplace, the
- * price is the largest thing on the card, and colour is used for exactly one
- * message: how good this deal is. Everything else stays neutral.
+ * A row is three lines: what it is, what it costs, where it came from. The
+ * saving is the only coloured text; deal quality is a 5px dot in the meta
+ * line. Rows live inside a grouped container, separated by hairlines, so a
+ * list of finds reads as one calm block instead of a stack of cards.
  */
 
 import { useState } from "react";
+import { IconInbox, IconStar } from "./icons";
 
 export interface DealLike {
   id: number;
@@ -25,28 +27,28 @@ export interface DealLike {
   discount_percent?: number | null;
 }
 
-const RAIL: Record<string, string> = {
-  steal: "var(--dh-steal)",
-  great: "var(--dh-great)",
-  good: "var(--dh-good)",
-  fair: "var(--dh-fair)",
-  overpriced: "var(--dh-overpriced)",
-  unknown: "var(--dh-unknown)",
+const QUALITY: Record<string, string> = {
+  steal: "var(--dh-q-steal)",
+  great: "var(--dh-q-great)",
+  good: "var(--dh-q-good)",
+  fair: "var(--dh-q-fair)",
+  overpriced: "var(--dh-q-none)",
+  unknown: "var(--dh-q-none)",
 };
 
-const VERDICT_LABEL: Record<string, string> = {
-  steal: "KRACHER",
-  great: "TOP-DEAL",
-  good: "GUTER DEAL",
-  fair: "FAIR",
-  overpriced: "TEUER",
-  unknown: "UNBEWERTET",
+const VERDICT: Record<string, string> = {
+  steal: "Kracher",
+  great: "Top-Deal",
+  good: "Guter Deal",
+  fair: "Fair",
+  overpriced: "Teuer",
+  unknown: "Unbewertet",
 };
 
 export const money = (v: number | null | undefined) =>
   v == null ? "—" : `${Math.round(v).toLocaleString("de-DE")} €`;
 
-/** "vor 12 Min" reads better than a date when deals are minutes old. */
+/** Minutes matter in this product, so age is relative, never a date. */
 export function since(iso: string): string {
   const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
   if (minutes < 1) return "gerade eben";
@@ -68,11 +70,15 @@ export function discountOf(deal: DealLike): number | null {
   return null;
 }
 
-/** Photo with a graceful fallback: hotlinks do fail, a broken icon must not show. */
+/** Hotlinked marketplace photos do fail; a broken image icon must never show. */
 function Photo({ src, alt }: { src: string | null; alt: string }) {
   const [failed, setFailed] = useState(false);
   if (!src || failed) {
-    return <div className="dh-thumb-empty">kein Foto</div>;
+    return (
+      <div className="dh-thumb-empty">
+        <IconInbox size={22} />
+      </div>
+    );
   }
   return (
     <img
@@ -86,77 +92,26 @@ function Photo({ src, alt }: { src: string | null; alt: string }) {
   );
 }
 
-export function ScoreMeter({ score, verdict }: { score: number; verdict: string }) {
-  const filled = Math.max(0, Math.min(5, Math.round(score / 20)));
+function Meta({ deal }: { deal: DealLike }) {
+  const parts = [deal.location, since(deal.created_at)].filter(Boolean) as string[];
+  if (deal.is_negotiable) parts.push("VB");
+  if (deal.shipping_cost === 0) parts.push("Versand");
   return (
-    <span className="dh-score" style={{ ["--rail" as string]: RAIL[verdict] ?? RAIL.unknown }}>
-      <span className="dh-score-bars">
-        {[0, 1, 2, 3, 4].map((i) => (
-          <i key={i} className="dh-score-bar" data-on={i < filled ? 1 : 0} />
-        ))}
-      </span>
-      <span className="dh-score-value">{score}</span>
-    </span>
+    <div className="dh-meta" style={{ marginTop: 6 }}>
+      <span className="dh-dot" style={{ ["--q" as string]: QUALITY[deal.deal_verdict] }} />
+      {VERDICT[deal.deal_verdict] ?? "—"}
+      {parts.map((p) => (
+        <span key={p}>
+          <span className="dh-sep">·</span>
+          {p}
+        </span>
+      ))}
+    </div>
   );
 }
 
-/** Big card for the single best current deal — gives the screen a focal point. */
-export function DealHero({ deal }: { deal: DealLike }) {
-  const rail = RAIL[deal.deal_verdict] ?? RAIL.unknown;
-  const off = discountOf(deal);
-  return (
-    <a
-      href={deal.url}
-      target="_blank"
-      rel="noreferrer"
-      className="dh-card dh-hero"
-      style={{ ["--rail" as string]: rail }}
-    >
-      <div className="dh-hero-media">
-        <Photo src={deal.image_url} alt={deal.title} />
-        <div className="dh-hero-shade" />
-        <span className="dh-hero-flag">{VERDICT_LABEL[deal.deal_verdict] ?? "DEAL"}</span>
-      </div>
-      <div className="dh-hero-body">
-        <div className="dh-title" style={{ fontSize: 15, marginBottom: 4 }}>
-          {deal.title}
-        </div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-          <span className="dh-price dh-num" style={{ fontSize: 26 }}>
-            {money(deal.price)}
-          </span>
-          {deal.estimated_market_price != null && (
-            <span className="dh-price-was dh-num" style={{ color: "rgba(255,255,255,.7)" }}>
-              {money(deal.estimated_market_price)}
-            </span>
-          )}
-          {off != null && (
-            <span
-              className="dh-num"
-              style={{
-                fontFamily: "var(--dh-mono)",
-                fontSize: 12,
-                fontWeight: 700,
-                background: rail,
-                color: "#fff",
-                padding: "2px 7px",
-                borderRadius: 6,
-              }}
-            >
-              −{off} %
-            </span>
-          )}
-        </div>
-        <div className="dh-meta" style={{ marginTop: 6, color: "rgba(255,255,255,.75)" }}>
-          {deal.site}
-          {deal.location ? ` · ${deal.location}` : ""} · {since(deal.created_at)}
-        </div>
-      </div>
-    </a>
-  );
-}
-
-export function DealCard({
+/** One find, as a row inside a grouped list. */
+export function DealRow({
   deal,
   onFavorite,
   busy = false,
@@ -165,50 +120,27 @@ export function DealCard({
   onFavorite?: (id: number) => void;
   busy?: boolean;
 }) {
-  const rail = RAIL[deal.deal_verdict] ?? RAIL.unknown;
   const off = discountOf(deal);
   return (
-    <div className="dh-card" style={{ ["--rail" as string]: rail }}>
-      <a href={deal.url} target="_blank" rel="noreferrer" className="dh-deal">
-        <div className="dh-thumb">
-          <Photo src={deal.image_url} alt={deal.title} />
-          {off != null && <span className="dh-save">−{off} %</span>}
-        </div>
-
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div className="dh-title">{deal.title}</div>
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              gap: 7,
-              marginTop: 5,
-              flexWrap: "wrap",
-            }}
-          >
-            <span className="dh-price dh-num">{money(deal.price)}</span>
-            {deal.is_negotiable && <span className="dh-tag">VB</span>}
-            {deal.estimated_market_price != null && (
-              <span className="dh-price-was dh-num">{money(deal.estimated_market_price)}</span>
-            )}
+    <div style={{ position: "relative" }}>
+      <a href={deal.url} target="_blank" rel="noreferrer" className="dh-row dh-row-tap">
+        <div className="dh-deal">
+          <div className="dh-thumb">
+            <Photo src={deal.image_url} alt={deal.title} />
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              marginTop: 6,
-              flexWrap: "wrap",
-            }}
-          >
-            <ScoreMeter score={deal.deal_score} verdict={deal.deal_verdict} />
-            {deal.shipping_cost === 0 && <span className="dh-tag">Versand</span>}
-            <span className="dh-meta">
-              {deal.site}
-              {deal.location ? ` · ${deal.location}` : ""} · {since(deal.created_at)}
-            </span>
+          <div style={{ minWidth: 0, flex: 1, paddingRight: onFavorite ? 30 : 0 }}>
+            <div className="dh-title">{deal.title}</div>
+            <div className="dh-priceline">
+              <span className="dh-price dh-num">{money(deal.price)}</span>
+              {deal.estimated_market_price != null && off != null && (
+                <>
+                  <span className="dh-was dh-num">{money(deal.estimated_market_price)}</span>
+                  <span className="dh-save-text dh-num">−{off} %</span>
+                </>
+              )}
+            </div>
+            <Meta deal={deal} />
           </div>
         </div>
       </a>
@@ -216,42 +148,100 @@ export function DealCard({
       {onFavorite && (
         <button
           type="button"
+          className="dh-icon-btn"
           aria-label={deal.is_favorite ? "Favorit entfernen" : "Zu Favoriten"}
           disabled={busy}
           onClick={() => onFavorite(deal.id)}
           style={{
             position: "absolute",
-            top: 8,
-            right: 8,
-            width: 30,
-            height: 30,
-            display: "grid",
-            placeItems: "center",
-            border: "1px solid var(--dh-line-soft)",
-            borderRadius: 8,
-            background: "var(--dh-surface)",
-            cursor: "pointer",
-            opacity: busy ? 0.5 : 1,
-            fontSize: 14,
+            top: 12,
+            right: 12,
+            border: 0,
+            background: "none",
+            color: deal.is_favorite ? "var(--dh-q-fair)" : "var(--dh-muted)",
+            opacity: busy ? 0.4 : 1,
           }}
         >
-          {deal.is_favorite ? "★" : "☆"}
+          <IconStar size={18} filled={deal.is_favorite} />
         </button>
       )}
     </div>
   );
 }
 
-export function DealSkeleton() {
+/** The single best current find, given the space it deserves. */
+export function DealHero({ deal }: { deal: DealLike }) {
+  const off = discountOf(deal);
   return (
-    <div className="dh-card" style={{ ["--rail" as string]: "var(--dh-line)" }}>
+    <a href={deal.url} target="_blank" rel="noreferrer" className="dh-hero">
+      <div className="dh-hero-media">
+        <Photo src={deal.image_url} alt={deal.title} />
+        <div className="dh-hero-shade" />
+        <span className="dh-hero-label">
+          <span className="dh-dot" style={{ ["--q" as string]: QUALITY[deal.deal_verdict], margin: 0 }} />
+          {VERDICT[deal.deal_verdict] ?? "Deal"}
+        </span>
+      </div>
+      <div className="dh-hero-body">
+        <div
+          style={{
+            fontSize: 16,
+            fontWeight: 500,
+            lineHeight: 1.3,
+            letterSpacing: "-0.01em",
+            marginBottom: 7,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          {deal.title}
+        </div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+          <span className="dh-num" style={{ fontSize: 27, fontWeight: 600, letterSpacing: "-0.03em" }}>
+            {money(deal.price)}
+          </span>
+          {deal.estimated_market_price != null && off != null && (
+            <>
+              <span
+                className="dh-num"
+                style={{
+                  fontSize: 13,
+                  color: "rgba(255,255,255,.62)",
+                  textDecoration: "line-through",
+                }}
+              >
+                {money(deal.estimated_market_price)}
+              </span>
+              <span className="dh-num" style={{ fontSize: 14, fontWeight: 600, color: "#4ade80" }}>
+                −{off} %
+              </span>
+            </>
+          )}
+        </div>
+        <div
+          className="dh-meta"
+          style={{ marginTop: 7, color: "rgba(255,255,255,.66)", fontSize: 12 }}
+        >
+          {deal.site}
+          {deal.location ? ` · ${deal.location}` : ""} · {since(deal.created_at)}
+        </div>
+      </div>
+    </a>
+  );
+}
+
+export function DealRowSkeleton() {
+  return (
+    <div className="dh-row">
       <div className="dh-deal">
-        <div className="dh-thumb dh-skel" />
-        <div style={{ flex: 1, display: "grid", gap: 8, alignContent: "start", paddingTop: 2 }}>
-          <div className="dh-skel" style={{ height: 13, width: "85%" }} />
-          <div className="dh-skel" style={{ height: 13, width: "55%" }} />
-          <div className="dh-skel" style={{ height: 18, width: 96, marginTop: 2 }} />
-          <div className="dh-skel" style={{ height: 10, width: "70%" }} />
+        <div className="dh-thumb dh-skel" style={{ boxShadow: "none" }} />
+        <div style={{ flex: 1, display: "grid", gap: 9, paddingTop: 3 }}>
+          <div className="dh-skel" style={{ height: 13, width: "88%" }} />
+          <div className="dh-skel" style={{ height: 13, width: "52%" }} />
+          <div className="dh-skel" style={{ height: 17, width: 92 }} />
+          <div className="dh-skel" style={{ height: 10, width: "66%" }} />
         </div>
       </div>
     </div>

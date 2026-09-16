@@ -1,10 +1,18 @@
 import { useState } from "react";
 import { Empty, ErrorBox } from "../components/DataState";
-import { DealCard, DealSkeleton, type DealLike } from "../components/DealCard";
+import { DealRow, DealRowSkeleton, type DealLike } from "../components/DealCard";
 import { api } from "../lib/api";
 import { useApi } from "../lib/useApi";
 
-/** Admin view of the same deals the users receive — same card, wider grid. */
+/** Split a list into `size`-long chunks, so wide screens get two columns. */
+function chunk<T>(items: T[], size: number): T[][] {
+  if (size <= 0) return [items];
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/** Admin view of the same finds the users receive — same row, two columns. */
 export function Listings() {
   const [minScore, setMinScore] = useState(0);
   const [site, setSite] = useState("");
@@ -56,10 +64,10 @@ export function Listings() {
       </div>
 
       {loading && (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <DealSkeleton />
-          <DealSkeleton />
-          <DealSkeleton />
+        <div className="dh-group">
+          <DealRowSkeleton />
+          <DealRowSkeleton />
+          <DealRowSkeleton />
         </div>
       )}
       {error && <ErrorBox message={error} />}
@@ -68,9 +76,13 @@ export function Listings() {
       )}
 
       {data && data.length > 0 && (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {(data as unknown as DealLike[]).map((l) => (
-            <DealCard key={l.id} deal={l} />
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {chunk(data as unknown as DealLike[], Math.ceil(data.length / 2)).map((column, i) => (
+            <div key={i} className="dh-group">
+              {column.map((l) => (
+                <DealRow key={l.id} deal={l} />
+              ))}
+            </div>
           ))}
         </div>
       )}

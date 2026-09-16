@@ -1,82 +1,135 @@
-/* Deal Hunter visual language.
+/* Deal Hunter — visual system.
  *
- * One set of tokens drives two surfaces: the Telegram Mini App (which inherits
- * the user's Telegram theme through --tg-theme-*) and the desktop admin panel
- * (which falls back to its own palette). Deliberately flat and dense: photos
- * and prices carry the page, colour is reserved for one thing only — how good
- * a deal is. No decorative gradients, no drop shadows, no pastel chips.
+ * Principles, in order:
+ *   1. The photo and the price carry the screen. Everything else recedes.
+ *   2. One accent colour, used only for money saved. Quality is a 5px dot.
+ *   3. Rows live in one grouped container with hairline dividers, not in a
+ *      stack of floating cards — fewer edges, calmer page.
+ *   4. Nothing decorative: no gradients on surfaces, no shadows, no emoji.
+ *
+ * The tokens read Telegram's theme variables first, so the Mini App inherits
+ * the user's own light or dark theme, and fall back to a tuned neutral palette
+ * everywhere else.
  */
 
 :root {
-  /* Fallbacks apply outside Telegram; inside, the theme variables win. */
-  --dh-bg-fallback: #f4f5f7;
+  --dh-bg-fallback: #f2f3f5;
   --dh-surface-fallback: #ffffff;
-  --dh-ink-fallback: #0d1117;
-  --dh-muted-fallback: #6b7280;
+  --dh-ink-fallback: #10131a;
+  --dh-muted-fallback: #737a87;
 
   --dh-bg: var(--tg-theme-bg-color, var(--dh-bg-fallback));
   --dh-surface: var(--tg-theme-secondary-bg-color, var(--dh-surface-fallback));
   --dh-ink: var(--tg-theme-text-color, var(--dh-ink-fallback));
   --dh-muted: var(--tg-theme-hint-color, var(--dh-muted-fallback));
-  --dh-accent: var(--tg-theme-button-color, #2f6fed);
+  --dh-accent: var(--tg-theme-button-color, #2563eb);
   --dh-accent-ink: var(--tg-theme-button-text-color, #ffffff);
-  --dh-line: color-mix(in srgb, var(--dh-muted) 24%, transparent);
-  --dh-line-soft: color-mix(in srgb, var(--dh-muted) 12%, transparent);
-  --dh-fill: color-mix(in srgb, var(--dh-muted) 8%, transparent);
 
-  /* Deal quality — the only colour scale in the product. */
-  --dh-steal: #ff4d2d;
-  --dh-great: #10b981;
-  --dh-good: #57a05a;
-  --dh-fair: #d99a00;
-  --dh-overpriced: #8a94a6;
-  --dh-unknown: #8a94a6;
+  /* Hairlines and fills are derived, so they stay correct in any theme. */
+  --dh-line: color-mix(in srgb, var(--dh-muted) 20%, transparent);
+  --dh-hairline: color-mix(in srgb, var(--dh-muted) 14%, transparent);
+  --dh-fill: color-mix(in srgb, var(--dh-muted) 7%, transparent);
 
-  --dh-radius: 14px;
+  /* The only saturated colour in the product: money saved. */
+  --dh-save: #0f9d58;
+  --dh-warn: #b2560d;
+
+  /* Deal quality, shown as a 5px dot — never as a filled block. */
+  --dh-q-steal: #e5484d;
+  --dh-q-great: #0f9d58;
+  --dh-q-good: #6b9e5a;
+  --dh-q-fair: #b08600;
+  --dh-q-none: color-mix(in srgb, var(--dh-muted) 55%, transparent);
+
+  --dh-r-lg: 14px;
+  --dh-r-md: 10px;
+  --dh-r-sm: 7px;
   --dh-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
-/* Opened in a normal browser with a dark system theme, the page must not stay
-   white. Inside Telegram these values are overridden by the theme variables. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --dh-bg-fallback: #0e1116;
-    --dh-surface-fallback: #171b22;
-    --dh-ink-fallback: #e8eaed;
-    --dh-muted-fallback: #9aa3af;
+    --dh-bg-fallback: #0c0e12;
+    --dh-surface-fallback: #14171d;
+    --dh-ink-fallback: #eceef2;
+    --dh-muted-fallback: #8b93a1;
+    --dh-save: #2fbf71;
+    --dh-q-great: #2fbf71;
+    --dh-q-steal: #ff6b6b;
   }
 }
 
-/* ---------- Layout primitives ---------- */
+/* ---------- Shell ---------- */
 .dh-app {
   min-height: 100vh;
   background: var(--dh-bg);
   color: var(--dh-ink);
+  font-size: 15px;
+  line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-.dh-card {
-  position: relative;
-  background: var(--dh-surface);
-  border: 1px solid var(--dh-line-soft);
-  border-radius: var(--dh-radius);
-  overflow: hidden;
+.dh-app * {
+  box-sizing: border-box;
 }
 
-.dh-muted {
+.dh-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 52px;
+  padding: 0 16px;
+  background: color-mix(in srgb, var(--dh-bg) 86%, transparent);
+  backdrop-filter: saturate(1.4) blur(14px);
+  border-bottom: 1px solid var(--dh-hairline);
+}
+
+.dh-wordmark {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.dh-main {
+  padding: 16px 16px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* ---------- Type ---------- */
+.dh-h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.dh-label {
+  font-family: var(--dh-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--dh-muted);
 }
 
 .dh-meta {
-  font-family: var(--dh-mono);
-  font-size: 11px;
-  letter-spacing: 0.01em;
+  font-size: 12px;
   color: var(--dh-muted);
-  /* One line, always: a wrapped "vor 10 Std" breaks the card's rhythm. */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+
+.dh-muted {
+  color: var(--dh-muted);
 }
 
 .dh-num {
@@ -84,36 +137,49 @@
   letter-spacing: -0.02em;
 }
 
-/* ---------- Deal card ---------- */
+/* ---------- Grouped list ---------- */
+.dh-group {
+  background: var(--dh-surface);
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--dh-r-lg);
+  overflow: hidden;
+}
+
+.dh-row + .dh-row {
+  border-top: 1px solid var(--dh-hairline);
+}
+
+.dh-row {
+  display: block;
+  padding: 12px 14px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.dh-row-tap {
+  transition: background 120ms ease;
+}
+
+.dh-row-tap:active {
+  background: var(--dh-fill);
+}
+
+/* ---------- Deal row ---------- */
 .dh-deal {
   display: flex;
   gap: 12px;
-  padding: 10px 12px 10px 15px;
-  text-decoration: none;
-  color: inherit;
-}
-
-/* The rail is the card's signature: quality read before a single word. */
-.dh-deal::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--rail, var(--dh-unknown));
-}
-
-.dh-deal:active {
-  background: var(--dh-fill);
+  align-items: flex-start;
 }
 
 .dh-thumb {
-  position: relative;
   flex: none;
-  width: 92px;
-  height: 92px;
-  border-radius: 10px;
+  width: 76px;
+  height: 76px;
+  border-radius: var(--dh-r-md);
   overflow: hidden;
   background: var(--dh-fill);
+  /* An inner hairline keeps light product photos from bleeding into the card. */
+  box-shadow: inset 0 0 0 1px var(--dh-hairline);
 }
 
 .dh-thumb img {
@@ -128,99 +194,77 @@
   place-items: center;
   width: 100%;
   height: 100%;
-  font-family: var(--dh-mono);
-  font-size: 10px;
-  color: var(--dh-muted);
-}
-
-/* Saving sits on the photo, where the eye already is. */
-.dh-save {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  padding: 2px 6px;
-  font-family: var(--dh-mono);
-  font-size: 11px;
-  font-weight: 600;
-  color: #fff;
-  background: var(--rail, var(--dh-unknown));
-  border-top-right-radius: 8px;
+  color: var(--dh-q-none);
 }
 
 .dh-title {
-  font-size: 14px;
-  font-weight: 560;
-  line-height: 1.3;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.33;
+  letter-spacing: -0.006em;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
+.dh-priceline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
 .dh-price {
-  font-size: 20px;
-  font-weight: 650;
+  font-size: 19px;
+  font-weight: 600;
   line-height: 1.1;
 }
 
-.dh-price-was {
-  font-size: 12px;
+.dh-was {
+  font-size: 12.5px;
   color: var(--dh-muted);
   text-decoration: line-through;
+  text-decoration-thickness: 1px;
 }
 
-.dh-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 6px;
-  border: 1px solid var(--dh-line);
-  border-radius: 6px;
-  font-family: var(--dh-mono);
-  font-size: 10px;
-  color: var(--dh-muted);
-}
-
-/* ---------- Score meter ---------- */
-.dh-score {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.dh-score-bars {
-  display: inline-flex;
-  gap: 2px;
-}
-
-.dh-score-bar {
-  width: 4px;
-  height: 10px;
-  border-radius: 1px;
-  background: var(--dh-line);
-}
-
-.dh-score-bar[data-on="1"] {
-  background: var(--rail, var(--dh-unknown));
-}
-
-.dh-score-value {
-  font-family: var(--dh-mono);
-  font-size: 11px;
+.dh-save-text {
+  font-size: 13px;
   font-weight: 600;
+  color: var(--dh-save);
 }
 
-/* ---------- Hero (best current deal) ---------- */
+.dh-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--q, var(--dh-q-none));
+  vertical-align: 1px;
+  margin-right: 5px;
+}
+
+.dh-sep {
+  opacity: 0.45;
+  padding: 0 5px;
+}
+
+/* ---------- Hero ---------- */
 .dh-hero {
   display: block;
   position: relative;
-  text-decoration: none;
+  border-radius: var(--dh-r-lg);
+  overflow: hidden;
+  background: var(--dh-surface);
+  border: 1px solid var(--dh-hairline);
   color: inherit;
+  text-decoration: none;
 }
 
 .dh-hero-media {
   position: relative;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 16 / 10;
   background: var(--dh-fill);
 }
 
@@ -231,34 +275,72 @@
   display: block;
 }
 
+/* Product photos are unpredictable — a bright sky behind white text would be
+   unreadable — so the lower half carries a deep, gradual scrim. */
 .dh-hero-shade {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.1) 55%, transparent 100%);
+  background: linear-gradient(
+    to top,
+    rgba(6, 8, 12, 0.94) 0%,
+    rgba(6, 8, 12, 0.86) 26%,
+    rgba(6, 8, 12, 0.52) 52%,
+    rgba(6, 8, 12, 0.12) 78%,
+    rgba(6, 8, 12, 0) 100%
+  );
 }
 
 .dh-hero-body {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 12px 14px;
+  inset: auto 0 0 0;
+  padding: 14px 16px 15px;
   color: #fff;
 }
 
-.dh-hero-flag {
+.dh-hero-label {
   position: absolute;
-  top: 10px;
-  left: 0;
-  padding: 3px 8px;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(10, 12, 16, 0.62);
+  backdrop-filter: blur(8px);
   font-family: var(--dh-mono);
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
   color: #fff;
-  background: var(--rail, var(--dh-steal));
-  border-top-right-radius: 6px;
-  border-bottom-right-radius: 6px;
+}
+
+/* ---------- Chips & tags ---------- */
+.dh-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--dh-line);
+  border-radius: var(--dh-r-sm);
+  font-size: 12px;
+  color: var(--dh-muted);
+  white-space: nowrap;
+}
+
+.dh-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border: 1px solid var(--dh-line);
+  border-radius: 999px;
+  font-family: var(--dh-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--dh-muted);
 }
 
 /* ---------- Controls ---------- */
@@ -266,42 +348,53 @@
   display: inline-flex;
   padding: 2px;
   background: var(--dh-fill);
-  border-radius: 10px;
+  border-radius: 9px;
 }
 
 .dh-seg button {
-  padding: 5px 12px;
+  padding: 5px 11px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 7px;
   background: transparent;
   color: var(--dh-muted);
+  font: inherit;
   font-size: 13px;
-  font-weight: 550;
+  font-weight: 500;
   cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .dh-seg button[data-active="1"] {
   background: var(--dh-surface);
   color: var(--dh-ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
 }
 
 .dh-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 9px 14px;
+  gap: 7px;
+  height: 42px;
+  padding: 0 16px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--dh-r-md);
   background: var(--dh-accent);
   color: var(--dh-accent-ink);
-  font-size: 14px;
-  font-weight: 560;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
   cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.dh-btn:active {
+  opacity: 0.82;
 }
 
 .dh-btn[disabled] {
-  opacity: 0.55;
+  opacity: 0.5;
+  cursor: default;
 }
 
 .dh-btn-quiet {
@@ -311,38 +404,78 @@
 }
 
 .dh-btn-sm {
-  padding: 6px 10px;
+  height: 32px;
+  padding: 0 11px;
   font-size: 13px;
+  border-radius: 8px;
 }
 
-.dh-input {
-  width: 100%;
-  padding: 10px 12px;
+.dh-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--dh-accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.dh-link-quiet {
+  color: var(--dh-muted);
+}
+
+.dh-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--dh-line);
-  border-radius: 10px;
+  border-radius: 8px;
+  background: var(--dh-surface);
+  color: var(--dh-muted);
+  cursor: pointer;
+}
+
+.dh-input,
+.dh-select {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--dh-line);
+  border-radius: var(--dh-r-md);
   background: var(--dh-bg);
   color: var(--dh-ink);
-  font-size: 14px;
+  font: inherit;
+  /* 16px keeps iOS from zooming the page on focus. */
+  font-size: 16px;
   outline: none;
+  transition: border-color 120ms ease;
 }
 
-.dh-input:focus {
+.dh-input::placeholder {
+  color: color-mix(in srgb, var(--dh-muted) 70%, transparent);
+}
+
+.dh-input:focus,
+.dh-select:focus {
   border-color: var(--dh-accent);
 }
 
 /* ---------- Tab bar ---------- */
 .dh-tabbar {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: auto 0 0 0;
   z-index: 20;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  background: color-mix(in srgb, var(--dh-surface) 92%, transparent);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid var(--dh-line-soft);
+  background: color-mix(in srgb, var(--dh-surface) 88%, transparent);
+  backdrop-filter: saturate(1.4) blur(14px);
+  border-top: 1px solid var(--dh-hairline);
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
@@ -350,57 +483,68 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 9px 0 8px;
+  gap: 4px;
+  height: 54px;
   border: 0;
-  background: transparent;
+  background: none;
   color: var(--dh-muted);
-  font-size: 10px;
-  font-weight: 550;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   cursor: pointer;
+  padding-top: 9px;
 }
 
 .dh-tabbar button[data-active="1"] {
   color: var(--dh-accent);
 }
 
-.dh-tabbar .dh-tab-icon {
-  font-size: 17px;
-  line-height: 1;
-}
-
-/* ---------- Header ---------- */
-.dh-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  padding: 12px 14px 10px;
-  background: color-mix(in srgb, var(--dh-bg) 88%, transparent);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--dh-line-soft);
-}
-
 /* ---------- Stats ---------- */
-.dh-stat {
-  padding: 12px 13px;
+.dh-figure {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
 }
 
-.dh-stat-value {
-  font-size: 22px;
-  font-weight: 650;
-  line-height: 1.15;
+.dh-figure-sm {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
 }
 
-/* ---------- Skeletons ---------- */
+/* ---------- Empty & error ---------- */
+.dh-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 34px 22px;
+}
+
+.dh-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--dh-line);
+  color: var(--dh-muted);
+  margin-bottom: 14px;
+}
+
+/* ---------- Skeleton ---------- */
 .dh-skel {
   background: linear-gradient(
     90deg,
     var(--dh-fill) 25%,
-    color-mix(in srgb, var(--dh-muted) 16%, transparent) 37%,
+    color-mix(in srgb, var(--dh-muted) 15%, transparent) 37%,
     var(--dh-fill) 63%
   );
   background-size: 400% 100%;
-  animation: dh-shimmer 1.3s ease-in-out infinite;
+  animation: dh-shimmer 1.4s ease-in-out infinite;
   border-radius: 6px;
 }
 
@@ -411,4 +555,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .dh-skel { animation: none; }
+  .dh-seg button, .dh-btn, .dh-input { transition: none; }
 }
