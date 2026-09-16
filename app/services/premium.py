@@ -45,28 +45,89 @@ def stars_to_eur(amount_stars: int) -> float:
     return round(amount_stars * rate, 2)
 
 
+@dataclass(frozen=True, slots=True)
+class Plan:
+    """One purchasable subscription level."""
+
+    key: str
+    label: str
+    tier: SubscriptionTier
+    price_stars: int
+    price_eur: float
+    max_rules: int
+    min_interval_seconds: int
+    description: str
+
+
+def available_plans() -> list[Plan]:
+    """The plans on sale, cheapest first. Everything comes from settings."""
+    return [
+        Plan(
+            key="pro",
+            label="Pro",
+            tier=SubscriptionTier.PRO,
+            price_stars=settings.pro_price_stars,
+            price_eur=settings.pro_price_eur,
+            max_rules=settings.pro_max_rules,
+            min_interval_seconds=settings.paid_min_interval_seconds,
+            description=(
+                f"{settings.pro_max_rules} Suchen, schnellstes Prüf-Intervall, "
+                "Prioritäts-Verarbeitung."
+            ),
+        ),
+        Plan(
+            key="unlimited",
+            label="Unlimited",
+            tier=SubscriptionTier.UNLIMITED,
+            price_stars=settings.premium_price_stars,
+            price_eur=settings.premium_price_eur,
+            max_rules=settings.unlimited_max_rules,
+            min_interval_seconds=settings.paid_min_interval_seconds,
+            description=(
+                "Unbegrenzte Suchen, schnellstes Prüf-Intervall, "
+                "Prioritäts-Verarbeitung, Foto-Bewertung."
+            ),
+        ),
+    ]
+
+
+def plan_by_key(key: str) -> Plan:
+    """Look a plan up, falling back to the flagship one."""
+    plans = {p.key: p for p in available_plans()}
+    return plans.get(key, plans["unlimited"])
+
+
+def plan_for_payload(payload: str) -> Plan:
+    """Which plan an invoice payload refers to ("premium_monthly:pro:CODE")."""
+    parts = payload.split(":")
+    if len(parts) > 1 and parts[1] in {p.key for p in available_plans()}:
+        return plan_by_key(parts[1])
+    return plan_by_key("unlimited")
+
+
 async def create_invoice_link(
-    *, price_stars: int | None = None, coupon_code: str | None = None
+    *,
+    price_stars: int | None = None,
+    coupon_code: str | None = None,
+    plan_key: str = "unlimited",
 ) -> str | None:
     """Create a Telegram Stars subscription invoice link (or None on failure).
 
-    ``price_stars`` overrides the configured price (coupon discounts); the
-    coupon code travels in the payload so the successful payment can be
-    attributed and the redemption booked only when money actually flowed.
+    ``price_stars`` overrides the plan price (coupon discounts). The plan and
+    the coupon code travel in the payload, so the successful payment grants the
+    right tier and books the redemption only when money actually flowed.
     """
-    amount = price_stars or settings.premium_price_stars
-    invoice_payload = "premium_monthly"
+    plan = plan_by_key(plan_key)
+    amount = price_stars or plan.price_stars
+    invoice_payload = f"premium_monthly:{plan.key}"
     if coupon_code:
         invoice_payload += f":{coupon_code}"
     payload = {
-        "title": "Deal Hunter Premium",
-        "description": (
-            "Unbegrenzte Suchen, schnellstes Prüf-Intervall und Prioritäts-"
-            "Verarbeitung. Monatlich, jederzeit kündbar."
-        ),
+        "title": f"Deal Hunter {plan.label}",
+        "description": plan.description + " Monatlich, jederzeit kündbar.",
         "payload": invoice_payload,
         "currency": "XTR",
-        "prices": [{"label": "Premium (1 Monat)", "amount": amount}],
+        "prices": [{"label": f"{plan.label} (1 Monat)", "amount": amount}],
         "subscription_period": TELEGRAM_SUBSCRIPTION_PERIOD,
     }
     url = f"https://api.telegram.org/bot{settings.bot_token}/createInvoiceLink"

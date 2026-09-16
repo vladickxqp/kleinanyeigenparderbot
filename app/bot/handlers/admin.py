@@ -126,17 +126,24 @@ async def _dashboard_text(session: AsyncSession) -> str:
 
     status = await health.get_status()
     worker = "🟢 läuft" if status.worker_alive else "🔴 KEIN Lebenszeichen"
+    queue = await health.queue_depth()
+
+    from app.services.analytics import business_metrics, format_metrics
+
+    metrics = await business_metrics(session)
 
     return (
         "👑 <b>Admin-Dashboard</b>\n\n"
         f"👥 Nutzer: <b>{total_users}</b> (aktiv: {active_users})\n"
         f"💎 Premium: <b>{paid_users}</b> · aktive Abos: {active_subs}\n"
-        f"💰 Zahlungen: <b>{payments_count}</b> ≈ {revenue_eur:.2f} €\n\n"
+        f"💰 Gesamt: <b>{payments_count}</b> Zahlungen ≈ {revenue_eur:.2f} €\n\n"
+        f"{format_metrics(metrics)}\n\n"
         f"📋 Suchen: <b>{active_rules}</b>/{total_rules} aktiv\n"
         f"🛒 Angebote gesamt: <b>{total_listings}</b>\n"
         f"🔄 Suchläufe heute: <b>{status.runs_today}</b>\n"
         f"📨 Karten heute: <b>{status.cards_sent_today}</b>\n\n"
         f"⚙️ Worker: {worker}"
+        + (f" · Warteschlange: {queue}" if queue is not None else "")
     )
 
 

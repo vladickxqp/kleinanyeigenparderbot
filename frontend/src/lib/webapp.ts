@@ -135,10 +135,33 @@ export interface WaPayment {
   created_at: string;
 }
 
+export interface RuleInput {
+  name: string;
+  keywords: string;
+  min_price: number | null;
+  max_price: number | null;
+  location: string | null;
+  max_distance_km: number | null;
+  interval_seconds: number;
+  exclude_keywords: string[];
+}
+
+async function waVoid(path: string, init: RequestInit = {}): Promise<void> {
+  const headers = new Headers(init.headers);
+  headers.set("X-Telegram-Init-Data", initData());
+  const res = await fetch(`/api/webapp${path}`, { ...init, headers });
+  if (!res.ok) throw new WebAppError(res.status, res.statusText);
+}
+
 export const webapp = {
   me: () => wa<Me>("/me"),
   rules: () => wa<WaRule[]>("/rules"),
   toggleRule: (id: number) => wa<WaRule>(`/rules/${id}/toggle`, { method: "POST" }),
+  createRule: (body: RuleInput) =>
+    wa<WaRule>("/rules", { method: "POST", body: JSON.stringify(body) }),
+  updateRule: (id: number, body: RuleInput) =>
+    wa<WaRule>(`/rules/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteRule: (id: number) => waVoid(`/rules/${id}`, { method: "DELETE" }),
   listings: (favorites = false) =>
     wa<WaListing[]>(`/listings?limit=40${favorites ? "&favorites=true" : ""}`),
   flips: () => wa<WaFlips>("/flips"),

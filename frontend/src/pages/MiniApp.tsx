@@ -8,6 +8,7 @@ import {
   tg,
   webapp,
   type Me,
+  type RuleInput,
   type WaFlips,
   type WaListing,
   type WaPayment,
@@ -131,27 +132,211 @@ function DealsTab() {
   );
 }
 
+const INPUT =
+  "w-full rounded-xl px-3 py-2 text-sm bg-[var(--tg-theme-bg-color,#ffffff)] " +
+  "border border-[var(--tg-theme-hint-color,#cbd5e1)]/40 outline-none";
+
+const EMPTY_RULE: RuleInput = {
+  name: "",
+  keywords: "",
+  min_price: null,
+  max_price: null,
+  location: null,
+  max_distance_km: null,
+  interval_seconds: 600,
+  exclude_keywords: [],
+};
+
+function toInput(rule: WaRule): RuleInput {
+  return {
+    name: rule.name,
+    keywords: rule.keywords,
+    min_price: rule.min_price,
+    max_price: rule.max_price,
+    location: rule.location,
+    max_distance_km: rule.max_distance_km,
+    interval_seconds: rule.interval_seconds,
+    exclude_keywords: [],
+  };
+}
+
+function num(value: string): number | null {
+  const parsed = Number(value.replace(",", "."));
+  return value.trim() === "" || Number.isNaN(parsed) ? null : parsed;
+}
+
+/** Create/edit form. The bot's wizard asks eight questions; here it is one screen. */
+function RuleForm({
+  initial,
+  onCancel,
+  onSaved,
+}: {
+  initial: { id: number | null; values: RuleInput };
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState<RuleInput>(initial.values);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function set<K extends keyof RuleInput>(key: K, value: RuleInput[K]) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  async function save() {
+    if (!form.name.trim() || !form.keywords.trim()) {
+      setError("Name und Suchbegriffe sind Pflicht.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      if (initial.id === null) await webapp.createRule(form);
+      else await webapp.updateRule(initial.id, form);
+      tg()?.HapticFeedback?.impactOccurred("medium");
+      onSaved();
+    } catch (e) {
+      setError(e instanceof WebAppError ? e.message : "Speichern fehlgeschlagen");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className={`${CARD} space-y-3`}>
+      <div className="font-medium">
+        {initial.id === null ? "➕ Neue Suche" : "✏️ Suche bearbeiten"}
+      </div>
+      <input
+        className={INPUT}
+        placeholder="Name, z. B. Tesla Model 3"
+        value={form.name}
+        onChange={(e) => set("name", e.target.value)}
+      />
+      <input
+        className={INPUT}
+        placeholder="Suchbegriffe, z. B. tesla model 3 performance"
+        value={form.keywords}
+        onChange={(e) => set("keywords", e.target.value)}
+      />
+      <div className="flex gap-2">
+        <input
+          className={INPUT}
+          inputMode="decimal"
+          placeholder="Preis von"
+          value={form.min_price ?? ""}
+          onChange={(e) => set("min_price", num(e.target.value))}
+        />
+        <input
+          className={INPUT}
+          inputMode="decimal"
+          placeholder="Preis bis"
+          value={form.max_price ?? ""}
+          onChange={(e) => set("max_price", num(e.target.value))}
+        />
+      </div>
+      <div className="flex gap-2">
+        <input
+          className={INPUT}
+          placeholder="PLZ oder Ort"
+          value={form.location ?? ""}
+          onChange={(e) => set("location", e.target.value || null)}
+        />
+        <select
+          className={INPUT}
+          value={form.max_distance_km ?? ""}
+          onChange={(e) =>
+            set("max_distance_km", e.target.value === "" ? null : Number(e.target.value))
+          }
+        >
+          <option value="">Umkreis</option>
+          <option value="25">25 km</option>
+          <option value="50">50 km</option>
+          <option value="100">100 km</option>
+          <option value="200">200 km</option>
+        </select>
+      </div>
+      <select
+        className={INPUT}
+        value={form.interval_seconds}
+        onChange={(e) => set("interval_seconds", Number(e.target.value))}
+      >
+        <option value={60}>alle 1 min (Premium)</option>
+        <option value={300}>alle 5 min</option>
+        <option value={600}>alle 10 min</option>
+        <option value={1800}>alle 30 min</option>
+        <option value={3600}>stündlich</option>
+      </select>
+      {error && <div className="text-sm text-red-500">{error}</div>}
+      <div className="flex gap-2">
+        <button className={BTN} disabled={saving} onClick={save}>
+          {saving ? "Speichert…" : "💾 Speichern"}
+        </button>
+        <button className={`${BTN} opacity-60`} disabled={saving} onClick={onCancel}>
+          Abbrechen
+        </button>
+      </div>
+      <div className={HINT}>
+        Das Intervall wird automatisch an deinen Tarif angepasst.
+      </div>
+    </div>
+  );
+}
+
 function RulesTab() {
   const [version, setVersion] = useState(0);
   const { data, error, loading } = useLoad<WaRule[]>(() => webapp.rules(), [version]);
   const [busy, setBusy] = useState<number | null>(null);
+  const [editing, setEditing] = useState<{ id: number | null; values: RuleInput } | null>(
+    null,
+  );
+
+  const reload = () => setVersion((v) => v + 1);
 
   async function toggle(id: number) {
     setBusy(id);
     try {
       await webapp.toggleRule(id);
       tg()?.HapticFeedback?.impactOccurred("light");
-      setVersion((v) => v + 1);
+      reload();
     } finally {
       setBusy(null);
     }
+  }
+
+  async function remove(id: number, name: string) {
+    if (!window.confirm(`Suche "${name}" wirklich löschen?`)) return;
+    setBusy(id);
+    try {
+      await webapp.deleteRule(id);
+      reload();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (editing) {
+    return (
+      <Section title="📋 Meine Suchen">
+        <RuleForm
+          initial={editing}
+          onCancel={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            reload();
+          }}
+        />
+      </Section>
+    );
   }
 
   return (
     <Section title="📋 Meine Suchen">
       {loading && <Notice text="Lädt…" />}
       {error && <Notice text={`⚠️ ${error}`} />}
-      {data && data.length === 0 && <Notice text="Noch keine Suchen — im Bot ➕ Neue Suche." />}
+      {data && data.length === 0 && (
+        <Notice text="Noch keine Suchen — leg unten deine erste an." />
+      )}
       {data?.map((r) => (
         <div key={r.id} className={CARD}>
           <div className="flex items-center justify-between gap-3">
@@ -172,9 +357,26 @@ function RulesTab() {
               {r.is_active ? "🟢 aktiv" : "⚪️ pausiert"}
             </button>
           </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              className={`${BTN} opacity-80`}
+              onClick={() => setEditing({ id: r.id, values: toInput(r) })}
+            >
+              ✏️ Bearbeiten
+            </button>
+            <button
+              className={`${BTN} opacity-60`}
+              disabled={busy === r.id}
+              onClick={() => remove(r.id, r.name)}
+            >
+              🗑 Löschen
+            </button>
+          </div>
         </div>
       ))}
-      <Notice text="Bearbeiten & neue Suchen: im Bot unter 📋 Meine Suchen." />
+      <button className={BTN} onClick={() => setEditing({ id: null, values: EMPTY_RULE })}>
+        ➕ Neue Suche
+      </button>
     </Section>
   );
 }

@@ -103,7 +103,9 @@ async def _dispatch_due_searches() -> int:
             interval = max(rule.interval_seconds, floor)
             # Jitter keeps many rules of the same interval from lining up.
             _redis.set(_next_run_key(rule.id), now + interval + random.uniform(0, 5))
-            run_search_rule.delay(rule.id)
+            # Premium buys priority processing, so honour it where it counts.
+            queue = "priority" if owner is not None and owner.is_paid_tier else "celery"
+            run_search_rule.apply_async(args=[rule.id], queue=queue)
             dispatched += 1
 
     await health.mark_dispatch()
@@ -374,6 +376,134 @@ async def _check_expired_subscriptions() -> int:
     finally:
         await bot.session.close()
     return len(downgraded)
+
+
+# --- Weekly user recap ------------------------------------------------------------
+@celery_app.task(name="app.worker.tasks.send_weekly_recaps")
+def send_weekly_recaps() -> int:
+    """Tell every active user what the bot found for them this week."""
+    return _run_async(_send_weekly_recaps())
+
+
+async def _send_weekly_recaps() -> int:
+    from aiogram import Bot
+    from aiogram.client.default import DefaultBotProperties
+    from aiogram.enums import ParseMode
+    from sqlalchemy import select
+
+    from app.services import recap as recap_svc
+    from app.services.referrals import build_referral_link
+
+    if not settings.bot_token:
+        return 0
+
+    bot = Bot(
+        token=settings.bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+    sent = 0
+    try:
+        me = await bot.get_me()
+        async with session_scope() as session:
+            users = (
+                await session.execute(
+                    select(User).where(
+                        User.is_active.is_(True), User.is_blocked.is_(False)
+                    )
+                )
+            ).scalars().all()
+
+            for user in users:
+                try:
+                    data = await recap_svc.build_recap(session, user)
+                    if not data.worth_sending:
+                        continue
+                    link = build_referral_link(me.username, user.telegram_id)
+                    await bot.send_message(
+                        user.telegram_id,
+                        recap_svc.format_recap(data, referral_link=link),
+                        disable_web_page_preview=True,
+                    )
+                    sent += 1
+                except Exception as exc:  # noqa: BLE001 - one user never stops the rest
+                    logger.debug("Recap for {} failed: {}", user.telegram_id, exc)
+                await asyncio.sleep(0.05)
+    finally:
+        await bot.session.close()
+
+    logger.info("Weekly recap sent to {} user(s)", sent)
+    return sent
+
+
+# --- Win-back after expiry ----------------------------------------------------------
+@celery_app.task(name="app.worker.tasks.send_winbacks")
+def send_winbacks() -> int:
+    """Nudge users a few days after their premium lapsed."""
+    return _run_async(_send_winbacks())
+
+
+#: Days after expiry when the win-back message goes out.
+WINBACK_AFTER_DAYS = 5
+
+
+async def _send_winbacks() -> int:
+    from datetime import datetime, timedelta, timezone
+
+    from aiogram import Bot
+    from aiogram.client.default import DefaultBotProperties
+    from aiogram.enums import ParseMode
+    from sqlalchemy import select
+
+    from app.database.models import Subscription, SubscriptionStatus
+
+    if not settings.bot_token:
+        return 0
+
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(days=WINBACK_AFTER_DAYS + 1)
+    window_end = now - timedelta(days=WINBACK_AFTER_DAYS)
+
+    bot = Bot(
+        token=settings.bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+    sent = 0
+    try:
+        async with session_scope() as session:
+            subs = (
+                await session.execute(
+                    select(Subscription).where(
+                        Subscription.status == SubscriptionStatus.EXPIRED,
+                        Subscription.subscription_end >= window_start,
+                        Subscription.subscription_end < window_end,
+                    )
+                )
+            ).scalars().all()
+
+            for sub in subs:
+                user = await session.get(User, sub.user_id)
+                if user is None or user.is_paid_tier or not user.is_active:
+                    continue
+                try:
+                    await bot.send_message(
+                        user.telegram_id,
+                        "👋 Alles klar bei dir?\n\n"
+                        "Seit ein paar Tagen läufst du wieder im Free-Tarif: "
+                        f"maximal {user.max_rules} Suchen und Prüfung alle "
+                        f"{user.min_interval_seconds // 60} Minuten.\n\n"
+                        "Die besten Angebote sind meistens in den ersten "
+                        "Minuten weg. Zurück zu Premium: /premium 💎",
+                    )
+                    sent += 1
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Win-back to {} failed: {}", user.telegram_id, exc)
+                await asyncio.sleep(0.05)
+    finally:
+        await bot.session.close()
+
+    if sent:
+        logger.info("Win-back sent to {} lapsed user(s)", sent)
+    return sent
 
 
 # --- Watchdog ------------------------------------------------------------------

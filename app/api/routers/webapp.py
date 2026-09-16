@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from loguru import logger
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,6 +55,37 @@ class RuleOut(BaseModel):
     location: str | None
     max_distance_km: int | None
     category: str | None
+
+
+class RuleIn(BaseModel):
+    """Payload for creating or editing a rule from the Mini App."""
+
+    name: str = Field(min_length=1, max_length=128)
+    keywords: str = Field(min_length=1, max_length=256)
+    min_price: float | None = Field(default=None, ge=0, le=10_000_000)
+    max_price: float | None = Field(default=None, ge=0, le=10_000_000)
+    location: str | None = Field(default=None, max_length=64)
+    max_distance_km: int | None = Field(default=None, ge=0, le=500)
+    interval_seconds: int = Field(default=600, ge=60, le=86_400)
+    exclude_keywords: list[str] = Field(default_factory=list, max_length=20)
+
+    def apply_to(self, rule: SearchRule, user: User) -> None:
+        """Copy the validated values onto a rule, honouring the user's tier."""
+        rule.name = self.name.strip()[:128]
+        rule.keywords = self.keywords.strip()[:256]
+        rule.min_price = self.min_price
+        rule.max_price = self.max_price
+        location = (self.location or "").strip()[:64]
+        rule.location = location or None
+        rule.zip_code = (
+            location if location.isdigit() and 4 <= len(location) <= 5 else None
+        )
+        rule.max_distance_km = self.max_distance_km
+        # The tier decides the floor, never the client.
+        rule.interval_seconds = max(self.interval_seconds, user.min_interval_seconds)
+        rule.exclude_keywords = [
+            word.strip()[:64] for word in self.exclude_keywords if word.strip()
+        ][:20]
 
 
 class ListingOut(BaseModel):
@@ -168,6 +200,60 @@ async def toggle_rule(
     await session.commit()
     await session.refresh(rule)
     return rule
+
+
+@router.post("/rules", response_model=RuleOut, status_code=201)
+async def create_rule(
+    payload: RuleIn,
+    user: User = Depends(current_webapp_user),
+    session: AsyncSession = Depends(get_session),
+) -> SearchRule:
+    """Create a search from the Mini App, within the user's quota."""
+    repo = SearchRuleRepository(session)
+    if await repo.count_for_user(user.id) >= user.max_rules:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Tarif-Limit erreicht ({user.max_rules} Suchen).",
+        )
+    rule = SearchRule(user_id=user.id, name=payload.name, keywords=payload.keywords)
+    payload.apply_to(rule, user)
+    await repo.add(rule)
+    await session.commit()
+    await session.refresh(rule)
+    logger.info("WEBAPP: {} created rule {}", user.telegram_id, rule.id)
+    return rule
+
+
+@router.put("/rules/{rule_id}", response_model=RuleOut)
+async def update_rule(
+    rule_id: int,
+    payload: RuleIn,
+    user: User = Depends(current_webapp_user),
+    session: AsyncSession = Depends(get_session),
+) -> SearchRule:
+    rule = await SearchRuleRepository(session).get(rule_id, user.id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Suche nicht gefunden")
+    payload.apply_to(rule, user)
+    await session.commit()
+    await session.refresh(rule)
+    return rule
+
+
+@router.delete(
+    "/rules/{rule_id}", status_code=204, response_class=Response, response_model=None
+)
+async def delete_rule(
+    rule_id: int,
+    user: User = Depends(current_webapp_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    repo = SearchRuleRepository(session)
+    rule = await repo.get(rule_id, user.id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Suche nicht gefunden")
+    await repo.delete(rule)
+    await session.commit()
 
 
 @router.get("/listings", response_model=list[ListingOut])

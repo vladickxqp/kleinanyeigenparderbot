@@ -122,9 +122,10 @@ services:
   worker:
     <<: [*app-build, *app-env, *logging]
     restart: unless-stopped
+    # Priority first: paying customers' searches are promised faster handling.
     command:
       ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info",
-       "--concurrency=${CELERY_CONCURRENCY:-2}"]
+       "--concurrency=${CELERY_CONCURRENCY:-2}", "-Q", "priority,celery"]
     volumes:
       - ./logs:/app/logs
     mem_limit: 3g

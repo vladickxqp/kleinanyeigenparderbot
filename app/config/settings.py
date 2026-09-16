@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     premium_price_eur: float = 4.99
     #: Days granted per successful (renewal) payment.
     premium_period_days: int = 31
+    #: Second, cheaper plan (Pro). Same speed, fewer searches.
+    pro_price_stars: int = 150
+    pro_price_eur: float = 2.99
     #: Rule quotas per tier.
     free_max_rules: int = 3
     pro_max_rules: int = 25

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from html import escape
 
 from aiogram import F, Router
@@ -281,7 +282,66 @@ async def wiz_exclude(
 ) -> None:
     excludes = [w.strip() for w in (message.text or "").split(",") if w.strip()]
     await state.update_data(exclude=excludes)
+    await _preview_matches(message, state)
     await _ask_location(message, lang, state)
+
+
+async def _preview_matches(message: Message, state: FSMContext) -> None:
+    """Show how many offers the criteria hit right now.
+
+    The wizard asks eight questions before the user sees a single result. One
+    quick look at the current hit count and price range tells them whether the
+    keywords are any good, while it is still cheap to change them.
+    """
+    data = await state.get_data()
+    keywords = (data.get("keywords") or "").strip()
+    if not keywords:
+        return
+
+    from app.parsers import registry
+    from app.parsers.schemas import SearchQuery
+    from app.services.price_analysis import compute_price_stats
+    from app.services.relevance import filter_relevant
+
+    query = SearchQuery(
+        keywords=keywords[:256],
+        min_price=data.get("min_price"),
+        max_price=data.get("max_price"),
+        exclude_keywords=list(data.get("exclude", [])),
+        max_results=40,
+    )
+    status = await message.answer("🔎 Kurzer Test, wie viele Treffer das gerade gibt…")
+    try:
+        parsers = [p for p in registry if not p.requires_browser]
+        results = await asyncio.gather(
+            *(p.collect(query) for p in parsers), return_exceptions=True
+        )
+        parsed = []
+        for res in results:
+            if not isinstance(res, BaseException):
+                parsed.extend(res)
+        parsed = filter_relevant(query, parsed)
+    except Exception as exc:  # noqa: BLE001 - a preview must never block the wizard
+        logger.debug("Wizard preview failed: {}", exc)
+        await status.delete()
+        return
+
+    if not parsed:
+        await status.edit_text(
+            "🔎 <b>0 Treffer</b> mit diesen Angaben.\n"
+            "Das kann passen (dann kommen nur wirklich neue Anzeigen) — "
+            "oder die Suchbegriffe sind zu eng. Ändern geht später jederzeit."
+        )
+        return
+
+    prices = [p.price for p in parsed if p.price is not None]
+    stats = compute_price_stats(prices)
+    line = f"🔎 <b>{len(parsed)} Treffer</b> gerade online"
+    if stats.median:
+        line += f" · Marktpreis ~ <b>{stats.median:,.0f} €</b>".replace(",", ".")
+    if prices:
+        line += f"\nGünstigstes: {min(prices):,.0f} €".replace(",", ".")
+    await status.edit_text(line + "\n\nWeiter geht's 👇")
 
 
 # --- Location + radius ---------------------------------------------------------

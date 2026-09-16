@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from celery import Celery
 from celery.schedules import crontab
+from kombu import Exchange, Queue
 
 from app.config.settings import settings
 
@@ -37,6 +38,13 @@ celery_app.conf.update(
             "soft_time_limit": 3300,
         },
     },
+    # Paying customers are promised faster processing, so their searches get
+    # their own queue instead of queuing behind everyone else's.
+    task_default_queue="celery",
+    task_queues=(
+        Queue("priority", Exchange("priority"), routing_key="priority"),
+        Queue("celery", Exchange("celery"), routing_key="celery"),
+    ),
 )
 
 # Beat schedule: a lightweight dispatcher decides which rules are due.
@@ -70,6 +78,14 @@ celery_app.conf.beat_schedule = {
     "flush-unnotified": {
         "task": "app.worker.tasks.flush_unnotified",
         "schedule": 300.0,  # rescue listings whose delivery was interrupted
+    },
+    "weekly-recap": {
+        "task": "app.worker.tasks.send_weekly_recaps",
+        "schedule": crontab(day_of_week="sun", hour=18, minute=0),
+    },
+    "win-back": {
+        "task": "app.worker.tasks.send_winbacks",
+        "schedule": crontab(hour=17, minute=30),  # daily, after the expiry sweep
     },
     "dispatch-broadcasts": {
         "task": "app.worker.tasks.dispatch_broadcasts",

@@ -95,14 +95,23 @@ def _premium_text(user: User, sub, billing: str = "") -> str:
         )
     lines = [
         "💎 <b>Deal Hunter Premium</b>\n",
-        f"Nur <b>{settings.premium_price_stars} ⭐</b> (~{settings.premium_price_eur:.2f} €) "
-        "pro Monat — jederzeit kündbar:\n",
-        f"♾ <b>Unbegrenzte Suchen</b> (Free: {settings.free_max_rules})",
-        f"⚡ <b>Prüf-Intervall ab {settings.paid_min_interval_seconds // 60} min</b> "
-        f"(Free: ab {settings.free_min_interval_seconds // 60} min)",
-        "🚀 Prioritäts-Verarbeitung",
-        "💎 Premium-Badge",
+        f"Free: {settings.free_max_rules} Suchen, Prüfung alle "
+        f"{settings.free_min_interval_seconds // 60} Minuten.\n",
     ]
+    for plan in premium.available_plans():
+        rules = (
+            "unbegrenzte Suchen"
+            if plan.max_rules >= 1_000
+            else f"{plan.max_rules} Suchen"
+        )
+        lines.append(
+            f"<b>{plan.label}</b> — {plan.price_stars} ⭐ "
+            f"(~{plan.price_eur:.2f} €)/Monat\n"
+            f"   {rules}, Prüfung ab {plan.min_interval_seconds // 60} min, "
+            "Prioritäts-Verarbeitung"
+            + (", Foto-Bewertung" if plan.key == "unlimited" else "")
+        )
+    lines.append("\nJederzeit kündbar, direkt hier im Chat.")
     if settings.trial_enabled:
         lines.append(f"\n🆓 Kostenlos testen: /trial ({settings.trial_days} Tage)")
     lines.append("🎟 Gutschein? /coupon CODE")
@@ -122,16 +131,27 @@ async def _premium_keyboard(
 ):
     kb = InlineKeyboardBuilder()
     if not user.is_paid_tier and settings.premium_enabled:
-        link = await premium.create_invoice_link(
-            price_stars=price_stars, coupon_code=coupon_code
-        )
-        if link:
-            shown = price_stars or settings.premium_price_stars
-            kb.row(
-                InlineKeyboardButton(
-                    text=f"💳 Premium holen ({shown} ⭐/Monat)", url=link
-                )
+        if price_stars is not None:
+            # Coupon flow: one discounted button for the flagship plan.
+            link = await premium.create_invoice_link(
+                price_stars=price_stars, coupon_code=coupon_code
             )
+            if link:
+                kb.row(
+                    InlineKeyboardButton(
+                        text=f"💳 Premium holen ({price_stars} ⭐/Monat)", url=link
+                    )
+                )
+        else:
+            for plan in premium.available_plans():
+                link = await premium.create_invoice_link(plan_key=plan.key)
+                if link:
+                    kb.row(
+                        InlineKeyboardButton(
+                            text=f"💳 {plan.label} — {plan.price_stars} ⭐/Monat",
+                            url=link,
+                        )
+                    )
     if user.is_paid_tier and _cancellable(sub):
         kb.row(
             InlineKeyboardButton(
@@ -445,7 +465,11 @@ async def on_successful_payment(
     """First charge AND every automatic monthly renewal arrive here."""
     payment = message.successful_payment
     payload = payment.invoice_payload or ""
-    coupon_code = payload.split(":", 1)[1] if ":" in payload else None
+    # Payload: "premium_monthly[:<plan>][:<coupon>]" — older links carry the
+    # coupon directly in the second field, so the plan lookup tolerates both.
+    plan = premium.plan_for_payload(payload)
+    parts = payload.split(":")
+    coupon_code = parts[-1] if len(parts) > 1 and parts[-1] != plan.key else None
     charge_id = payment.telegram_payment_charge_id
 
     # Telegram may redeliver an update after a restart. One charge, one grant.
@@ -464,6 +488,7 @@ async def on_successful_payment(
         plan=PlanType.MONTHLY,
         charge_id=charge_id,
         price_stars=payment.total_amount,
+        tier=plan.tier,
     )
     await premium.record_payment(
         session,
@@ -505,9 +530,9 @@ async def on_successful_payment(
                 pass
 
     await message.answer(
-        "🎉 <b>Willkommen bei Premium!</b>\n\n"
-        "♾ Unbegrenzte Suchen und das schnellste Prüf-Intervall sind jetzt "
-        "freigeschaltet. Status jederzeit: /premium"
+        f"🎉 <b>Willkommen bei {plan.label}!</b>\n\n"
+        f"{plan.description}\n"
+        "Status und Zahlungen jederzeit: /premium"
     )
 
 
