@@ -23,7 +23,8 @@ async def cb_home(cb: CallbackQuery, lang: str) -> None:
 @router.callback_query(F.data == "menu:help")
 async def cb_help(cb: CallbackQuery, lang: str) -> None:
     await cb.message.edit_text(
-        t("help.body", lang), reply_markup=main_menu_keyboard(lang)
+        t("help.body", lang) + "\n\n" + t("privacy.commands", lang),
+        reply_markup=main_menu_keyboard(lang),
     )
     await cb.answer()
 

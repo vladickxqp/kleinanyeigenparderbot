@@ -58,6 +58,7 @@ async def _set_commands(bot: Bot) -> None:
             BotCommand(command="payments", description="Zahlungsverlauf & Abbuchungen"),
             BotCommand(command="support", description="Support kontaktieren"),
             BotCommand(command="status", description="System-Status prüfen"),
+            BotCommand(command="privacy", description="Datenschutz & meine Daten"),
             BotCommand(command="help", description="Hilfe"),
         ]
     )

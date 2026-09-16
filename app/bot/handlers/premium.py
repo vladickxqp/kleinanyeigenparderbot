@@ -65,7 +65,7 @@ def _billing_text(info, sub) -> str:
     return "\n".join(lines)
 
 
-def _premium_text(user: User, sub, billing: str = "") -> str:
+def _premium_text(user: User, sub, billing: str = "", lang: str = "de") -> str:
     if user.is_paid_tier and sub is not None:
         if sub.payment_status == premium.CANCEL_AT_PERIOD_END:
             return (
@@ -82,9 +82,9 @@ def _premium_text(user: User, sub, billing: str = "") -> str:
             else "⏳ Läuft danach automatisch aus (keine Abbuchung)"
         )
         return (
-            "💎 <b>Du bist Premium!</b>\n\n"
-            f"✅ Aktiv bis: <b>{sub.subscription_end:%d.%m.%Y}</b>\n"
-            f"{renewal}"
+            t("premium.active", lang) + "\n\n"
+            + t("premium.active_until", lang, date=f"{sub.subscription_end:%d.%m.%Y}")
+            + f"\n{renewal}"
             + billing
         )
     if user.is_paid_tier:
@@ -94,29 +94,39 @@ def _premium_text(user: User, sub, billing: str = "") -> str:
             "Viel Spaß!"
         )
     lines = [
-        "💎 <b>Deal Hunter Premium</b>\n",
-        f"Free: {settings.free_max_rules} Suchen, Prüfung alle "
-        f"{settings.free_min_interval_seconds // 60} Minuten.\n",
+        t("premium.title", lang) + "\n",
+        t(
+            "premium.free_line",
+            lang,
+            rules=settings.free_max_rules,
+            minutes=settings.free_min_interval_seconds // 60,
+        )
+        + "\n",
     ]
     for plan in premium.available_plans():
         rules = (
-            "unbegrenzte Suchen"
+            t("premium.plan_rules_unlimited", lang)
             if plan.max_rules >= 1_000
-            else f"{plan.max_rules} Suchen"
+            else t("premium.plan_rules", lang, count=plan.max_rules)
         )
+        extra = t("premium.plan_extra_photo", lang) if plan.key == "unlimited" else ""
         lines.append(
             f"<b>{plan.label}</b> — {plan.price_stars} ⭐ "
             f"(~{plan.price_eur:.2f} €)/Monat\n"
-            f"   {rules}, Prüfung ab {plan.min_interval_seconds // 60} min, "
-            "Prioritäts-Verarbeitung"
-            + (", Foto-Bewertung" if plan.key == "unlimited" else "")
+            + t(
+                "premium.plan_line",
+                lang,
+                rules=rules,
+                minutes=plan.min_interval_seconds // 60,
+                extra=extra,
+            )
         )
-    lines.append("\nJederzeit kündbar, direkt hier im Chat.")
+    lines.append("\n" + t("premium.cancel_anytime", lang))
     if settings.trial_enabled:
-        lines.append(f"\n🆓 Kostenlos testen: /trial ({settings.trial_days} Tage)")
-    lines.append("🎟 Gutschein? /coupon CODE")
+        lines.append("\n" + t("premium.try_free", lang, days=settings.trial_days))
+    lines.append(t("premium.coupon_hint", lang))
     if settings.referral_enabled:
-        lines.append("🎫 Freunde werben, Gratis-Tage kassieren: /ref")
+        lines.append(t("premium.referral_hint", lang))
     return "\n".join(lines)
 
 
@@ -139,7 +149,10 @@ async def _premium_keyboard(
             if link:
                 kb.row(
                     InlineKeyboardButton(
-                        text=f"💳 Premium holen ({price_stars} ⭐/Monat)", url=link
+                        text=t(
+                            "premium.btn_buy", lang, plan="Premium", stars=price_stars
+                        ),
+                        url=link,
                     )
                 )
         else:
@@ -148,14 +161,17 @@ async def _premium_keyboard(
                 if link:
                     kb.row(
                         InlineKeyboardButton(
-                            text=f"💳 {plan.label} — {plan.price_stars} ⭐/Monat",
+                            text=t(
+                                "premium.btn_buy", lang,
+                                plan=plan.label, stars=plan.price_stars,
+                            ),
                             url=link,
                         )
                     )
     if user.is_paid_tier and _cancellable(sub):
         kb.row(
             InlineKeyboardButton(
-                text="❌ Abo kündigen", callback_data="premium:cancel"
+                text=t("premium.btn_cancel", lang), callback_data="premium:cancel"
             )
         )
     elif user.is_paid_tier and _endable(sub):
@@ -167,7 +183,7 @@ async def _premium_keyboard(
     if has_payments:
         kb.row(
             InlineKeyboardButton(
-                text="📜 Zahlungsverlauf", callback_data="premium:history"
+                text=t("premium.btn_history", lang), callback_data="premium:history"
             )
         )
     kb.row(InlineKeyboardButton(text=t("btn.back", lang), callback_data="menu:home"))
@@ -179,7 +195,7 @@ async def _premium_view(user: User, session: AsyncSession, lang: str):
     sub = await premium.get_active_subscription(session, user.telegram_id)
     info = await premium.billing_info(session, user.telegram_id)
     has_payments = bool(await premium.payment_history(session, user.telegram_id, limit=1))
-    text = _premium_text(user, sub, _billing_text(info, sub))
+    text = _premium_text(user, sub, _billing_text(info, sub), lang)
     markup = await _premium_keyboard(user, lang, sub=sub, has_payments=has_payments)
     return text, markup
 

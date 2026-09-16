@@ -125,8 +125,8 @@ async def _send_one(bot: Bot, chat_id: int, listing: Listing, lang: str) -> bool
         # Report success so callers mark the row notified and never retry it.
         return True
 
-    caption = format_deal_card(listing)
-    resale = format_resale_line(listing)
+    caption = format_deal_card(listing, lang)
+    resale = format_resale_line(listing, lang)
     if resale:
         caption = f"{caption}\n\n{resale}"
     markup = listing_actions_keyboard(listing, lang)
