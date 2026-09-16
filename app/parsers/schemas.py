@@ -22,7 +22,6 @@ class SearchQuery(BaseModel):
     keywords: str
     exclude_keywords: list[str] = Field(default_factory=list)
     category: str | None = None
-    brand: str | None = None
     min_price: float | None = None
     max_price: float | None = None
     condition: Condition = Condition.ANY
@@ -30,6 +29,9 @@ class SearchQuery(BaseModel):
     zip_code: str | None = None
     max_distance_km: int | None = None
     exclude_auctions: bool = False
+    #: None = shipping does not matter, True = only ads offering shipping,
+    #: False = pickup only. Parsers that cannot tell must never filter on it.
+    shipping_available: bool | None = None
     max_results: int = 40
 
     def matches_text(self, *texts: str | None) -> bool:

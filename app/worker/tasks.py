@@ -61,9 +61,6 @@ def dispatch_due_searches() -> int:
     return _run_async(_dispatch_due_searches())
 
 
-#: Hard floor for per-rule intervals: legacy rules may still carry 10s/30s
-#: values; sub-minute polling only gets the IP blocked by the marketplaces.
-MIN_INTERVAL_SECONDS = 60
 #: Most rules started per tick. After the machine was offline for hours every
 #: rule is overdue at once; without a cap the first tick would fire all of them
 #: and hammer the marketplaces into a block.
@@ -77,6 +74,9 @@ async def _dispatch_due_searches() -> int:
 
     now = time.time()
     dispatched = 0
+    # A suspected block widens every interval for a while: a ban would hit
+    # exactly the paying users who were sold speed.
+    backoff = await health.block_multiplier()
     async with session_scope() as session:
         rules = await SearchRuleRepository(session).list_active()
         # Oldest due first, so a capped tick never starves the same rules.
@@ -96,15 +96,16 @@ async def _dispatch_due_searches() -> int:
                 owner = await session.get(User, rule.user_id)
                 if owner is not None:
                     owners[rule.user_id] = owner
-            # The rule's stored interval is only a wish: the tier decides.
-            floor = MIN_INTERVAL_SECONDS
+            # The stored interval was reconciled against the tier (fast slots,
+            # base interval) when it was set; here only the hard floor applies.
+            floor = settings.scraper_hard_min_interval_seconds
             if owner is not None:
                 floor = max(floor, owner.min_interval_seconds)
-            interval = max(rule.interval_seconds, floor)
+            interval = max(rule.interval_seconds, floor) * backoff
             # Jitter keeps many rules of the same interval from lining up.
             _redis.set(_next_run_key(rule.id), now + interval + random.uniform(0, 5))
-            # Premium buys priority processing, so honour it where it counts.
-            queue = "priority" if owner is not None and owner.is_paid_tier else "celery"
+            # Each level has its own queue; "express" is served first.
+            queue = owner.entitlements.queue_name if owner is not None else "celery"
             run_search_rule.apply_async(args=[rule.id], queue=queue)
             dispatched += 1
 

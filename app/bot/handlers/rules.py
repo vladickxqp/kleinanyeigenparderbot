@@ -464,10 +464,16 @@ def _clamp_interval_for_tier(user: User, seconds: int) -> tuple[int, str | None]
     min_allowed = user.min_interval_seconds
     if seconds >= min_allowed:
         return seconds, None
+    from app.services import entitlements as ent
+
+    nxt = ent.next_tier(user.subscription)
+    hint = ""
+    if nxt is not None:
+        n = ent.for_tier(nxt)
+        hint = f" {n.label} prüft ab {n.min_interval_seconds // 60} min — /premium"
     return min_allowed, (
         f"⏱ In deinem Tarif ist das schnellste Intervall "
-        f"{min_allowed // 60} min — auf {min_allowed // 60} min gesetzt. "
-        f"💎 Premium prüft ab {settings.paid_min_interval_seconds // 60} min!"
+        f"{min_allowed // 60} min — auf {min_allowed // 60} min gesetzt.{hint}"
     )
 
 

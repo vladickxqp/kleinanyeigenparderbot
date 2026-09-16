@@ -51,7 +51,11 @@ router = Router(name="admin")
 #: Tiers that can be assigned via /settier (legacy values are not offered).
 ASSIGNABLE_TIERS = {
     "free": SubscriptionTier.FREE,
+    "starter": SubscriptionTier.STARTER,
     "pro": SubscriptionTier.PRO,
+    "profi": SubscriptionTier.PRO,
+    "dealer": SubscriptionTier.UNLIMITED,
+    "haendler": SubscriptionTier.UNLIMITED,
     "unlimited": SubscriptionTier.UNLIMITED,
 }
 
@@ -164,7 +168,7 @@ async def _users_text(session: AsyncSession) -> str:
         return "Noch keine Nutzer."
     lines = ["👥 <b>Nutzer & Tarife</b>\n"]
     for user, cnt in rows:
-        quota = "∞" if user.max_rules >= 1_000_000 else str(user.max_rules)
+        quota = str(user.max_rules)
         badge = " 💎" if user.is_paid_tier else ""
         rbadge = role_badge(user)
         lines.append(
@@ -381,7 +385,7 @@ async def cmd_settier(
     if len(args) != 2 or args[1].lower() not in ASSIGNABLE_TIERS:
         await message.answer(
             "Nutzung: <code>/settier &lt;telegram_id&gt; "
-            "&lt;free|pro|unlimited&gt;</code>\n"
+            "&lt;free|starter|pro|dealer&gt;</code>\n"
             "Beispiel: <code>/settier 123456789 pro</code>"
         )
         return
@@ -404,14 +408,18 @@ async def cmd_settier(
 
     target.subscription = ASSIGNABLE_TIERS[tier_name.lower()]
     await session.flush()
+    # Rules must follow the level immediately, up or down.
+    paused, slowed = await premium_svc.enforce_tier_limits(session, target)
     logger.info(
-        "ADMIN: {} set tier of {} to {}",
-        user.telegram_id, target_id, target.subscription.value,
+        "ADMIN: {} set tier of {} to {} ({} paused, {} adjusted)",
+        user.telegram_id, target_id, target.subscription.value, paused, slowed,
     )
     await message.answer(
         f"✅ <b>{escape(target.display_name)}</b> (ID {target.telegram_id}) "
-        f"ist jetzt <b>{target.subscription.value}</b> "
-        f"(max. {target.max_rules if target.max_rules < 1_000_000 else '∞'} Suchen)."
+        f"ist jetzt <b>{target.tier_label}</b> "
+        f"(max. {target.max_rules} Suchen, {target.entitlements.fast_slots} Schnell-Slots)."
+        + (f"\n⏸ {paused} Suche(n) pausiert." if paused else "")
+        + (f"\n⏱ {slowed} Intervall(e) angepasst." if slowed else "")
     )
 
 
@@ -433,14 +441,21 @@ async def cmd_grant(
     args = (command.args or "").split()
     if not args:
         await message.answer(
-            "Nutzung: <code>/grant &lt;telegram_id&gt; [tage]</code> (Standard: 31)"
+            "Nutzung: <code>/grant &lt;telegram_id&gt; [tage] [starter|pro|dealer]</code>"
+            "\nStandard: 31 Tage, Profi."
         )
         return
+    tier = SubscriptionTier.PRO
     try:
         target_id = int(args[0])
         days = int(args[1]) if len(args) > 1 else settings.premium_period_days
-    except ValueError:
-        await message.answer("⚠️ ID und Tage müssen Zahlen sein.")
+        if len(args) > 2:
+            tier = ASSIGNABLE_TIERS[args[2].lower()]
+    except (ValueError, KeyError):
+        await message.answer("⚠️ ID und Tage müssen Zahlen sein, Tarif starter|pro|dealer.")
+        return
+    if tier is SubscriptionTier.FREE:
+        await message.answer("⚠️ Free kann man nicht schenken — dafür gibt es /revoke.")
         return
 
     result = await session.execute(select(User).where(User.telegram_id == target_id))
@@ -450,7 +465,8 @@ async def cmd_grant(
         return
 
     sub = await premium_svc.activate_premium(
-        session, target, days=days, provider="admin_grant", plan=PlanType.ADMIN_GRANT
+        session, target, days=days, provider="admin_grant",
+        plan=PlanType.ADMIN_GRANT, tier=tier,
     )
     await premium_svc.record_payment(
         session, target, provider="admin_grant", amount_stars=0,
@@ -461,7 +477,7 @@ async def cmd_grant(
         user.telegram_id, target_id, days,
     )
     await message.answer(
-        f"✅ <b>{escape(target.display_name)}</b> hat Premium bis "
+        f"✅ <b>{escape(target.display_name)}</b> hat <b>{target.tier_label}</b> bis "
         f"<b>{sub.subscription_end:%d.%m.%Y}</b>."
     )
 

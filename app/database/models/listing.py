@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from datetime import datetime
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    DateTime,
     Enum,
     Float,
     ForeignKey,
@@ -79,8 +82,22 @@ class Listing(Base, PKMixin, TimestampMixin):
     estimated_market_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     discount_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    #: When the ad went online on the marketplace (None = unknown/promoted).
+    posted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # --- Delivery bookkeeping ----------------------------------------------
     notified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: When the card reached the user; with posted_at this is the honest
+    #: "found X minutes after posting" figure on every card.
+    notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: Held back by the daily card quota (never re-delivered by the sweep).
+    withheld: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

@@ -67,26 +67,33 @@ class User(Base, PKMixin, TimestampMixin):
         return self.subscription is not SubscriptionTier.FREE
 
     @property
-    def max_rules(self) -> int:
-        """Rule quota per subscription tier — configurable via environment."""
-        from app.config.settings import settings
+    def entitlements(self):
+        """Everything this user's level allows (see services.entitlements)."""
+        from app.services.entitlements import for_tier
 
-        return {
-            SubscriptionTier.FREE: settings.free_max_rules,
-            SubscriptionTier.PRO: settings.pro_max_rules,
-            SubscriptionTier.PREMIUM: settings.pro_max_rules,            # legacy
-            SubscriptionTier.UNLIMITED: settings.unlimited_max_rules,
-            SubscriptionTier.ULTIMATE: settings.unlimited_max_rules,     # legacy
-        }.get(self.subscription, settings.free_max_rules)
+        return for_tier(self.subscription)
+
+    @property
+    def tier_label(self) -> str:
+        return self.entitlements.label
+
+    @property
+    def max_rules(self) -> int:
+        """Rule quota of the user's level."""
+        return self.entitlements.max_rules
 
     @property
     def min_interval_seconds(self) -> int:
-        """Fastest allowed check interval for this tier (configurable)."""
-        from app.config.settings import settings
+        """Fastest interval a fast-slot rule may run at."""
+        return self.entitlements.interval_floor(fast=True)
 
-        if self.is_paid_tier:
-            return settings.paid_min_interval_seconds
-        return settings.free_min_interval_seconds
+    @property
+    def base_interval_seconds(self) -> int:
+        """Interval floor for rules outside the fast slots."""
+        return self.entitlements.interval_floor(fast=False)
+
+    def has_feature(self, feature: str) -> bool:
+        return self.entitlements.has(feature)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<User id={self.id} tg={self.telegram_id} {self.display_name!r}>"

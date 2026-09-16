@@ -60,9 +60,12 @@ async def validate_coupon(
     return coupon
 
 
-def discounted_price_stars(coupon: Coupon) -> int:
-    """Stars price of one premium month after applying a discount coupon."""
-    price = settings.premium_price_stars
+def discounted_price_stars(coupon: Coupon, base_price_stars: int | None = None) -> int:
+    """Stars price of one month after applying a discount coupon.
+
+    Coupons discount the Profi plan unless a base price is given.
+    """
+    price = base_price_stars or settings.pro_price_stars
     if coupon.discount_percent:
         price = round(price * (100 - coupon.discount_percent) / 100)
     elif coupon.discount_fixed_stars:

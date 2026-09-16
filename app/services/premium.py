@@ -38,11 +38,10 @@ TELEGRAM_SUBSCRIPTION_PERIOD = 2_592_000
 
 
 def stars_to_eur(amount_stars: int) -> float:
-    """Convert a Stars amount to the euro value at the configured rate."""
-    if amount_stars <= 0 or settings.premium_price_stars <= 0:
+    """Convert a Stars amount to euros at the one ledger-wide rate."""
+    if amount_stars <= 0 or settings.stars_per_eur <= 0:
         return 0.0
-    rate = settings.premium_price_eur / settings.premium_price_stars
-    return round(amount_stars * rate, 2)
+    return round(amount_stars / settings.stars_per_eur, 2)
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,51 +57,106 @@ class Plan:
     min_interval_seconds: int
     description: str
 
+    @property
+    def entitlements(self):
+        from app.services.entitlements import for_tier
 
-def available_plans() -> list[Plan]:
-    """The plans on sale, cheapest first. Everything comes from settings."""
+        return for_tier(self.tier)
+
+
+def _describe(tier: SubscriptionTier) -> str:
+    from app.services.entitlements import fmt_quota, for_tier
+
+    e = for_tier(tier)
+    fast = (
+        f"{e.fast_slots} Schnell-Slots im {e.min_interval_seconds // 60}-Minuten-Takt, "
+        if e.fast_slots
+        else ""
+    )
+    return (
+        f"{e.max_rules} Suchen, {fast}"
+        f"{fmt_quota(e.daily_notifications, ' Karten/Tag')}, "
+        f"{fmt_quota(e.photo_evals_per_month, ' Foto-Bewertungen/Monat')}."
+    )
+
+
+def _plan(key: str, tier: SubscriptionTier, stars: int, eur: float) -> Plan:
+    from app.services.entitlements import for_tier
+
+    e = for_tier(tier)
+    return Plan(
+        key=key,
+        label=e.label,
+        tier=tier,
+        price_stars=stars,
+        price_eur=eur,
+        max_rules=e.max_rules,
+        min_interval_seconds=e.min_interval_seconds,
+        description=_describe(tier),
+    )
+
+
+def all_plans() -> list[Plan]:
+    """Every paid level, cheapest first, whether or not it is on sale."""
     return [
-        Plan(
-            key="pro",
-            label="Pro",
-            tier=SubscriptionTier.PRO,
-            price_stars=settings.pro_price_stars,
-            price_eur=settings.pro_price_eur,
-            max_rules=settings.pro_max_rules,
-            min_interval_seconds=settings.paid_min_interval_seconds,
-            description=(
-                f"{settings.pro_max_rules} Suchen, schnellstes Prüf-Intervall, "
-                "Prioritäts-Verarbeitung."
-            ),
-        ),
-        Plan(
-            key="unlimited",
-            label="Unlimited",
-            tier=SubscriptionTier.UNLIMITED,
-            price_stars=settings.premium_price_stars,
-            price_eur=settings.premium_price_eur,
-            max_rules=settings.unlimited_max_rules,
-            min_interval_seconds=settings.paid_min_interval_seconds,
-            description=(
-                "Unbegrenzte Suchen, schnellstes Prüf-Intervall, "
-                "Prioritäts-Verarbeitung, Foto-Bewertung."
-            ),
-        ),
+        _plan("starter", SubscriptionTier.STARTER,
+              settings.starter_price_stars, settings.starter_price_eur),
+        _plan("pro", SubscriptionTier.PRO,
+              settings.pro_price_stars, settings.pro_price_eur),
+        _plan("dealer", SubscriptionTier.UNLIMITED,
+              settings.dealer_price_stars, settings.dealer_price_eur),
     ]
 
 
+def dealer_on_sale() -> bool:
+    """The Händler plan needs a proxy pool: one dealer at full speed generates
+    more requests per minute than a single home IP can carry."""
+    if not settings.dealer_requires_proxies:
+        return True
+    return bool(settings.proxy_list)
+
+
+def available_plans() -> list[Plan]:
+    """The plans on sale right now, cheapest first."""
+    return [p for p in all_plans() if p.key != "dealer" or dealer_on_sale()]
+
+
+def trial_tier() -> SubscriptionTier:
+    """Which level the free trial grants (configurable, never the top one by
+    default: trial accounts consume the same scarce request budget)."""
+    try:
+        return SubscriptionTier(settings.trial_tier).canonical
+    except ValueError:
+        return SubscriptionTier.PRO
+
+
+#: Legacy payload keys from links issued before the ladder existed.
+_LEGACY_PLAN_KEYS = {"unlimited": "dealer", "premium": "pro", "ultimate": "dealer"}
+
+
 def plan_by_key(key: str) -> Plan:
-    """Look a plan up, falling back to the flagship one."""
-    plans = {p.key: p for p in available_plans()}
-    return plans.get(key, plans["unlimited"])
+    """Look a plan up. Unknown keys fall back to the CHEAPEST plan — a broken
+    payload must never upgrade anyone to the most expensive level."""
+    key = _LEGACY_PLAN_KEYS.get(key, key)
+    plans = {p.key: p for p in all_plans()}
+    return plans.get(key, plans["starter"])
+
+
+def plan_for_tier(tier: SubscriptionTier) -> Plan:
+    for plan in all_plans():
+        if plan.tier is tier.canonical:
+            return plan
+    return plan_by_key("starter")
 
 
 def plan_for_payload(payload: str) -> Plan:
     """Which plan an invoice payload refers to ("premium_monthly:pro:CODE")."""
     parts = payload.split(":")
-    if len(parts) > 1 and parts[1] in {p.key for p in available_plans()}:
-        return plan_by_key(parts[1])
-    return plan_by_key("unlimited")
+    if len(parts) > 1:
+        candidate = _LEGACY_PLAN_KEYS.get(parts[1], parts[1])
+        if candidate in {p.key for p in all_plans()}:
+            return plan_by_key(candidate)
+    return plan_by_key("starter")
 
 
 async def create_invoice_link(
@@ -234,7 +288,16 @@ async def activate_premium(
         sub.payment_status = "paid"
         if charge_id:
             sub.telegram_charge_id = charge_id
+        # A renewal without an explicit tier keeps the level that was bought;
+        # an explicit higher tier (upgrade purchase) wins.
+        stored = _tier_from_string(sub.tier)
+        if tier is None:
+            tier = stored
+        elif stored is not None and tier.rank < stored.rank and provider == "telegram_stars":
+            tier = stored
+        sub.tier = (tier or SubscriptionTier.PRO).canonical.value
     else:
+        tier = tier or SubscriptionTier.PRO
         sub = Subscription(
             user_id=user.id,
             telegram_id=user.telegram_id,
@@ -246,16 +309,19 @@ async def activate_premium(
             payment_provider=provider,
             payment_status="paid" if provider == "telegram_stars" else "granted",
             telegram_charge_id=charge_id,
+            tier=tier.canonical.value,
             price_stars=price_stars or 0,
-            price_eur=settings.premium_price_eur if price_stars else 0.0,
+            price_eur=stars_to_eur(price_stars or 0),
             payments_count=1 if charge_id else 0,
         )
         session.add(sub)
 
-    # Which tier the payment buys is a parameter, not a constant: that is what
-    # makes a second (cheaper) plan sellable next to the unlimited one.
-    user.subscription = tier or SubscriptionTier.UNLIMITED
+    # Never silently downgrade a user who holds a higher level from a grant.
+    new_tier = (tier or SubscriptionTier.PRO).canonical
+    if user.subscription.canonical.rank < new_tier.rank or not user.is_paid_tier:
+        user.subscription = new_tier
     await session.flush()
+    await enforce_tier_limits(session, user)
     logger.info(
         "PREMIUM: {} active until {} as {} (provider={}, charge={})",
         user.telegram_id, sub.subscription_end, user.subscription.value,
@@ -281,15 +347,29 @@ async def deactivate_premium(
     logger.info("PREMIUM: {} deactivated ({})", user.telegram_id, status.value)
 
 
-async def enforce_tier_limits(session: AsyncSession, user: User) -> tuple[int, int]:
-    """Bring a user's rules back in line with their CURRENT tier.
+def _tier_from_string(value: str | None) -> SubscriptionTier | None:
+    try:
+        return SubscriptionTier(value).canonical if value else None
+    except ValueError:
+        return None
 
-    Limits used to be checked only while creating a rule, so a lapsed
-    subscriber kept every rule and the fast interval forever. Returns how many
-    rules were paused and how many intervals were slowed down.
+
+async def enforce_tier_limits(session: AsyncSession, user: User) -> tuple[int, int]:
+    """Bring a user's rules back in line with their CURRENT level.
+
+    Three things are reconciled, oldest rules first so a downgrade never
+    silently swaps which searches keep running:
+
+    * at most ``max_rules`` rules stay active;
+    * at most ``fast_slots`` rules may run below the base interval, and those
+      may not go under the tier's fast floor;
+    * every other rule is raised to the base interval.
+
+    Returns how many rules were paused and how many intervals were changed.
     """
     from app.database.models import SearchRule
 
+    e = user.entitlements
     result = await session.execute(
         select(SearchRule)
         .where(SearchRule.user_id == user.id)
@@ -298,23 +378,32 @@ async def enforce_tier_limits(session: AsyncSession, user: User) -> tuple[int, i
     rules = list(result.scalars().all())
 
     paused = slowed = 0
-    allowed = user.max_rules
     active_seen = 0
+    fast_used = 0
+    fast_floor = e.interval_floor(fast=True)
+    base_floor = e.interval_floor(fast=False)
     for rule in rules:
         if rule.is_active:
             active_seen += 1
             # Keep the oldest rules running, pause what exceeds the quota.
-            if active_seen > allowed:
+            if active_seen > e.max_rules:
                 rule.is_active = False
                 paused += 1
-        if rule.interval_seconds < user.min_interval_seconds:
-            rule.interval_seconds = user.min_interval_seconds
+
+        wants_fast = rule.interval_seconds < base_floor
+        if wants_fast and rule.is_active and fast_used < e.fast_slots:
+            fast_used += 1
+            floor = fast_floor
+        else:
+            floor = base_floor
+        if rule.interval_seconds < floor:
+            rule.interval_seconds = floor
             slowed += 1
 
     if paused or slowed:
         await session.flush()
         logger.info(
-            "TIER: {} reconciled to {} — {} rule(s) paused, {} interval(s) slowed",
+            "TIER: {} reconciled to {} — {} rule(s) paused, {} interval(s) adjusted",
             user.telegram_id, user.subscription.value, paused, slowed,
         )
     return paused, slowed

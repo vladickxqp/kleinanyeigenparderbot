@@ -174,26 +174,35 @@ def test_business_metrics_report_revenue_churn_and_conversion(sqlite_db):
 def test_plan_ladder_maps_payloads_to_tiers():
     from app.services.premium import available_plans, plan_by_key, plan_for_payload
 
-    plans = available_plans()
-    assert [p.key for p in plans] == ["pro", "unlimited"]
-    assert plans[0].price_stars < plans[1].price_stars
+    from app.services.premium import all_plans
+
+    plans = all_plans()
+    assert [p.key for p in plans] == ["starter", "pro", "dealer"]
+    assert plans[0].price_stars < plans[1].price_stars < plans[2].price_stars
     assert plan_by_key("pro").tier is SubscriptionTier.PRO
-    assert plan_by_key("nonsense").tier is SubscriptionTier.UNLIMITED
+    assert plan_by_key("dealer").tier is SubscriptionTier.UNLIMITED
+    # Legacy keys from old links keep working.
+    assert plan_by_key("unlimited").tier is SubscriptionTier.UNLIMITED
+    # A broken payload must never upgrade anyone: cheapest plan wins.
+    assert plan_by_key("nonsense").key == "starter"
 
     assert plan_for_payload("premium_monthly:pro").key == "pro"
     assert plan_for_payload("premium_monthly:pro:CODE").key == "pro"
+    assert plan_for_payload("premium_monthly:unlimited").key == "dealer"
     # Legacy links put the coupon straight after the prefix.
-    assert plan_for_payload("premium_monthly:SOMMER").key == "unlimited"
-    assert plan_for_payload("premium_monthly").key == "unlimited"
+    assert plan_for_payload("premium_monthly:SOMMER").key == "starter"
+    assert plan_for_payload("premium_monthly").key == "starter"
+
+    # The dealer plan is only sold with a proxy pool behind it.
+    on_sale = {p.key for p in available_plans()}
+    assert "starter" in on_sale and "pro" in on_sale
 
 
 def test_stars_are_converted_to_the_amount_actually_charged():
     from app.services.premium import stars_to_eur
     from app.config.settings import settings
 
-    assert stars_to_eur(settings.premium_price_stars) == pytest.approx(
-        settings.premium_price_eur, abs=0.01
-    )
+    assert stars_to_eur(settings.stars_per_eur * 5) == pytest.approx(5.0, abs=0.01)
     # A coupon purchase must not be booked as a full-price sale.
-    assert stars_to_eur(1) < settings.premium_price_eur
+    assert stars_to_eur(1) < settings.pro_price_eur
     assert stars_to_eur(0) == 0.0

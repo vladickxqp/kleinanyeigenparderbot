@@ -93,25 +93,115 @@ class Settings(BaseSettings):
 
     # --- Premium / tier limits (all configurable, never hardcode) -----------
     premium_enabled: bool = True
-    #: Monthly price in Telegram Stars (~250 XTR ≈ 4.99 €).
-    premium_price_stars: int = 250
-    #: Display price used in texts and revenue estimates.
-    premium_price_eur: float = 4.99
     #: Days granted per successful (renewal) payment.
     premium_period_days: int = 31
-    #: Second, cheaper plan (Pro). Same speed, fewer searches.
-    pro_price_stars: int = 150
-    pro_price_eur: float = 2.99
-    #: Rule quotas per tier.
+    #: One conversion rate for the whole ledger (250 ⭐ ≈ 4.99 € → ~50 ⭐/€).
+    #: Booking every payment through one rate keeps the euro column of older
+    #: payments stable when a single plan's price changes.
+    stars_per_eur: float = 50.0
+
+    # Four levels. The tier names in the database stay FREE / STARTER / PRO /
+    # UNLIMITED ("Händler"); the labels below are what users see.
+    #
+    # The ladder is denominated in what actually costs money — scrape requests
+    # per minute. Every tier has a BASE interval for its rules plus a number
+    # of FAST SLOTS: rules that may run at the tier's fastest interval. No tier
+    # promises anything under the hard scraper floor.
+    # Prices (Stars ≈ EUR):
+    starter_price_stars: int = 350
+    starter_price_eur: float = 6.99
+    pro_price_stars: int = 750
+    pro_price_eur: float = 14.99
+    dealer_price_stars: int = 1500
+    dealer_price_eur: float = 29.99
+    #: Kept for ledger backwards compatibility and legacy links; equals dealer.
+    premium_price_stars: int = 1500
+    premium_price_eur: float = 29.99
+
+    #: Rules per tier (real numbers — never a sentinel, quotas use -1 instead).
     free_max_rules: int = 3
-    pro_max_rules: int = 25
-    unlimited_max_rules: int = 1_000_000
-    #: Minimum allowed check interval per tier (seconds).
+    starter_max_rules: int = 10
+    pro_max_rules: int = 30
+    dealer_max_rules: int = 100
+    #: Base interval for rules WITHOUT a fast slot (seconds).
+    free_base_interval_seconds: int = 600
+    starter_base_interval_seconds: int = 300
+    pro_base_interval_seconds: int = 300
+    dealer_base_interval_seconds: int = 180
+    #: Fastest interval a fast-slot rule may run at (seconds).
     free_min_interval_seconds: int = 600
-    paid_min_interval_seconds: int = 60
-    #: Free trial (activatable exactly once per user).
+    starter_min_interval_seconds: int = 120
+    pro_min_interval_seconds: int = 60
+    dealer_min_interval_seconds: int = 60
+    #: How many rules may run at the fast interval.
+    free_fast_slots: int = 0
+    starter_fast_slots: int = 3
+    pro_fast_slots: int = 10
+    dealer_fast_slots: int = 25
+    #: Absolute floor below which no rule ever runs (anti-block).
+    scraper_hard_min_interval_seconds: int = 60
+    #: Celery queue per tier ("express" is served first, then "priority").
+    free_queue_name: str = "celery"
+    starter_queue_name: str = "priority"
+    pro_queue_name: str = "priority"
+    dealer_queue_name: str = "express"
+    #: Deal cards per day (-1 = unlimited). Free hits this wall within a week.
+    free_daily_notifications: int = 10
+    starter_daily_notifications: int = 100
+    pro_daily_notifications: int = 500
+    dealer_daily_notifications: int = -1
+    #: When the daily cap is reached, send ONE named teaser instead of silence.
+    notification_cap_teaser_enabled: bool = True
+    #: Photo valuations per month (-1 = unlimited) + a fair-use daily brake.
+    free_photo_evals_per_month: int = 1
+    starter_photo_evals_per_month: int = 5
+    pro_photo_evals_per_month: int = 30
+    dealer_photo_evals_per_month: int = -1
+    photo_evals_fair_use_per_day: int = 30
+    #: Quick searches (/suche) per day and their cooldown (seconds).
+    free_quick_searches_per_day: int = 3
+    starter_quick_searches_per_day: int = 20
+    pro_quick_searches_per_day: int = 100
+    dealer_quick_searches_per_day: int = -1
+    free_quick_search_cooldown_seconds: int = 120
+    starter_quick_search_cooldown_seconds: int = 60
+    pro_quick_search_cooldown_seconds: int = 30
+    dealer_quick_search_cooldown_seconds: int = 15
+    #: Negotiation assistant uses per month (-1 = unlimited).
+    free_negotiations_per_month: int = 3
+    starter_negotiations_per_month: int = -1
+    pro_negotiations_per_month: int = -1
+    dealer_negotiations_per_month: int = -1
+    #: Marketplaces a single rule may search (-1 = every registered parser).
+    free_max_sites_per_rule: int = 1
+    starter_max_sites_per_rule: int = -1
+    pro_max_sites_per_rule: int = -1
+    dealer_max_sites_per_rule: int = -1
+    #: How long finds and price history are kept (days).
+    free_history_days: int = 14
+    starter_history_days: int = 90
+    pro_history_days: int = 365
+    dealer_history_days: int = 1095
+    retention_sweep_enabled: bool = True
+    #: Feature flags per tier: flip-only delivery mode, rule power fields,
+    #: export, market report, forwarding cards to an own channel/group.
+    free_features: str = ""
+    starter_features: str = "flip_mode"
+    pro_features: str = "flip_mode,rule_power,export,market_report"
+    dealer_features: str = "flip_mode,rule_power,export,market_report,forwarding"
+    #: The Händler plan only goes on sale with a proxy pool: one dealer at full
+    #: speed needs more requests per minute than a single home IP can carry.
+    dealer_requires_proxies: bool = True
+    #: On a suspected block, widen every interval temporarily before alerting.
+    block_backoff_enabled: bool = True
+    block_backoff_seconds: int = 900
+    block_backoff_multiplier: float = 3.0
+    #: Show "found X min after posting" on every card.
+    card_show_latency: bool = True
+    #: Free trial (activatable exactly once per user): which tier, how long.
     trial_enabled: bool = True
-    trial_days: int = 7
+    trial_days: int = 3
+    trial_tier: str = "pro"
     #: Referral programme: free premium days for the inviter per first purchase.
     referral_enabled: bool = True
     referral_reward_days: int = 7
@@ -123,8 +213,9 @@ class Settings(BaseSettings):
     resale_shipping_eur: float = 5.90
     #: Default discount the negotiation assistant suggests (percent).
     nego_discount_percent: float = 12.0
-    #: Photo evaluation is a premium perk by default (admins always allowed).
-    photo_ai_premium_only: bool = True
+    #: Emergency switch: True hides photo valuation from every free user
+    #: regardless of quota. Normally quotas alone decide.
+    photo_ai_premium_only: bool = False
 
     # --- Telegram Mini App ----------------------------------------------------
     #: Public HTTPS URL of the Mini App (e.g. https://deals.example.com/app).

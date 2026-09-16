@@ -267,7 +267,6 @@ class SearchService:
             keywords=rule.keywords,
             exclude_keywords=list(rule.exclude_keywords or []),
             category=rule.category,
-            brand=rule.brand,
             min_price=rule.min_price,
             max_price=rule.max_price,
             condition=rule.condition,
@@ -275,6 +274,7 @@ class SearchService:
             zip_code=rule.zip_code,
             max_distance_km=rule.max_distance_km,
             exclude_auctions=rule.exclude_auctions,
+            shipping_available=rule.shipping_available,
         )
 
     async def _collect(

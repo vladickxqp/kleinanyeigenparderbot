@@ -59,7 +59,12 @@ async def report(key: str, message: str, dedup_ttl: int = DEDUP_TTL_SECONDS) -> 
 
 
 async def record_parser_result(site: str, ok: bool) -> None:
-    """Track consecutive parser failures; alert once the threshold is hit."""
+    """Track consecutive parser failures; alert once the threshold is hit.
+
+    On the threshold the dispatcher is also told to back off: every interval
+    is widened for a while, because a ban would hit exactly the paying users
+    who were sold speed.
+    """
     try:
         async with _redis() as r:
             fail_key = f"health:fail:{site}"
@@ -70,15 +75,41 @@ async def record_parser_result(site: str, ok: bool) -> None:
             count = await r.incr(fail_key)
             await r.expire(fail_key, 3600)
         if count == FAIL_THRESHOLD:
+            await start_block_backoff(site)
             await report(
                 f"parser:{site}",
                 f"⚠️ Parser <b>{site}</b> ist {FAIL_THRESHOLD}× in Folge "
                 "fehlgeschlagen.\nMögliche Ursachen: Seite blockiert den Bot, "
-                "Layout geändert, Netzwerkproblem. Details: "
-                "<code>docker compose logs worker</code>",
+                "Layout geändert, Netzwerkproblem. Alle Intervalle wurden "
+                f"vorübergehend ×{settings.block_backoff_multiplier:g} gestreckt. "
+                "Details: <code>docker compose logs worker</code>",
             )
     except Exception as exc:  # noqa: BLE001
         logger.debug("health.record_parser_result failed: {}", exc)
+
+
+async def start_block_backoff(site: str) -> None:
+    """Widen every interval for a while after a suspected block."""
+    if not settings.block_backoff_enabled:
+        return
+    try:
+        async with _redis() as r:
+            await r.set(f"health:backoff:{site}", "1", ex=settings.block_backoff_seconds)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("health.start_block_backoff failed: {}", exc)
+
+
+async def block_multiplier() -> float:
+    """Interval multiplier the dispatcher applies (1.0 = normal operation)."""
+    if not settings.block_backoff_enabled:
+        return 1.0
+    try:
+        async with _redis() as r:
+            keys = await r.keys("health:backoff:*")
+            return settings.block_backoff_multiplier if keys else 1.0
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("health.block_multiplier failed: {}", exc)
+        return 1.0
 
 
 async def pop_alerts(limit: int = 10) -> list[str]:

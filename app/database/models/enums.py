@@ -12,6 +12,7 @@ class SiteName(str, enum.Enum):
     EBAY = "ebay"
     AMAZON = "amazon"
     IDEALO = "idealo"
+    VINTED = "vinted"
     MEDIAMARKT = "mediamarkt"
     SATURN = "saturn"
     OTTO = "otto"
@@ -31,17 +32,39 @@ class UserRole(str, enum.Enum):
 
 
 class SubscriptionTier(str, enum.Enum):
-    """Subscription plans: Free / Pro / Unlimited.
+    """Subscription levels: Free / Starter / Pro / Unlimited ("Händler").
 
     ``PREMIUM``/``ULTIMATE`` are legacy values kept so that rows written by
     older versions still load; treat them like PRO/UNLIMITED respectively.
+    Limits per level live in settings and are resolved by
+    :mod:`app.services.entitlements`.
     """
 
     FREE = "free"
+    STARTER = "starter"
     PRO = "pro"
     UNLIMITED = "unlimited"
     PREMIUM = "premium"      # legacy, = PRO
     ULTIMATE = "ultimate"    # legacy, = UNLIMITED
+
+    @property
+    def canonical(self) -> "SubscriptionTier":
+        """Map legacy values onto the level they mean."""
+        if self is SubscriptionTier.PREMIUM:
+            return SubscriptionTier.PRO
+        if self is SubscriptionTier.ULTIMATE:
+            return SubscriptionTier.UNLIMITED
+        return self
+
+    @property
+    def rank(self) -> int:
+        """Ordering for comparisons (Free < Starter < Pro < Unlimited)."""
+        return {
+            SubscriptionTier.FREE: 0,
+            SubscriptionTier.STARTER: 1,
+            SubscriptionTier.PRO: 2,
+            SubscriptionTier.UNLIMITED: 3,
+        }[self.canonical]
 
 
 class Condition(str, enum.Enum):

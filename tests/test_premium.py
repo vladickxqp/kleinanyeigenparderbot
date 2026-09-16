@@ -64,7 +64,8 @@ def test_activate_extend_and_expire(sqlite_db):
             sub = await activate_premium(
                 session, user, days=31, charge_id="ch_1", price_stars=250
             )
-            assert user.subscription is SubscriptionTier.UNLIMITED
+            assert user.subscription is SubscriptionTier.PRO
+            assert sub.tier == "pro"
             assert sub.status is SubscriptionStatus.ACTIVE
             first_end = sub.subscription_end
 
@@ -102,7 +103,7 @@ def test_admin_grant_and_revoke(sqlite_db):
                 session, user, days=7, provider="admin_grant",
                 plan=PlanType.ADMIN_GRANT,
             )
-            assert user.subscription is SubscriptionTier.UNLIMITED
+            assert user.subscription is SubscriptionTier.PRO
             assert sub.plan_type is PlanType.ADMIN_GRANT
             assert sub.payment_status == "granted"
 

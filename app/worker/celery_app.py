@@ -42,6 +42,7 @@ celery_app.conf.update(
     # their own queue instead of queuing behind everyone else's.
     task_default_queue="celery",
     task_queues=(
+        Queue("express", Exchange("express"), routing_key="express"),
         Queue("priority", Exchange("priority"), routing_key="priority"),
         Queue("celery", Exchange("celery"), routing_key="celery"),
     ),

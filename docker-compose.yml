@@ -125,7 +125,7 @@ services:
     # Priority first: paying customers' searches are promised faster handling.
     command:
       ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info",
-       "--concurrency=${CELERY_CONCURRENCY:-2}", "-Q", "priority,celery"]
+       "--concurrency=${CELERY_CONCURRENCY:-2}", "-Q", "express,priority,celery"]
     volumes:
       - ./logs:/app/logs
     mem_limit: 3g

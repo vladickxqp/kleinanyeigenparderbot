@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from datetime import datetime
+
 from sqlalchemy import (
     ARRAY,
     BigInteger,
     Boolean,
+    DateTime,
     Enum,
     Float,
     ForeignKey,
@@ -44,7 +47,6 @@ class SearchRule(Base, PKMixin, TimestampMixin):
         StringList, default=list, nullable=False
     )
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    brand: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # --- Price / condition --------------------------------------------------
     min_price: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -60,9 +62,10 @@ class SearchRule(Base, PKMixin, TimestampMixin):
     zip_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
     max_distance_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # --- Seller / shipping constraints -------------------------------------
-    min_seller_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
-    max_shipping_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # --- Shipping / auction constraints -------------------------------------
+    #: None = does not matter, True = only ads offering shipping, False =
+    #: pickup only. No parser reports a reliable shipping PRICE (that needs one
+    #: extra request per ad), so the honest filter is this boolean.
     shipping_available: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     exclude_auctions: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -74,6 +77,16 @@ class SearchRule(Base, PKMixin, TimestampMixin):
         Integer, default=300, nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    #: Observability: when the rule last ran, last found something, how often.
+    last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_found_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    run_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, server_default="0"
+    )
 
     # Only notify when the deal is at least this good (0-100 heuristic/AI score).
     # 0 = send every new relevant listing (default); raise it to only get the

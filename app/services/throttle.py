@@ -53,9 +53,12 @@ async def cooldown(key: str, seconds: int) -> int:
         return 0
 
 
-async def manual_run_allowed(telegram_id: int) -> int:
-    """0 if a manual search may start now, else the seconds to wait."""
-    return await cooldown(f"manual:{telegram_id}", MANUAL_RUN_COOLDOWN)
+async def manual_run_allowed(telegram_id: int, seconds: int | None = None) -> int:
+    """0 if a manual search may start now, else the seconds to wait.
+
+    ``seconds`` is the tier's cooldown; without it the generic default applies.
+    """
+    return await cooldown(f"manual:{telegram_id}", seconds or MANUAL_RUN_COOLDOWN)
 
 
 async def rate_limited(

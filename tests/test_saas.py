@@ -51,7 +51,7 @@ def test_env_admin_ids_bootstrap_owner(monkeypatch):
 def test_discounted_price_percent_and_fixed(monkeypatch):
     from app.services.coupons import discounted_price_stars
 
-    monkeypatch.setattr(coupon_svc.settings, "premium_price_stars", 250)
+    monkeypatch.setattr(coupon_svc.settings, "pro_price_stars", 250)
     percent = SimpleNamespace(discount_percent=20, discount_fixed_stars=None)
     fixed = SimpleNamespace(discount_percent=None, discount_fixed_stars=100)
     brutal = SimpleNamespace(discount_percent=None, discount_fixed_stars=9999)
@@ -84,6 +84,7 @@ async def _setup() -> None:
             tables=[
                 Base.metadata.tables["users"],
                 Base.metadata.tables["subscriptions"],
+                Base.metadata.tables["search_rules"],
                 Base.metadata.tables["payments"],
                 Base.metadata.tables["coupons"],
                 Base.metadata.tables["coupon_redemptions"],
@@ -152,7 +153,7 @@ def test_referral_flow(sqlite_db):
             # First purchase of the invited user rewards the inviter once.
             rewarded_tg = await referral_svc.reward_referrer_if_due(session, invited)
             assert rewarded_tg == 100
-            assert inviter.subscription is SubscriptionTier.UNLIMITED
+            assert inviter.subscription is SubscriptionTier.PRO
 
             # A second payment must not reward again.
             assert await referral_svc.reward_referrer_if_due(session, invited) is None
@@ -186,7 +187,7 @@ def test_trial_only_once(sqlite_db):
             await activate_premium(
                 session, user, days=7, provider="trial", plan=PlanType.TRIAL
             )
-            assert user.subscription is SubscriptionTier.UNLIMITED
+            assert user.subscription is SubscriptionTier.PRO
             assert await has_used_trial(session, 300) is True
         await db.dispose_engine()
 

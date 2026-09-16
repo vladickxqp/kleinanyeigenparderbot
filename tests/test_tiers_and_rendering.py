@@ -12,32 +12,41 @@ def _user(tier: SubscriptionTier) -> User:
 
 
 def test_tier_quotas():
-    assert _user(SubscriptionTier.FREE).max_rules == 3
-    assert _user(SubscriptionTier.PRO).max_rules == 25
-    assert _user(SubscriptionTier.UNLIMITED).max_rules >= 1_000_000
+    from app.config.settings import settings
+
+    assert _user(SubscriptionTier.FREE).max_rules == settings.free_max_rules
+    assert _user(SubscriptionTier.STARTER).max_rules == settings.starter_max_rules
+    assert _user(SubscriptionTier.PRO).max_rules == settings.pro_max_rules
+    assert _user(SubscriptionTier.UNLIMITED).max_rules == settings.dealer_max_rules
+    # Real numbers only — a sentinel would break the reconciliation math.
+    assert _user(SubscriptionTier.UNLIMITED).max_rules < 10_000
 
 
 def test_legacy_tiers_still_load_and_map():
     # Rows written by old versions must keep working.
     assert SubscriptionTier("premium") is SubscriptionTier.PREMIUM
     assert SubscriptionTier("ultimate") is SubscriptionTier.ULTIMATE
-    assert _user(SubscriptionTier.PREMIUM).max_rules == 25
-    assert _user(SubscriptionTier.ULTIMATE).max_rules >= 1_000_000
+    assert _user(SubscriptionTier.PREMIUM).max_rules == _user(SubscriptionTier.PRO).max_rules
+    assert _user(SubscriptionTier.ULTIMATE).max_rules == _user(SubscriptionTier.UNLIMITED).max_rules
+    assert SubscriptionTier.PREMIUM.canonical is SubscriptionTier.PRO
+    assert SubscriptionTier.ULTIMATE.rank == SubscriptionTier.UNLIMITED.rank
 
 
 def test_settier_offers_only_current_tiers():
     from app.bot.handlers.admin import ASSIGNABLE_TIERS
 
-    assert set(ASSIGNABLE_TIERS) == {"free", "pro", "unlimited"}
+    assert {"free", "starter", "pro", "dealer"} <= set(ASSIGNABLE_TIERS)
+    assert "premium" not in ASSIGNABLE_TIERS and "ultimate" not in ASSIGNABLE_TIERS
 
 
 # --- Interval floor ---------------------------------------------------------------
 def test_interval_choices_have_one_minute_floor():
     from app.bot.keyboards import INTERVAL_CHOICES
-    from app.worker.tasks import MIN_INTERVAL_SECONDS
 
     assert all(seconds >= 60 for seconds, _ in INTERVAL_CHOICES)
-    assert MIN_INTERVAL_SECONDS == 60
+    from app.config.settings import settings
+
+    assert settings.scraper_hard_min_interval_seconds == 60
 
 
 # --- HTML-safe rendering ------------------------------------------------------------

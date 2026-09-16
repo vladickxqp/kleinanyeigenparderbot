@@ -376,6 +376,7 @@ async def cmd_trial(message: Message, user: User, session: AsyncSession) -> None
     sub = await premium.activate_premium(
         session, user, days=settings.trial_days,
         provider="trial", plan=PlanType.TRIAL,
+        tier=premium.trial_tier(),
     )
     # Grants belong in the ledger too, otherwise /payments and the admin view
     # cannot explain where a premium came from.

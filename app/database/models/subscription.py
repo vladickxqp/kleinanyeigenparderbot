@@ -72,6 +72,11 @@ class Subscription(Base, PKMixin, TimestampMixin):
     )
     #: Telegram's charge id of the LAST payment on this subscription.
     telegram_charge_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    #: Which level this subscription grants. Without it every renewal had to
+    #: guess the tier and could silently upgrade a cheaper plan.
+    tier: Mapped[str] = mapped_column(
+        String(16), default="unlimited", server_default="unlimited", nullable=False
+    )
     #: Price actually paid per period (Stars) and its EUR equivalent.
     price_stars: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     price_eur: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
