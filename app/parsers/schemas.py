@@ -75,6 +75,10 @@ class ParsedListing(BaseModel):
     original_price: float | None = None
     currency: str = "EUR"
     shipping_cost: float | None = None
+    #: True/False when the marketplace says so, None when it cannot tell.
+    #: Kept apart from ``shipping_cost`` so "we do not know" never reads as
+    #: "no shipping" and silently empties a rule that filters on it.
+    shipping_available: bool | None = None
     image_url: HttpUrl | None = None
     description: str | None = None
     location: str | None = None

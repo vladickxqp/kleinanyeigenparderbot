@@ -139,8 +139,14 @@ def next_tier(tier: SubscriptionTier) -> SubscriptionTier | None:
     return order[index + 1] if index + 1 < len(order) else None
 
 
-def fmt_quota(value: int, unit: str = "") -> str:
-    """Human form of a quota value for comparison tables."""
+def fmt_quota(value: int, unit: str = "", lang: str | None = None) -> str:
+    """Human form of a quota value, in the reader's language.
+
+    The word for "unlimited" used to be hardcoded German, which then leaked
+    into every English, Russian and Ukrainian rendering of the comparison.
+    """
     if is_unlimited(value):
-        return "unbegrenzt"
+        from app.bot.texts import t
+
+        return t("quota.unlimited", lang)
     return f"{value}{unit}"

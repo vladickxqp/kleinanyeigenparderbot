@@ -181,6 +181,15 @@ class Settings(BaseSettings):
     starter_max_sites_per_rule: int = -1
     pro_max_sites_per_rule: int = -1
     dealer_max_sites_per_rule: int = -1
+    #: Hidden daily run budget per user. The headline is the promise; this is
+    #: the dial that keeps it affordable when one account runs hundreds of
+    #: rules. Defaults sit far above what a level's own limits can reach, so
+    #: the brake only ever catches abuse — never a customer using what they
+    #: bought.
+    free_max_runs_per_day: int = 500
+    starter_max_runs_per_day: int = 6_000
+    pro_max_runs_per_day: int = 45_000
+    dealer_max_runs_per_day: int = 150_000
     #: How long finds and price history are kept (days).
     free_history_days: int = 14
     starter_history_days: int = 90

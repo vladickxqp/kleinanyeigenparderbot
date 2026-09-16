@@ -26,7 +26,15 @@ from app.services import quota
 router = Router(name="usage")
 
 #: Metered kinds in the order a user runs into them.
-_KINDS = (quota.KIND_CARDS, quota.KIND_QUICK, quota.KIND_PHOTO, quota.KIND_NEGO)
+#: Display order. Anything the snapshot adds beyond this is appended, so a
+#: new quota kind can never vanish from the page that explains refusals.
+_KINDS = (
+    quota.KIND_CARDS,
+    quota.KIND_QUICK,
+    quota.KIND_PHOTO,
+    quota.KIND_PHOTO_DAY,
+    quota.KIND_NEGO,
+)
 
 #: Ten cells, so one cell reads as exactly ten percent of the quota.
 _BAR_CELLS = 10
@@ -48,13 +56,15 @@ def _bar(state: quota.QuotaState) -> str:
 def quota_block(states: dict[str, quota.QuotaState], lang: str) -> str:
     """The used/left lines for every metered kind."""
     lines: list[str] = []
-    for kind in _KINDS:
+    ordered = [k for k in _KINDS if k in states]
+    ordered += [k for k in states if k not in _KINDS]
+    for kind in ordered:
         state = states.get(kind)
         if state is None:
             continue
         lines.append(
             t("usage.row_head", lang,
-              name=t(f"usage.kind.{kind}", lang), window=state.window_label)
+              name=t(f"usage.kind.{kind}", lang), window=state.window_label(lang))
         )
         if state.unlimited:
             lines.append(t("usage.row_unlimited", lang, used=state.used))
@@ -89,7 +99,7 @@ def upgrade_nudge(
         if capped
         else quota.KIND_CARDS
     )
-    hint = quota.upgrade_hint(kind, user)
+    hint = quota.upgrade_hint(kind, user, lang)
     return t("usage.upgrade", lang, hint=hint) if hint else None
 
 

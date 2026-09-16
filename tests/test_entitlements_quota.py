@@ -57,6 +57,19 @@ def test_requests_per_minute_reflects_fast_slots():
     assert free.requests_per_minute(3) == pytest.approx(3 * 60 / 600)
 
 
+def test_run_budget_never_bites_a_paying_customer():
+    """The hidden daily brake must sit above what a level legitimately uses.
+
+    Below that line it stops stopping abuse and starts stopping the searches
+    people paid for, silently and mid-day.
+    """
+    prefixes = {"free": "free", "starter": "starter", "pro": "pro", "unlimited": "dealer"}
+    for e in ent.all_tiers():
+        budget = getattr(settings, f"{prefixes[e.tier.value]}_max_runs_per_day")
+        worst_case = e.requests_per_minute(e.max_rules) * 1440
+        assert budget >= worst_case, f"{e.label}: {budget} < {worst_case:.0f} runs/day"
+
+
 def test_features_are_per_level():
     assert not ent.for_tier(SubscriptionTier.FREE).has(ent.FEATURE_FLIP_MODE)
     assert ent.for_tier(SubscriptionTier.STARTER).has(ent.FEATURE_FLIP_MODE)
@@ -148,6 +161,9 @@ def test_quota_consume_fails_open_without_redis(monkeypatch):
 
 def test_quota_state_arithmetic():
     s = quota.QuotaState(kind=quota.KIND_CARDS, used=10, limit=10)
-    assert s.exhausted and s.remaining == 0 and s.window_label == "heute"
+    assert s.exhausted and s.remaining == 0
+    assert s.window_label("de") == "heute" and s.window_label("en") == "today"
     s = quota.QuotaState(kind=quota.KIND_PHOTO, used=2, limit=-1)
-    assert s.unlimited and not s.exhausted and s.window_label == "diesen Monat"
+    assert s.unlimited and not s.exhausted
+    assert s.window_label("de") == "diesen Monat"
+    assert s.window_label("ru") != s.window_label("de")

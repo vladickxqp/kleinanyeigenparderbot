@@ -100,14 +100,21 @@ async def notify_user_about_listings(
                 if error is None:
                     listing.notified = True
                     listing.notified_at = datetime.now(timezone.utc)
+                    # A card held back earlier and delivered now (e.g. after a
+                    # price drop re-opened it) must stop counting as withheld.
+                    listing.withheld = False
                     sent += 1
-                elif user is not None:
-                    await quota.release(quota.KIND_CARDS, user)
+                else:
+                    # The guard was claimed before the attempt; give it back so
+                    # the rescue sweep can really retry this card.
+                    await _release_send_guard(user_telegram_id, listing)
+                    if user is not None:
+                        await quota.release(quota.KIND_CARDS, user)
                 if user is not None:
                     _record_attempt(session, user, listing, error)
 
             if withheld and user is not None:
-                await _send_cap_teaser(bot, session, user, withheld)
+                await _send_cap_teaser(bot, session, user, withheld, lang)
     finally:
         await bot.session.close()
 
@@ -116,28 +123,54 @@ async def notify_user_about_listings(
 
 
 async def send_listing_card(
-    bot: Bot, chat_id: int, listing: Listing, lang: str = "de"
+    bot: Bot,
+    chat_id: int,
+    listing: Listing,
+    lang: str = "de",
+    *,
+    user: User | None = None,
+    session: AsyncSession | None = None,
 ) -> bool:
     """Deliver a single deal card using an already-running Bot instance.
 
-    Used by the in-chat "run now" action; the Celery path uses
-    :func:`notify_user_about_listings` instead.
+    Used by the in-chat "run now" action. Passing ``user`` routes the card
+    through the same daily quota and audit trail as the Celery path — without
+    it the button would be a way around the cap.
     """
-    return await _send_one(bot, chat_id, listing, lang)
+    if user is not None and not await _claim_card_slot(user):
+        return False
+
+    if await _duplicate_send(chat_id, listing):
+        return True
+
+    error = await _deliver(bot, chat_id, listing, lang)
+    if error is None:
+        listing.notified_at = datetime.now(timezone.utc)
+        listing.withheld = False
+    else:
+        await _release_send_guard(chat_id, listing)
+        if user is not None:
+            await quota.release(quota.KIND_CARDS, user)
+    if user is not None and session is not None:
+        _record_attempt(session, user, listing, error)
+    return error is None
 
 
 # --- Quota ----------------------------------------------------------------------------
 async def _claim_card_slot(user: User) -> bool:
     """Book one unit of the daily card quota. False = the cap is reached.
 
-    The decision is taken on the state BEFORE booking: ``consume`` reports
-    ``exhausted`` both when it refused and when it just handed out the last
-    unit, so trusting its return value alone would swallow one card every day.
+    ``consume`` refuses without booking once the cap is reached, and otherwise
+    returns the state AFTER booking — so a refusal is recognised by the counter
+    not having moved. Reading the decision off ``consume`` alone (rather than a
+    check-then-consume pair) is what keeps two parallel workers from handing out
+    the same last unit twice.
     """
-    if (await quota.check(quota.KIND_CARDS, user)).exhausted:
+    before = await quota.check(quota.KIND_CARDS, user)
+    if before.exhausted:
         return False
-    await quota.consume(quota.KIND_CARDS, user)
-    return True
+    after = await quota.consume(quota.KIND_CARDS, user)
+    return after.unlimited or after.used > before.used
 
 
 async def _user_by_telegram_id(session: AsyncSession, telegram_id: int) -> User | None:
@@ -172,7 +205,7 @@ async def _withheld_today(session: AsyncSession, user_id: int) -> int:
 
 
 async def _send_cap_teaser(
-    bot: Bot, session: AsyncSession, user: User, withheld: list[Listing]
+    bot: Bot, session: AsyncSession, user: User, withheld: list[Listing], lang: str
 ) -> None:
     """Name the best find the cap swallowed, once a day.
 
@@ -201,7 +234,7 @@ async def _send_cap_teaser(
     total = max(len(withheld), await _withheld_today(session, user.id))
     noun = "weiterer Treffer" if total == 1 else "weitere Treffer"
     lines = [f"🔒 Tageslimit erreicht — {total} {noun} heute, {detail}."]
-    hint = quota.upgrade_hint(quota.KIND_CARDS, user)
+    hint = quota.upgrade_hint(quota.KIND_CARDS, user, lang)
     if hint:
         lines.append(f"Mehr Karten pro Tag: {hint}")
 
@@ -277,11 +310,31 @@ async def _duplicate_send(chat_id: int, listing: Listing) -> bool:
         return False
 
 
+async def _release_send_guard(chat_id: int, listing: Listing) -> None:
+    """Hand the guard key back when the card never made it out.
+
+    The guard is claimed BEFORE the send, which is what makes it atomic against
+    two workers. Without this release a failed send would be remembered as
+    delivered, so the rescue sweep's retry would be reported as a duplicate and
+    the card would be lost for good.
+    """
+    try:
+        from app.services.health import _redis  # lazy: avoid import cycles
+
+        async with _redis() as r:
+            await r.delete(f"sent:{chat_id}:{listing.site.value}:{listing.external_id}")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("sent-guard release failed: {}", exc)
+
+
 async def _send_one(bot: Bot, chat_id: int, listing: Listing, lang: str) -> bool:
     if await _duplicate_send(chat_id, listing):
         # Report success so callers mark the row notified and never retry it.
         return True
-    return await _deliver(bot, chat_id, listing, lang) is None
+    error = await _deliver(bot, chat_id, listing, lang)
+    if error is not None:
+        await _release_send_guard(chat_id, listing)
+    return error is None
 
 
 async def _deliver(bot: Bot, chat_id: int, listing: Listing, lang: str) -> str | None:

@@ -58,11 +58,11 @@ def _next_run_key(rule_id: int) -> str:
 #: infrastructure brake that keeps the promise affordable when a few accounts
 #: run hundreds of rules — it is deliberately never shown or sold, and sits far
 #: above what normal use of a level reaches.
-_RUN_BUDGET: dict[SubscriptionTier, tuple[str, int]] = {
-    SubscriptionTier.FREE: ("free", 500),
-    SubscriptionTier.STARTER: ("starter", 4000),
-    SubscriptionTier.PRO: ("pro", 12000),
-    SubscriptionTier.UNLIMITED: ("dealer", 30000),
+_RUN_BUDGET: dict[SubscriptionTier, str] = {
+    SubscriptionTier.FREE: "free",
+    SubscriptionTier.STARTER: "starter",
+    SubscriptionTier.PRO: "pro",
+    SubscriptionTier.UNLIMITED: "dealer",
 }
 
 
@@ -71,8 +71,8 @@ def _runs_key(user_id: int) -> str:
 
 
 def _daily_run_budget(owner: User) -> int:
-    prefix, fallback = _RUN_BUDGET[owner.subscription.canonical]
-    return int(getattr(settings, f"{prefix}_max_runs_per_day", fallback))
+    prefix = _RUN_BUDGET[owner.subscription.canonical]
+    return int(getattr(settings, f"{prefix}_max_runs_per_day"))
 
 
 def _take_run_budget(owner: User) -> bool:

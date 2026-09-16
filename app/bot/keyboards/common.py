@@ -26,9 +26,10 @@ def main_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     kb.button(text=t("btn.settings", lang), callback_data="menu:settings")
     kb.button(text=t("btn.help", lang), callback_data="menu:help")
     kb.button(text="💎 Premium", callback_data="menu:premium")
+    kb.button(text=t("btn.usage", lang), callback_data="menu:usage")
     kb.button(text="💬 Support", callback_data="menu:support")
     kb.button(text="📦 Meine Flips", callback_data="menu:flips")
-    kb.adjust(2, 2, 2, 2, 1)
+    kb.adjust(2, 2, 2, 2, 2)
     if settings.webapp_url:
         # Only shown once a public HTTPS URL is configured (WEBAPP_URL).
         kb.row(

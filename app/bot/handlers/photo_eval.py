@@ -42,7 +42,9 @@ def _may_use_photo_eval(user: User) -> bool:
     return user.is_paid_tier
 
 
-async def _claim_photo_eval(user: User) -> tuple[quota.QuotaState | None, str | None]:
+async def _claim_photo_eval(
+    user: User, lang: str
+) -> tuple[quota.QuotaState | None, str | None]:
     """Book one valuation. Returns (state after booking, None) or (None, reason).
 
     ``consume`` cannot tell "just used the last unit" from "was already at the
@@ -51,10 +53,10 @@ async def _claim_photo_eval(user: User) -> tuple[quota.QuotaState | None, str | 
     month = await quota.check(quota.KIND_PHOTO, user)
     if month.exhausted:
         lines = [
-            f"📸 Deine Foto-Bewertungen sind {month.window_label} aufgebraucht "
+            f"📸 Deine Foto-Bewertungen sind {month.window_label(lang)} aufgebraucht "
             f"({month.used}/{month.limit})."
         ]
-        hint = quota.upgrade_hint(quota.KIND_PHOTO, user)
+        hint = quota.upgrade_hint(quota.KIND_PHOTO, user, lang)
         if hint:
             lines.append(f"Mehr davon: {hint}")
         else:
@@ -68,8 +70,23 @@ async def _claim_photo_eval(user: User) -> tuple[quota.QuotaState | None, str | 
             "Morgen geht es weiter — dein Monatskontingent bleibt unangetastet."
         )
 
-    await quota.consume(quota.KIND_PHOTO_DAY, user)
-    return await quota.consume(quota.KIND_PHOTO, user), None
+    # Book the month first: it is the unit the user paid for. Only once that
+    # succeeded does the daily fair-use brake take its own unit, and if the
+    # brake refuses in a race the month unit is handed straight back.
+    booked = await quota.consume(quota.KIND_PHOTO, user)
+    if not booked.unlimited and booked.used <= month.used:
+        return None, (
+            "📸 Deine Foto-Bewertungen sind gerade aufgebraucht — "
+            "versuch es später noch einmal."
+        )
+    day_booked = await quota.consume(quota.KIND_PHOTO_DAY, user)
+    if not day_booked.unlimited and day_booked.used <= day.used:
+        await quota.release(quota.KIND_PHOTO, user)
+        return None, (
+            f"🛑 Fair-Use-Bremse: {day.limit} Foto-Bewertungen an einem Tag reichen. "
+            "Morgen geht es weiter — dein Monatskontingent bleibt unangetastet."
+        )
+    return booked, None
 
 
 async def _release_photo_eval(user: User) -> None:
@@ -78,16 +95,16 @@ async def _release_photo_eval(user: User) -> None:
     await quota.release(quota.KIND_PHOTO_DAY, user)
 
 
-def _quota_footer(user: User, state: quota.QuotaState | None) -> list[str]:
+def _quota_footer(user: User, state: quota.QuotaState | None, lang: str) -> list[str]:
     """What is left after this valuation. Free has one per month: it matters."""
     if state is None or state.unlimited:
         return []
     lines = [
         f"\n🧮 Noch <b>{state.remaining}</b> von {state.limit} Foto-Bewertungen "
-        f"{state.window_label}."
+        f"{state.window_label(lang)}."
     ]
     if state.remaining == 0:
-        hint = quota.upgrade_hint(quota.KIND_PHOTO, user)
+        hint = quota.upgrade_hint(quota.KIND_PHOTO, user, lang)
         if hint:
             lines.append(f"Mehr davon: {hint}")
     return lines
@@ -117,14 +134,14 @@ async def on_photo(message: Message, user: User, lang: str) -> None:
         )
         return
 
-    state, blocked = await _claim_photo_eval(user)
+    state, blocked = await _claim_photo_eval(user, lang)
     if blocked is not None:
         await message.answer(blocked)
         return
 
     status = await message.answer("📸 Analysiere das Foto…")
     try:
-        delivered = await _run_photo_eval(message, status, user, state)
+        delivered = await _run_photo_eval(message, status, user, state, lang)
     except Exception:
         await _release_photo_eval(user)
         raise
@@ -133,7 +150,11 @@ async def on_photo(message: Message, user: User, lang: str) -> None:
 
 
 async def _run_photo_eval(
-    message: Message, status: Message, user: User, state: quota.QuotaState | None
+    message: Message,
+    status: Message,
+    user: User,
+    state: quota.QuotaState | None,
+    lang: str,
 ) -> bool:
     """Identify the product and price it. False = no valuation was produced."""
     # Largest available resolution, capped by Telegram itself (~1280px).
@@ -201,10 +222,11 @@ async def _run_photo_eval(
         lines.append("\n<b>Günstigste Live-Angebote:</b>")
         for c in top:
             lines.append(
-                f"• <a href=\"{c.url}\">{escape(c.title[:60])}</a> — {money(c.price)}"
+                f"• <a href=\"{escape(str(c.url), quote=True)}\">"
+                f"{escape(c.title[:60])}</a> — {money(c.price)}"
             )
     lines.append("\n➕ Dauerhaft überwachen? /menu → Neue Suche")
-    lines.extend(_quota_footer(user, state))
+    lines.extend(_quota_footer(user, state, lang))
 
     await status.edit_text("\n".join(lines), disable_web_page_preview=True)
     return True

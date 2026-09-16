@@ -432,7 +432,7 @@ def test_photo_result_names_what_is_left_and_the_cap_explains_itself(monkeypatch
 
 # --- 3. Quick search --------------------------------------------------------------------
 def _install_quick_search(monkeypatch) -> None:
-    async def no_wait(telegram_id, seconds=None):  # noqa: ANN001
+    async def no_wait(telegram_id, seconds=None, scope="manual"):  # noqa: ANN001
         return 0
 
     monkeypatch.setattr(quick_search, "manual_run_allowed", no_wait)
@@ -470,7 +470,7 @@ def test_quick_search_uses_the_tier_cooldown(monkeypatch):
     _install_quick_search(monkeypatch)
     seen: list[int | None] = []
 
-    async def record(telegram_id, seconds=None):  # noqa: ANN001
+    async def record(telegram_id, seconds=None, scope="manual"):  # noqa: ANN001
         seen.append(seconds)
         return 0
 
@@ -516,12 +516,12 @@ def test_negotiation_is_metered_and_explains_the_cap(sqlite_db, monkeypatch):
             await session.flush()
 
             cb = FakeCallback(row.id)
-            await listings_handler.cb_negotiate(cb, user, session)
+            await listings_handler.cb_negotiate(cb, user, session, "de")
             assert "Verhandlungs-Vorschlag" in cb.message.answers[0]
             assert "Noch <b>0</b> von 1 Verhandlungen diesen Monat" in cb.message.answers[0]
 
             blocked = FakeCallback(row.id)
-            await listings_handler.cb_negotiate(blocked, user, session)
+            await listings_handler.cb_negotiate(blocked, user, session, "de")
             assert "aufgebraucht" in blocked.message.answers[0]
             assert "/premium" in blocked.message.answers[0]
             assert fake.used[quota.KIND_NEGO] == 1

@@ -262,6 +262,14 @@ class VintedParser(BaseParser):
                 continue
             if not query.matches_text(item.title, item.description):
                 continue
+            # Vinted reports a structured condition, so the filter the user
+            # paid for can be honoured exactly here. Unknown stays unfiltered.
+            if (
+                query.condition is not Condition.ANY
+                and item.condition is not Condition.ANY
+                and item.condition is not query.condition
+            ):
+                continue
             if item.price is not None:
                 if query.max_price is not None and item.price > query.max_price:
                     continue

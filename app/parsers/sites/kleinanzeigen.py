@@ -117,17 +117,22 @@ def matches_condition(
     return guessed is wanted
 
 
-def shipping_flag(item: ParsedListing) -> bool:
-    """Whether a Kleinanzeigen card offers shipping.
+def shipping_flag(item: ParsedListing) -> bool | None:
+    """Whether a Kleinanzeigen card offers shipping, or None if unknowable.
 
     ``shipping_cost == 0.0`` is this parser's marker for "Versand möglich" (a
     real shipping price would cost one extra request per ad). The site prints
     that hint whenever the seller offers shipping, so a card without it is a
-    "no", not a shrug — which is what makes the filter worth having here.
+    "no", not a shrug.
 
-    Sites that cannot tell at all must pass ``None`` to :func:`matches_shipping`
-    instead of guessing a value for their ads.
+    The parser carries that distinction explicitly: if the shipping container
+    was missing from EVERY card the markup changed, and answering "no shipping"
+    would silently empty a paid rule while the health monitor still reported
+    the parser as healthy. In that case the answer is None and the unknown
+    branch of :func:`matches_shipping` keeps the ad.
     """
+    if item.shipping_available is not None:
+        return item.shipping_available
     return item.shipping_cost is not None
 
 
@@ -364,8 +369,12 @@ class KleinanzeigenParser(BaseParser):
         shipping_el = card.select_one(
             ".aditem-main--middle--price-shipping--shipping"
         )
+        # A missing container means the site changed its markup, not that the
+        # seller refuses to ship — that difference decides whether a "shipping
+        # only" rule keeps working or silently returns nothing.
         shipping_text = shipping_el.get_text(strip=True).lower() if shipping_el else ""
         shipping_available = "versand" in shipping_text
+        shipping_known = shipping_el is not None
 
         # --- Location ---
         loc_el = card.select_one(".aditem-main--top--left")
@@ -414,6 +423,7 @@ class KleinanzeigenParser(BaseParser):
             price=price,
             currency="EUR",
             shipping_cost=0.0 if shipping_available else None,
+            shipping_available=shipping_available if shipping_known else None,
             image_url=image_url,
             description=description,
             location=location,

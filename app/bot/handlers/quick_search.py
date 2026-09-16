@@ -32,28 +32,28 @@ router = Router(name="quick_search")
 MAX_RESULTS = 8
 
 
-def _quota_footer(user: User, state: quota.QuotaState) -> str:
+def _quota_footer(user: User, state: quota.QuotaState, lang: str) -> str:
     """The remaining searches, plus the way to get more once they run out."""
     if state.unlimited:
         return ""
     line = (
         f"\n🧮 Noch <b>{state.remaining}</b> von {state.limit} Schnell-Suchen "
-        f"{state.window_label}."
+        f"{state.window_label(lang)}."
     )
     if state.remaining == 0:
-        hint = quota.upgrade_hint(quota.KIND_QUICK, user)
+        hint = quota.upgrade_hint(quota.KIND_QUICK, user, lang)
         if hint:
             line += f"\nMehr davon: {hint}"
     return line
 
 
-def _exhausted_text(user: User, state: quota.QuotaState) -> str:
+def _exhausted_text(user: User, state: quota.QuotaState, lang: str) -> str:
     lines = [
-        f"🔍 Deine Schnell-Suchen sind {state.window_label} aufgebraucht "
+        f"🔍 Deine Schnell-Suchen sind {state.window_label(lang)} aufgebraucht "
         f"({state.used}/{state.limit}).",
         "Deine Dauer-Suchen laufen davon unberührt weiter: /menu",
     ]
-    hint = quota.upgrade_hint(quota.KIND_QUICK, user)
+    hint = quota.upgrade_hint(quota.KIND_QUICK, user, lang)
     if hint:
         lines.append(f"Mehr davon: {hint}")
     return "\n".join(lines)
@@ -61,7 +61,8 @@ def _exhausted_text(user: User, state: quota.QuotaState) -> str:
 
 @router.message(Command("suche"))
 async def cmd_suche(
-    message: Message, user: User, command: CommandObject, state: FSMContext
+    message: Message, user: User, command: CommandObject, state: FSMContext,
+    lang: str = "de",
 ) -> None:
     keywords = (command.args or "").strip()
     if not keywords:
@@ -72,7 +73,9 @@ async def cmd_suche(
         return
 
     wait = await manual_run_allowed(
-        user.telegram_id, user.entitlements.quick_search_cooldown_seconds
+        user.telegram_id,
+        user.entitlements.quick_search_cooldown_seconds,
+        scope="quick",
     )
     if wait:
         await message.answer(
@@ -83,11 +86,15 @@ async def cmd_suche(
 
     # Checked before booking: consume() reports "exhausted" both when it refused
     # and when it handed out the last unit.
-    usage = await quota.check(quota.KIND_QUICK, user)
-    if usage.exhausted:
-        await message.answer(_exhausted_text(user, usage))
+    before = await quota.check(quota.KIND_QUICK, user)
+    if before.exhausted:
+        await message.answer(_exhausted_text(user, before, lang))
         return
     usage = await quota.consume(quota.KIND_QUICK, user)
+    if not usage.unlimited and usage.used <= before.used:
+        # Another request took the last unit between the check and the booking.
+        await message.answer(_exhausted_text(user, usage, lang))
+        return
 
     status = await message.answer(f"🔍 Suche nach <b>{escape(keywords)}</b> läuft…")
 
@@ -98,15 +105,28 @@ async def cmd_suche(
         *(p.collect(query) for p in parsers), return_exceptions=True
     )
     parsed: list[ParsedListing] = []
+    failures = 0
     for res in results:
-        if not isinstance(res, BaseException):
+        if isinstance(res, BaseException):
+            failures += 1
+        else:
             parsed.extend(res)
+
+    if parsers and failures == len(parsers):
+        # Nobody searched anything — the user must not pay a unit for that.
+        await quota.release(quota.KIND_QUICK, user)
+        await status.edit_text(
+            "⚠️ Die Marktplätze waren gerade nicht erreichbar. "
+            "Versuch es in ein paar Minuten noch einmal — die Suche wurde dir "
+            "nicht angerechnet."
+        )
+        return
 
     parsed = filter_relevant(query, parsed)
     if not parsed:
         await status.edit_text(
             f"😕 Nichts gefunden für <b>{escape(keywords)}</b>. "
-            "Andere Suchbegriffe probieren?" + _quota_footer(user, usage)
+            "Andere Suchbegriffe probieren?" + _quota_footer(user, usage, lang)
         )
         return
 
@@ -135,7 +155,7 @@ async def cmd_suche(
             f"   {'  ·  '.join(meta)}"
         )
     lines.append("\n💡 Dauerhaft überwachen? Ein Tipp auf den Knopf genügt.")
-    footer = _quota_footer(user, usage)
+    footer = _quota_footer(user, usage, lang)
     if footer:
         lines.append(footer)
 

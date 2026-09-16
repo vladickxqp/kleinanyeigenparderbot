@@ -123,11 +123,11 @@ def _level_block(e: ent.Entitlements, current: bool, lang: str) -> list[str]:
           rules=e.max_rules, minutes=e.interval_floor(fast=False) // 60),
         fast,
         t("premium.compare_cards", lang,
-          cards=ent.fmt_quota(e.daily_notifications),
-          photos=ent.fmt_quota(e.photo_evals_per_month)),
+          cards=ent.fmt_quota(e.daily_notifications, lang=lang),
+          photos=ent.fmt_quota(e.photo_evals_per_month, lang=lang)),
         t("premium.compare_quick", lang,
-          quick=ent.fmt_quota(e.quick_searches_per_day),
-          history=ent.fmt_quota(e.history_days, " Tage")),
+          quick=ent.fmt_quota(e.quick_searches_per_day, lang=lang),
+          history=ent.fmt_quota(e.history_days, " " + t("quota.unit.days", lang), lang=lang)),
     ]
 
 

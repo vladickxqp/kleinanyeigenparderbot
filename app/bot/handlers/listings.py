@@ -18,22 +18,22 @@ from app.services.repositories import ListingRepository
 router = Router(name="listings")
 
 
-def _nego_footer(state: quota.QuotaState) -> str:
+def _nego_footer(state: quota.QuotaState, lang: str) -> str:
     """What is left after this suggestion (paid levels negotiate without a cap)."""
     if state.unlimited:
         return ""
     return (
         f"\n\n🧮 Noch <b>{state.remaining}</b> von {state.limit} Verhandlungen "
-        f"{state.window_label}."
+        f"{state.window_label(lang)}."
     )
 
 
-def _nego_exhausted_text(user: User, state: quota.QuotaState) -> str:
+def _nego_exhausted_text(user: User, state: quota.QuotaState, lang: str) -> str:
     lines = [
-        f"🤝 <b>Verhandlungs-Hilfe</b> — dein Kontingent ist {state.window_label} "
+        f"🤝 <b>Verhandlungs-Hilfe</b> — dein Kontingent ist {state.window_label(lang)} "
         f"aufgebraucht ({state.used}/{state.limit}).",
     ]
-    hint = quota.upgrade_hint(quota.KIND_NEGO, user)
+    hint = quota.upgrade_hint(quota.KIND_NEGO, user, lang)
     lines.append(
         f"Unbegrenzt verhandeln: {hint}" if hint else "Nächsten Monat geht es weiter."
     )
@@ -57,7 +57,9 @@ async def cb_favorite(cb: CallbackQuery, user: User, session: AsyncSession) -> N
 
 
 @router.callback_query(F.data.startswith("listing:nego:"))
-async def cb_negotiate(cb: CallbackQuery, user: User, session: AsyncSession) -> None:
+async def cb_negotiate(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str
+) -> None:
     """Suggest an opening offer and a copyable negotiation message."""
     from html import escape
 
@@ -75,7 +77,7 @@ async def cb_negotiate(cb: CallbackQuery, user: User, session: AsyncSession) -> 
     # and when it handed out the last unit.
     state = await quota.check(quota.KIND_NEGO, user)
     if state.exhausted:
-        await cb.message.answer(_nego_exhausted_text(user, state))
+        await cb.message.answer(_nego_exhausted_text(user, state, lang))
         await cb.answer()
         return
     state = await quota.consume(quota.KIND_NEGO, user)
@@ -88,7 +90,7 @@ async def cb_negotiate(cb: CallbackQuery, user: User, session: AsyncSession) -> 
         "Nachricht zum Kopieren (antippen):\n"
         f"<code>{escape(message_text)}</code>\n\n"
         f"🔗 Direkt zur Anzeige: {escape(listing.url)}".replace(",", ".")
-        + _nego_footer(state),
+        + _nego_footer(state, lang),
         disable_web_page_preview=True,
     )
     await cb.answer()

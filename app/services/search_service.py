@@ -358,12 +358,29 @@ class SearchService:
             is_negotiable=item.is_negotiable,
             # Without the marketplace's own posting time the card cannot claim
             # "gefunden X Minuten nach Inserat" — the number would be invented.
-            posted_at=item.posted_at,
+            posted_at=_as_utc(item.posted_at),
             deal_score=deal.score,
             deal_verdict=deal.verdict,
             estimated_market_price=deal.estimated_market_price,
             discount_percent=deal.discount_percent,
         )
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """Parsers report marketplace wall-clock time; the column is timestamptz.
+
+    Storing the naive value unchanged shifted every posting time one or two
+    hours into the future, which made the "found X minutes after posting"
+    figure come out negative.
+    """
+    if value is None or value.tzinfo is not None:
+        return value
+    try:
+        from zoneinfo import ZoneInfo
+
+        return value.replace(tzinfo=ZoneInfo(settings.tz)).astimezone(timezone.utc)
+    except Exception:  # noqa: BLE001 - no tz database: assume the host clock
+        return value.astimezone(timezone.utc)
 
 
 def _clip(value: str | None, limit: int) -> str | None:

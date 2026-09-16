@@ -149,10 +149,12 @@ async def cb_edit_field(
     cb: CallbackQuery, user: User, lang: str, state: FSMContext
 ) -> None:
     parts = (cb.data or "").split(":")
-    if len(parts) != 3 or not parts[1] or not parts[2].isdigit():
+    field, raw_id = (parts[1], parts[2]) if len(parts) == 3 else ("", "")
+    # str.isdigit() also accepts superscripts and other unicode digits that
+    # int() then rejects, so the check has to be ASCII-only.
+    if not field or not (raw_id.isascii() and raw_id.isdecimal()):
         await cb.answer()
         return
-    field, raw_id = parts[1], parts[2]
     if len(raw_id) > _MAX_ID_DIGITS:
         await cb.answer()
         return

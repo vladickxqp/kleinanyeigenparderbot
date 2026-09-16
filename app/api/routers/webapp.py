@@ -229,7 +229,7 @@ def usage_out(states: dict[str, quota.QuotaState], lang: str) -> list[QuotaOut]:
             remaining=state.remaining,
             unlimited=state.unlimited,
             exhausted=state.exhausted,
-            window=state.window_label,
+            window=state.window_label(lang),
         )
         for state in states.values()
     ]

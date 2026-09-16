@@ -100,7 +100,7 @@ async def cb_run_rule(
         return
     from app.services.throttle import manual_run_allowed
 
-    wait = await manual_run_allowed(user.telegram_id)
+    wait = await manual_run_allowed(user.telegram_id, scope="manual")
     if wait:
         await cb.answer(f"⏳ Bitte {wait}s warten (Schutz vor Sperren).", show_alert=True)
         return
@@ -125,12 +125,29 @@ async def cb_run_rule(
         return
 
     sent = 0
+    capped = False
     for row in notable[:5]:
-        if await send_listing_card(cb.message.bot, user.telegram_id, row, lang):
+        # Same quota and audit trail as the scheduled path: the button must not
+        # become a way around the daily card limit.
+        if await send_listing_card(
+            cb.message.bot, user.telegram_id, row, lang, user=user, session=session
+        ):
             row.notified = True
             sent += 1
+        elif sent == 0 or capped:
+            capped = True
+            break
+        else:
+            capped = True
 
     loc_note = await _location_note(rule)
+    if capped:
+        from app.services import quota as quota_svc
+
+        hint = quota_svc.upgrade_hint(quota_svc.KIND_CARDS, user, lang)
+        loc_note += "\n🔒 Tageslimit für Karten erreicht." + (
+            f" Mehr davon: {hint}" if hint else ""
+        )
     if notable:
         await status.edit_text(
             f"✅ Fertig: <b>{len(notable)}</b> neue Treffer, {sent} Karte(n) gesendet."

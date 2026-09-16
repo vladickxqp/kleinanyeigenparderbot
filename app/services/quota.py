@@ -46,7 +46,15 @@ _WINDOW: dict[str, str] = {
 async def _redis():
     import redis.asyncio as aioredis
 
-    client = aioredis.from_url(settings.redis_url, decode_responses=True)
+    # Explicit timeouts: without them "fails open" only covers a refused
+    # connection. A blackholed host would block the handler instead, which is
+    # the one failure mode metering must never cause.
+    client = aioredis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        socket_connect_timeout=2,
+        socket_timeout=2,
+    )
     try:
         yield client
     finally:
@@ -108,8 +116,18 @@ class QuotaState:
         return not self.unlimited and self.used >= self.limit
 
     @property
-    def window_label(self) -> str:
-        return "heute" if _WINDOW[self.kind] == "day" else "diesen Monat"
+    def is_daily(self) -> bool:
+        return _WINDOW[self.kind] == "day"
+
+    def window_label(self, lang: str | None = None) -> str:
+        """"today" / "this month" in the reader's language.
+
+        This used to be a German-only property, and every caller dropped it
+        verbatim into an otherwise translated sentence.
+        """
+        from app.bot.texts import t
+
+        return t("quota.window_day" if self.is_daily else "quota.window_month", lang)
 
 
 async def check(kind: str, user: User, now: datetime | None = None) -> QuotaState:
@@ -148,11 +166,18 @@ async def consume(
         return QuotaState(kind=kind, used=0, limit=limit)
 
 
-async def release(kind: str, user: User, *, amount: int = 1) -> None:
-    """Give a unit back (e.g. the photo could not be analysed after all)."""
+async def release(
+    kind: str, user: User, *, amount: int = 1, now: datetime | None = None
+) -> None:
+    """Give a unit back (e.g. the photo could not be analysed after all).
+
+    ``now`` addresses the window the unit was taken from: a refund that crosses
+    midnight or a month boundary would otherwise decrement the fresh counter
+    and leave the old one inflated.
+    """
     try:
         async with _redis() as r:
-            key = _key(kind, user.telegram_id)
+            key = _key(kind, user.telegram_id, now)
             if int(await r.get(key) or 0) >= amount:
                 await r.decrby(key, amount)
     except Exception as exc:  # noqa: BLE001
@@ -160,23 +185,42 @@ async def release(kind: str, user: User, *, amount: int = 1) -> None:
 
 
 async def snapshot(user: User) -> dict[str, QuotaState]:
-    """Every metered kind at once — for /usage and the Mini App."""
-    kinds = (KIND_CARDS, KIND_PHOTO, KIND_QUICK, KIND_NEGO)
-    return {kind: await check(kind, user) for kind in kinds}
+    """Every metered kind at once — for /usage and the Mini App.
+
+    The daily photo brake is included: for the levels with unlimited monthly
+    valuations it is the only quota that can refuse one, so a usage page that
+    omits it cannot explain the refusal it is there to explain.
+    """
+    kinds = (KIND_CARDS, KIND_PHOTO, KIND_PHOTO_DAY, KIND_QUICK, KIND_NEGO)
+    states = {kind: await check(kind, user) for kind in kinds}
+    # Only worth showing when the monthly quota cannot already explain a "no".
+    if not states[KIND_PHOTO].unlimited:
+        states.pop(KIND_PHOTO_DAY)
+    return states
 
 
-def upgrade_hint(kind: str, user: User) -> str | None:
+#: Text key describing what one unit of each kind is, per language.
+_UNIT_KEY = {
+    KIND_CARDS: "quota.unit.cards",
+    KIND_PHOTO: "quota.unit.photo",
+    KIND_QUICK: "quota.unit.quick",
+    KIND_NEGO: "quota.unit.nego",
+}
+
+
+def upgrade_hint(kind: str, user: User, lang: str | None = None) -> str | None:
     """What the next level would give for this kind of action (HTML)."""
+    from app.bot.texts import t
+
     nxt = ent.next_tier(user.subscription)
-    if nxt is None:
+    if nxt is None or kind not in _UNIT_KEY:
         return None
     e = ent.for_tier(nxt)
-    value = {
-        KIND_CARDS: ent.fmt_quota(e.daily_notifications, " Karten/Tag"),
-        KIND_PHOTO: ent.fmt_quota(e.photo_evals_per_month, " Foto-Bewertungen/Monat"),
-        KIND_QUICK: ent.fmt_quota(e.quick_searches_per_day, " Schnell-Suchen/Tag"),
-        KIND_NEGO: ent.fmt_quota(e.negotiations_per_month, " Verhandlungen/Monat"),
-    }.get(kind)
-    if value is None:
-        return None
-    return f"<b>{e.label}</b>: {value} — /premium"
+    amount = {
+        KIND_CARDS: e.daily_notifications,
+        KIND_PHOTO: e.photo_evals_per_month,
+        KIND_QUICK: e.quick_searches_per_day,
+        KIND_NEGO: e.negotiations_per_month,
+    }[kind]
+    value = f"{ent.fmt_quota(amount, lang=lang)} {t(_UNIT_KEY[kind], lang)}"
+    return t("quota.upgrade_hint", lang, level=e.label, value=value)

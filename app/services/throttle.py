@@ -53,12 +53,16 @@ async def cooldown(key: str, seconds: int) -> int:
         return 0
 
 
-async def manual_run_allowed(telegram_id: int, seconds: int | None = None) -> int:
+async def manual_run_allowed(
+    telegram_id: int, seconds: int | None = None, scope: str = "manual"
+) -> int:
     """0 if a manual search may start now, else the seconds to wait.
 
-    ``seconds`` is the tier's cooldown; without it the generic default applies.
+    ``scope`` separates the counters: the quick search and the in-chat "run now"
+    button have different cooldowns, so sharing one key would make each of them
+    report the other's wait time.
     """
-    return await cooldown(f"manual:{telegram_id}", seconds or MANUAL_RUN_COOLDOWN)
+    return await cooldown(f"{scope}:{telegram_id}", seconds or MANUAL_RUN_COOLDOWN)
 
 
 async def rate_limited(
