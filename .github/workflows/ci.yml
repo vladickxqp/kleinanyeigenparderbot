@@ -20,6 +20,45 @@ jobs:
       - name: Run tests
         run: pytest -q
 
+  migrations:
+    name: Migrations match the models
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: parserbot
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: parserbot
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U parserbot"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: parserbot
+      POSTGRES_PASSWORD: ci_password
+      POSTGRES_DB: parserbot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Apply migrations
+        run: alembic upgrade head
+      # Fails when a model changed without a matching migration — otherwise the
+      # drift only shows up as a broken query in production.
+      - name: Detect model/migration drift
+        run: alembic check
+      - name: Downgrade and re-upgrade
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+
   frontend:
     name: Frontend typecheck & build
     runs-on: ubuntu-latest

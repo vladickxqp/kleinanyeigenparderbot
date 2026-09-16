@@ -52,17 +52,23 @@ def setup_logging() -> None:
         level=settings.log_level,
         format=log_format,
         backtrace=settings.debug,
-        diagnose=settings.debug,
+        # diagnose=True dumps local variables into the traceback, which for an
+        # exception raised near Bot(token=...) or the settings object means the
+        # bot token and database password end up in the log file.
+        diagnose=settings.debug and not settings.is_production,
         enqueue=True,
     )
 
-    _LOG_DIR.mkdir(exist_ok=True)
+    _LOG_DIR.mkdir(parents=True, exist_ok=True)
     logger.add(
         _LOG_DIR / "app.log",
         level=settings.log_level,
         rotation="20 MB",
         retention="14 days",
         compression="zip",
+        # Persisted logs never carry variable dumps: they would contain the
+        # bot token or database password for any exception near the config.
+        diagnose=False,
         enqueue=True,
     )
     logger.add(
@@ -71,6 +77,7 @@ def setup_logging() -> None:
         rotation="10 MB",
         retention="30 days",
         compression="zip",
+        diagnose=False,
         enqueue=True,
     )
 
