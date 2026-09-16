@@ -54,6 +54,9 @@
     --dh-ink-fallback: #eceef2;
     --dh-muted-fallback: #8b93a1;
     --dh-save: #2fbf71;
+    /* Warn carries body text and the exhausted quota bar, so it has to be as
+       readable on the dark ground as the other signal colours. */
+    --dh-warn: #f0a04b;
     --dh-q-great: #2fbf71;
     --dh-q-steal: #ff6b6b;
   }

@@ -136,6 +136,14 @@ export const IconInbox = (p: IconProps) => (
   </Svg>
 );
 
+/** Stop / cancel: the universal "no" ring, drawn on the same grid. */
+export const IconCancel = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="m6.9 6.9 10.2 10.2" />
+  </Svg>
+);
+
 export const IconReceipt = (p: IconProps) => (
   <Svg {...p}>
     <path d="M6 3.5h12v17l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3Z" />

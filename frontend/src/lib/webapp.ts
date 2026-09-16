@@ -85,6 +85,9 @@ export interface WaLevel {
   features: string[];
 }
 
+/** Which cancellation the account screen may offer, decided on the server. */
+export type CancelKind = "renewal" | "premium";
+
 export interface Me {
   telegram_id: number;
   name: string;
@@ -98,9 +101,22 @@ export interface Me {
   flip_min_net: number | null;
   price_stars: number;
   price_eur: number;
+  can_cancel: boolean;
+  cancel_kind: CancelKind | null;
   entitlements: WaLevel;
   usage: WaQuota[];
   levels: WaLevel[];
+}
+
+/** What a cancellation did: stopped the renewal, or ended premium outright. */
+export interface WaCancel {
+  outcome: "cancel_at_period_end" | "ended";
+  detail: string;
+  active_until: string | null;
+  tier: string;
+  label: string;
+  is_paid: boolean;
+  renews: boolean;
 }
 
 export interface WaRule {
@@ -204,6 +220,8 @@ export const webapp = {
     wa<WaListing[]>(`/listings?limit=40${favorites ? "&favorites=true" : ""}`),
   flips: () => wa<WaFlips>("/flips"),
   payments: () => wa<WaPayment[]>("/payments"),
+  /** Cancels the caller's own subscription — no id, nothing to address. */
+  cancelSubscription: () => wa<WaCancel>("/subscription/cancel", { method: "POST" }),
 };
 
 export const eur = (v: number | null | undefined) =>

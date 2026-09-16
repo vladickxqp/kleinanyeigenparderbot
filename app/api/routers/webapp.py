@@ -76,9 +76,27 @@ class MeOut(BaseModel):
     flip_min_net: float | None
     price_stars: int
     price_eur: float
+    #: Whether the Konto tab may offer the cancel action at all, and which of
+    #: the two it is — the client must not guess this from ``renews``.
+    can_cancel: bool
+    cancel_kind: str | None
     entitlements: LevelOut
     usage: list[QuotaOut]
     levels: list[LevelOut]
+
+
+class CancelOut(BaseModel):
+    """The outcome of a cancellation, in the words the Konto tab shows."""
+
+    #: ``cancel_at_period_end`` — renewal stopped, premium runs until
+    #: ``active_until``; ``ended`` — premium was handed back right away.
+    outcome: str
+    detail: str
+    active_until: datetime | None
+    tier: str
+    label: str
+    is_paid: bool
+    renews: bool
 
 
 class RuleOut(BaseModel):
@@ -193,6 +211,49 @@ class PaymentOut(BaseModel):
     created_at: datetime
 
 
+# --- Cancelling: the same two cases the bot knows ------------------------------------
+#: Which of the two cancellations applies. "renewal" stops the Stars
+#: auto-renewal (premium keeps running), "premium" hands a non-charging premium
+#: (trial, grant, coupon) back immediately.
+CANCEL_RENEWAL = "renewal"
+CANCEL_PREMIUM = "premium"
+
+
+def _cancellable(sub) -> bool:
+    """True if this subscription auto-renews via Stars and can be cancelled.
+
+    Mirrors ``app.bot.handlers.premium._cancellable`` — chat and Mini App must
+    never disagree about what a cancellation does to the same subscription.
+    """
+    return (
+        sub is not None
+        and sub.payment_provider == "telegram_stars"
+        and bool(sub.telegram_charge_id)
+        and sub.payment_status != premium.CANCEL_AT_PERIOD_END
+    )
+
+
+def _endable(sub) -> bool:
+    """True if a non-renewing premium (trial/grant/coupon) can be ended early.
+
+    Mirrors ``app.bot.handlers.premium._endable``.
+    """
+    return (
+        sub is not None
+        and not _cancellable(sub)
+        and sub.payment_status != premium.CANCEL_AT_PERIOD_END
+    )
+
+
+def _cancel_kind(sub) -> str | None:
+    """Which cancel action the account screen may offer for ``sub``, if any."""
+    if _cancellable(sub):
+        return CANCEL_RENEWAL
+    if _endable(sub):
+        return CANCEL_PREMIUM
+    return None
+
+
 # --- Level and usage payloads -------------------------------------------------------
 def level_out(e: ent.Entitlements, lang: str) -> LevelOut:
     """Serialise one level; Free carries no price and is never purchasable."""
@@ -249,6 +310,7 @@ async def me(
         and sub.payment_status != premium.CANCEL_AT_PERIOD_END
     )
     lang = user.language_code
+    kind = _cancel_kind(sub) if user.is_paid_tier else None
     return MeOut(
         telegram_id=user.telegram_id,
         name=user.display_name,
@@ -262,6 +324,8 @@ async def me(
         flip_min_net=await flip_svc.get_flip_min(user.telegram_id),
         price_stars=settings.premium_price_stars,
         price_eur=settings.premium_price_eur,
+        can_cancel=kind is not None,
+        cancel_kind=kind,
         entitlements=level_out(user.entitlements, lang),
         usage=usage_out(await quota.snapshot(user), lang),
         levels=[level_out(e, lang) for e in ent.all_tiers()],
@@ -397,3 +461,70 @@ async def payments(
     session: AsyncSession = Depends(get_session),
 ):
     return await premium.payment_history(session, user.telegram_id)
+
+
+@router.post("/subscription/cancel", response_model=CancelOut)
+async def cancel_subscription(
+    user: User = Depends(current_webapp_user),
+    session: AsyncSession = Depends(get_session),
+) -> CancelOut:
+    """Cancel the caller's own premium — the chat's two cases, in the app.
+
+    There is deliberately no id in the path: the subscription is always looked
+    up by the authenticated user's telegram id, so nobody can cancel anyone
+    else's premium. A second call finds nothing left to cancel and refuses
+    cleanly (409) instead of charging Telegram again or ending premium twice.
+    """
+    sub = await premium.get_active_subscription(session, user.telegram_id)
+
+    if _cancellable(sub):
+        # Stop the auto-renewal at Telegram FIRST: only when Telegram confirms
+        # may the row say "cancelled", otherwise the next charge still arrives.
+        if not await premium.cancel_stars_subscription(
+            user.telegram_id, sub.telegram_charge_id
+        ):
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Die Kündigung hat bei Telegram gerade nicht geklappt. "
+                    "Bitte gleich nochmal versuchen — oder in Telegram: "
+                    "Einstellungen → Meine Sterne → Abos → Deal Hunter."
+                ),
+            )
+        sub.payment_status = premium.CANCEL_AT_PERIOD_END
+        sub.renewal_date = None
+        await session.commit()
+        logger.info("WEBAPP: {} cancelled the Stars renewal", user.telegram_id)
+        return CancelOut(
+            outcome=premium.CANCEL_AT_PERIOD_END,
+            detail=(
+                "Gekündigt. Dein Premium bleibt bis "
+                f"{sub.subscription_end:%d.%m.%Y} aktiv und verlängert sich "
+                "danach nicht mehr — es wird nichts mehr abgebucht."
+            ),
+            active_until=sub.subscription_end,
+            tier=user.subscription.value,
+            label=user.entitlements.label,
+            is_paid=user.is_paid_tier,
+            renews=False,
+        )
+
+    if _endable(sub):
+        # Trial, gift or coupon: nothing is charged, so it ends right away.
+        await premium.deactivate_premium(session, user)
+        await session.commit()
+        logger.info("WEBAPP: {} ended a non-renewing premium", user.telegram_id)
+        return CancelOut(
+            outcome="ended",
+            detail="Premium beendet. Du bist ab sofort wieder im Free-Tarif.",
+            active_until=None,
+            tier=user.subscription.value,
+            label=user.entitlements.label,
+            is_paid=user.is_paid_tier,
+            renews=False,
+        )
+
+    raise HTTPException(
+        status_code=409,
+        detail="Es läuft gerade nichts, was gekündigt werden könnte.",
+    )

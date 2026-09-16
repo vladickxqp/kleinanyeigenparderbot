@@ -10,6 +10,7 @@ import {
 import {
   IconAlert,
   IconBox,
+  IconCancel,
   IconCheck,
   IconPause,
   IconPencil,
@@ -30,8 +31,10 @@ import {
   quotaText,
   tg,
   webapp,
+  type CancelKind,
   type Me,
   type RuleInput,
+  type WaCancel,
   type WaFlips,
   type WaLevel,
   type WaListing,
@@ -791,8 +794,116 @@ function LevelRow({ level, current, added }: { level: WaLevel; current: boolean;
   );
 }
 
-function AccountTab({ me }: { me: Me | null }) {
+/** Cancelling, in two steps.
+ *
+ * The trigger stays a quiet bordered button: giving premium back is never the
+ * action the screen is asking for. The server decides WHICH of the two
+ * cancellations applies (stop the Stars renewal, or end a premium nobody is
+ * charged for) — the app only words it.
+ */
+function CancelPremium({
+  kind,
+  activeUntil,
+  result,
+  onDone,
+}: {
+  kind: CancelKind | null;
+  activeUntil: string | null;
+  result: WaCancel | null;
+  onDone: (result: WaCancel) => void;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const renewal = kind === "renewal";
+
+  async function confirm() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await webapp.cancelSubscription();
+      haptic("medium");
+      setAsking(false);
+      onDone(res);
+    } catch (e) {
+      setError(e instanceof WebAppError ? e.message : "Kündigen hat nicht geklappt.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Done: the fresh state is already on screen above, this only says what happened.
+  if (result) {
+    return (
+      <div className="dh-row" style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+        <span style={{ color: "var(--dh-muted)", flex: "none", marginTop: 1 }}>
+          <IconCheck size={16} />
+        </span>
+        <span style={{ fontSize: 13, lineHeight: 1.5 }}>{result.detail}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dh-row">
+      {asking ? (
+        <>
+          <div style={{ fontSize: 14, fontWeight: 500 }}>
+            {renewal ? "Abo wirklich kündigen?" : "Premium wirklich beenden?"}
+          </div>
+          <div className="dh-muted" style={{ fontSize: 13, marginTop: 5, lineHeight: 1.5 }}>
+            {renewal
+              ? `Dein Premium bleibt bis ${dateDE(activeUntil)} voll aktiv — es verlängert sich danach nur nicht mehr und es wird nichts mehr abgebucht.`
+              : "Für dieses Premium wird nichts abgebucht (Test, Geschenk oder Gutschein). Beenden heißt: ab sofort wieder im Free-Tarif."}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button
+              className="dh-btn dh-btn-sm dh-btn-quiet"
+              disabled={busy}
+              onClick={confirm}
+              style={{
+                color: "var(--dh-warn)",
+                borderColor: "color-mix(in srgb, var(--dh-warn) 45%, transparent)",
+              }}
+            >
+              {busy ? "Moment…" : renewal ? "Ja, kündigen" : "Ja, beenden"}
+            </button>
+            <button
+              className="dh-btn dh-btn-sm dh-btn-quiet"
+              disabled={busy}
+              onClick={() => setAsking(false)}
+              style={{ color: "var(--dh-muted)" }}
+            >
+              Zurück
+            </button>
+          </div>
+        </>
+      ) : (
+        <button
+          className="dh-btn dh-btn-sm dh-btn-quiet"
+          onClick={() => {
+            haptic();
+            setAsking(true);
+          }}
+          style={{ color: "var(--dh-muted)" }}
+        >
+          <IconCancel size={15} />
+          {renewal ? "Abo kündigen" : "Premium beenden"}
+        </button>
+      )}
+
+      {error && (
+        <div style={{ fontSize: 13, marginTop: 10, lineHeight: 1.5, color: "var(--dh-warn)" }}>
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AccountTab({ me, onChanged }: { me: Me | null; onChanged: () => void }) {
   const { data, error, loading } = useLoad<WaPayment[]>(() => webapp.payments(), []);
+  const [cancelled, setCancelled] = useState<WaCancel | null>(null);
 
   return (
     <Section title="Konto">
@@ -801,7 +912,7 @@ function AccountTab({ me }: { me: Me | null }) {
           <div className="dh-row" style={{ padding: "14px 14px 16px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div className="dh-label">Tarif</div>
-              <span className="dh-pill">{me.entitlements.tier}</span>
+              <span className="dh-pill">{me.entitlements.label}</span>
             </div>
             <div className="dh-figure-sm" style={{ marginTop: 6, fontSize: 22 }}>
               {me.entitlements.label}
@@ -823,6 +934,18 @@ function AccountTab({ me }: { me: Me | null }) {
               </div>
             )}
           </div>
+
+          {(me.can_cancel || cancelled) && (
+            <CancelPremium
+              kind={me.cancel_kind}
+              activeUntil={me.premium_until}
+              result={cancelled}
+              onDone={(res) => {
+                setCancelled(res);
+                onChanged(); // reloads /me — the lines above show the new state
+              }}
+            />
+          )}
         </div>
       )}
 
@@ -914,7 +1037,10 @@ function AccountTab({ me }: { me: Me | null }) {
 export function MiniApp() {
   const sdkReady = useTelegramSdk();
   const [tab, setTab] = useState<Tab>("deals");
-  const me = useLoad<Me>(() => webapp.me(), [sdkReady]);
+  // Bumped whenever an action changes the account (e.g. a cancellation), so the
+  // header pill and the Konto tab show the new state without a reload.
+  const [meVersion, setMeVersion] = useState(0);
+  const me = useLoad<Me>(() => webapp.me(), [sdkReady, meVersion]);
 
   return (
     <div className="dh-app" style={{ paddingBottom: 64 }}>
@@ -937,7 +1063,9 @@ export function MiniApp() {
         {tab === "deals" && <DealsTab />}
         {tab === "rules" && <RulesTab />}
         {tab === "flips" && <FlipsTab />}
-        {tab === "account" && <AccountTab me={me.data} />}
+        {tab === "account" && (
+          <AccountTab me={me.data} onChanged={() => setMeVersion((v) => v + 1)} />
+        )}
       </main>
 
       <nav className="dh-tabbar">
