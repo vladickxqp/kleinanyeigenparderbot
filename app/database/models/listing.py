@@ -64,6 +64,10 @@ class Listing(Base, PKMixin, TimestampMixin):
     seller_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     seller_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_auction: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: "VB" — the seller marked the price as negotiable.
+    is_negotiable: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
 
     # --- Deal analysis results ---------------------------------------------
     deal_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

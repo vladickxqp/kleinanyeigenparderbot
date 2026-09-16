@@ -81,6 +81,15 @@ class Settings(BaseSettings):
 
     # --- Monitoring ---------------------------------------------------------
     prometheus_enabled: bool = True
+    #: External dead-man's switch (e.g. healthchecks.io). The worker pings it
+    #: regularly; when the machine dies the ping stops and THAT service alerts.
+    healthcheck_ping_url: str = ""
+    #: Alert when no search was dispatched for this many seconds.
+    watchdog_max_dispatch_age: int = 600
+    #: Alert when the Celery queue holds more than this many tasks.
+    watchdog_max_queue_depth: int = 100
+    #: Alert when free disk space drops below this percentage.
+    watchdog_min_disk_free_percent: float = 10.0
 
     # --- Premium / tier limits (all configurable, never hardcode) -----------
     premium_enabled: bool = True

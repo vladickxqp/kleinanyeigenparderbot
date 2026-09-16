@@ -16,6 +16,7 @@ from urllib.parse import quote_plus, urljoin
 from bs4 import BeautifulSoup, Tag
 from loguru import logger
 
+from app.config.clock import local_now
 from app.database.models.enums import Condition, SiteName
 from app.parsers.base import BaseParser
 from app.parsers.registry import register_parser
@@ -205,9 +206,23 @@ class KleinanzeigenParser(BaseParser):
         return filtered
 
     # --- HTML extraction ----------------------------------------------------
+    #: Markup that only a real result page has. If none of it is present and
+    #: no cards were found, we were served something else (captcha, error,
+    #: layout change) — not an honest "nothing matched".
+    _RESULT_PAGE_MARKERS = (
+        "#srchrslt-adtable",
+        ".srp-pagination",
+        "#srchrslt-content",
+        ".messagebox--alert",   # site's own "keine Anzeigen gefunden" box
+    )
+
     def _parse_results(self, html: str, query: SearchQuery) -> list[ParsedListing]:
         soup = BeautifulSoup(html, "lxml")
         cards = soup.select("article.aditem")
+        if not cards and not any(
+            soup.select_one(marker) for marker in self._RESULT_PAGE_MARKERS
+        ):
+            self.mark_suspected_block()
         results: list[ParsedListing] = []
         for card in cards:
             try:
@@ -280,6 +295,9 @@ class KleinanzeigenParser(BaseParser):
         # --- Auction / negotiable detection from price text ---
         raw_price_text = price_el.get_text(strip=True).lower() if price_el else ""
         is_auction = "gebot" in raw_price_text  # "X € VB" is not an auction
+        # "VB" = Verhandlungsbasis: the asking price is soft, which is exactly
+        # what a flipper wants to know before writing to the seller.
+        is_negotiable = "vb" in raw_price_text.split() or raw_price_text.endswith("vb")
 
         return ParsedListing(
             site=self.site,
@@ -294,6 +312,7 @@ class KleinanzeigenParser(BaseParser):
             location=location,
             condition=Condition.ANY,
             is_auction=is_auction,
+            is_negotiable=is_negotiable,
             posted_at=posted_at,
             mileage_km=mileage_km,
             registration_year=registration_year,
@@ -335,7 +354,8 @@ class KleinanzeigenParser(BaseParser):
         if not text:
             return None
         text = text.strip()
-        now = datetime.now()
+        # "Heute" means today in Germany, not in the container's timezone.
+        now = local_now()
         try:
             lower = text.lower()
             time_match = re.search(r"(\d{1,2}):(\d{2})", text)

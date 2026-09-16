@@ -80,6 +80,8 @@ class ParsedListing(BaseModel):
     seller_name: str | None = None
     seller_rating: float | None = None
     is_auction: bool = False
+    #: Asking price marked "VB" (Verhandlungsbasis) — negotiable.
+    is_negotiable: bool = False
     #: When the ad was posted on the marketplace (None = unknown / promoted ad).
     posted_at: datetime | None = None
     #: Vehicle attributes (cars/motorbikes) — None for non-vehicle listings.
@@ -98,10 +100,24 @@ class ParsedListing(BaseModel):
 
     @property
     def fingerprint(self) -> str:
-        """Stable dedup hash: site + normalised title + rounded price.
+        """Identity hash: site + ad id.
 
-        Rounded price makes minor re-listing price jitter still collide, while
-        genuinely different offers get distinct fingerprints.
+        The ad id is what actually identifies an offer. Hashing only title and
+        price made two different sellers collide whenever a common title met a
+        common price ("PS5 Controller" at 25 €) — the second ad then counted as
+        "already known" and was silently dropped, which is the worst possible
+        outcome for a deal hunter. Reposts are still caught, by
+        :attr:`repost_fingerprint`.
+        """
+        raw = f"{self.site.value}|{self.external_id}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
+    @property
+    def repost_fingerprint(self) -> str:
+        """Soft hash: site + normalised title + rounded price.
+
+        Same offer, new ad id — the classic Kleinanzeigen repost. Used as a
+        secondary signal, never as identity.
         """
         norm_title = re.sub(r"[^a-z0-9]+", "", self.title.lower())
         price_bucket = int(self.price) if self.price is not None else -1

@@ -132,6 +132,16 @@ async def record_card_sent() -> None:
         logger.debug("health.record_card_sent failed: {}", exc)
 
 
+async def queue_depth(queue: str = "celery") -> int | None:
+    """How many tasks are waiting in the Celery queue (None if unknown)."""
+    try:
+        async with _redis() as r:
+            return int(await r.llen(queue))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("health.queue_depth failed: {}", exc)
+        return None
+
+
 @dataclass(slots=True)
 class StatusSnapshot:
     """Current operational status, for /status and the heartbeat."""

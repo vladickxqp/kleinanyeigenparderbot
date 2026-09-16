@@ -34,6 +34,17 @@ FIRST_RUN_MAX_NOTIFICATIONS = 5
 MARKET_WINDOW_DAYS = 30
 #: Minimum absolute price decrease (EUR) that counts as a price drop.
 PRICE_DROP_MIN_DELTA = 1.0
+#: ...and at least this share of the price, so a 1 € dip on a 30.000 € car
+#: does not re-notify while a real cut on a cheap item still does.
+PRICE_DROP_MIN_PERCENT = 1.0
+#: Below this many stored prices a rule is treated as "cold" and an item is
+#: not compared against a sample that contains itself.
+MIN_STORED_FOR_SELF_COMPARISON = 10
+
+
+def price_drop_threshold(previous_price: float) -> float:
+    """How much a price must fall before the user is told again."""
+    return max(PRICE_DROP_MIN_DELTA, previous_price * PRICE_DROP_MIN_PERCENT / 100.0)
 
 
 class SearchService:
@@ -61,9 +72,18 @@ class SearchService:
         known = await self.listings.existing_fingerprints(rule.id)
         first_run = not known
 
+        # Market context: 30 days of stored prices plus the current batch —
+        # far more stable than the current batch alone. Computed before the
+        # price-drop pass so a dropped listing can be re-scored right away.
+        stored_prices = await self.listings.recent_prices(
+            rule.id, days=MARKET_WINDOW_DAYS
+        )
+        batch_prices = [p.price for p in parsed if p.price is not None]
+        stats = compute_price_stats(stored_prices + batch_prices)
+
         # Price drops on listings we already know (matched by external id):
         # update the stored row, record a history point and re-notify.
-        drops, seen_external = await self._detect_price_drops(rule, parsed)
+        drops, seen_external = await self._detect_price_drops(rule, parsed, stats)
 
         # Only genuinely unseen ads may become new rows. A price change alters
         # the fingerprint, so the external-id check prevents duplicate rows.
@@ -75,27 +95,27 @@ class SearchService:
             logger.debug("Rule {}: no new listings after dedup", rule.id)
             return []
 
-        # Market context: 30 days of stored prices plus the current batch —
-        # far more stable than the current batch alone.
-        stored_prices = await self.listings.recent_prices(
-            rule.id, days=MARKET_WINDOW_DAYS
-        )
-        sample_prices = stored_prices + [
-            p.price for p in parsed if p.price is not None
-        ]
-        stats = compute_price_stats(sample_prices)
-
         # For vehicle searches, compare each car only against comparable cars
         # (similar mileage + year), so the score means "cheap for a car
         # like THIS one" instead of "cheap vs. all listings".
         vehicles = is_vehicle_batch(parsed)
 
+        # On a cold rule the batch IS the market. Comparing an item against a
+        # sample that contains itself pulls the median towards its own price,
+        # so a genuine bargain could never score as one on first sighting.
+        exclude_self = len(stored_prices) < MIN_STORED_FOR_SELF_COMPARISON
+
         new_rows: list[Listing] = []
         pairs: list[tuple[ParsedListing, Listing]] = []
         for item in fresh:
-            item_stats = (
-                similar_market_stats(item, parsed, stats) if vehicles else stats
-            )
+            if vehicles:
+                item_stats = similar_market_stats(item, parsed, stats)
+            elif exclude_self and item.price is not None and len(batch_prices) > 2:
+                peers = list(batch_prices)
+                peers.remove(item.price)
+                item_stats = compute_price_stats(stored_prices + peers)
+            else:
+                item_stats = stats
             row = self._to_row(rule.id, item, item_stats)
             new_rows.append(row)
             pairs.append((item, row))
@@ -177,7 +197,10 @@ class SearchService:
         return result
 
     async def _detect_price_drops(
-        self, rule: SearchRule, parsed: list[ParsedListing]
+        self,
+        rule: SearchRule,
+        parsed: list[ParsedListing],
+        stats: PriceStats | None = None,
     ) -> tuple[list[Listing], set[tuple[object, str]]]:
         """Compare current prices of known ads against the stored rows.
 
@@ -203,11 +226,18 @@ class SearchService:
             item = by_ext.get(key)
             if item is None or item.price is None:
                 continue
-            if row.price is not None and item.price < row.price - PRICE_DROP_MIN_DELTA:
+            threshold = (
+                price_drop_threshold(row.price) if row.price is not None else 0.0
+            )
+            if row.price is not None and item.price < row.price - threshold:
                 # Keep the pre-drop price for the "reduced from X" card line.
                 row.original_price = row.price
                 row.price = item.price
                 row.notified = False
+                # The score was computed for the OLD price. Without this the
+                # card shows "price drop" next to a stale "overpriced" badge.
+                if stats is not None:
+                    self._rescore(row, item, stats)
                 self.session.add(
                     PriceHistory(
                         listing_id=row.id, price=item.price, currency=row.currency
@@ -218,7 +248,7 @@ class SearchService:
                     "Rule {}: price drop '{}' {} -> {}",
                     rule.id, row.title[:40], row.original_price, row.price,
                 )
-            elif row.price is None or item.price > row.price + PRICE_DROP_MIN_DELTA:
+            elif row.price is None or item.price > row.price + threshold:
                 # Price increases (or first-seen prices) update the stored row
                 # and the history quietly — no notification, but the data stays
                 # honest for market statistics and the price chart.
@@ -286,6 +316,15 @@ class SearchService:
                 result.verdict.value,
             )
 
+    @staticmethod
+    def _rescore(row: Listing, item: ParsedListing, stats: PriceStats) -> None:
+        """Refresh a stored row's verdict after its price changed."""
+        deal = score_listing(item, stats)
+        row.deal_score = deal.score
+        row.deal_verdict = deal.verdict
+        row.estimated_market_price = deal.estimated_market_price
+        row.discount_percent = deal.discount_percent
+
     def _to_row(self, rule_id: int, item: ParsedListing, stats: PriceStats) -> Listing:
         deal = score_listing(item, stats)
         return Listing(
@@ -306,6 +345,7 @@ class SearchService:
             seller_name=_clip(item.seller_name, 128),
             seller_rating=item.seller_rating,
             is_auction=item.is_auction,
+            is_negotiable=item.is_negotiable,
             deal_score=deal.score,
             deal_verdict=deal.verdict,
             estimated_market_price=deal.estimated_market_price,

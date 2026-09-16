@@ -26,6 +26,17 @@ celery_app.conf.update(
     task_time_limit=180,
     task_soft_time_limit=150,
     result_expires=3600,
+    # Redis' default visibility timeout is one hour: a task killed by a
+    # redeploy would stay invisible that long before another worker retried
+    # it, so the pipeline appeared dead right after every restart.
+    broker_transport_options={"visibility_timeout": 300},
+    # A broadcast may legitimately run far longer than a scrape.
+    task_annotations={
+        "app.worker.tasks.send_broadcast": {
+            "time_limit": 3600,
+            "soft_time_limit": 3300,
+        },
+    },
 )
 
 # Beat schedule: a lightweight dispatcher decides which rules are due.
@@ -48,7 +59,17 @@ celery_app.conf.beat_schedule = {
     },
     "check-expired-subscriptions": {
         "task": "app.worker.tasks.check_expired_subscriptions",
-        "schedule": crontab(hour=3, minute=15),  # nightly downgrade sweep
+        # Every 30 min instead of nightly: a lapsed subscription otherwise kept
+        # full access for up to a day, and a skipped crontab run for two.
+        "schedule": 1800.0,
+    },
+    "watchdog": {
+        "task": "app.worker.tasks.watchdog",
+        "schedule": 60.0,  # notice a stalled pipeline within minutes
+    },
+    "flush-unnotified": {
+        "task": "app.worker.tasks.flush_unnotified",
+        "schedule": 300.0,  # rescue listings whose delivery was interrupted
     },
     "dispatch-broadcasts": {
         "task": "app.worker.tasks.dispatch_broadcasts",

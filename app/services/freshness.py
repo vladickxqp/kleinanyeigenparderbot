@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from app.config.clock import local_now
 from app.database.models.enums import SiteName
 from app.parsers.schemas import ParsedListing
 
@@ -38,8 +39,16 @@ def is_fresh_enough(
     if item.posted_at is None:
         # Undated card on a date-aware site = promoted TOP ad = old inventory.
         return False
-    now = now or datetime.now()
-    age = now - item.posted_at
+    # Parsers build posted_at from marketplace-local wall time, so "now" has to
+    # be read in the configured timezone too. A UTC container would otherwise
+    # shift every age by an hour or two and push ads across the cutoffs.
+    now = now or local_now()
+    posted_at = item.posted_at
+    if (now.tzinfo is None) != (posted_at.tzinfo is None):
+        # Never compare naive and aware timestamps; normalise to naive local.
+        now = now.replace(tzinfo=None) if now.tzinfo else now
+        posted_at = posted_at.replace(tzinfo=None) if posted_at.tzinfo else posted_at
+    age = now - posted_at
     if age <= timedelta(hours=FRESH_HOURS):
         return True
     if age <= timedelta(days=MAX_AGE_DAYS):

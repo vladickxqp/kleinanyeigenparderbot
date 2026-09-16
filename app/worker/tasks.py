@@ -64,27 +64,53 @@ def dispatch_due_searches() -> int:
 #: Hard floor for per-rule intervals: legacy rules may still carry 10s/30s
 #: values; sub-minute polling only gets the IP blocked by the marketplaces.
 MIN_INTERVAL_SECONDS = 60
+#: Most rules started per tick. After the machine was offline for hours every
+#: rule is overdue at once; without a cap the first tick would fire all of them
+#: and hammer the marketplaces into a block.
+MAX_DISPATCH_PER_TICK = 25
 
 
 async def _dispatch_due_searches() -> int:
+    import random
+
     from app.services import health
 
     now = time.time()
     dispatched = 0
     async with session_scope() as session:
         rules = await SearchRuleRepository(session).list_active()
+        # Oldest due first, so a capped tick never starves the same rules.
+        due: list[tuple[float, object]] = []
         for rule in rules:
-            key = _next_run_key(rule.id)
-            next_run = _redis.get(key)
-            if next_run is not None and float(next_run) > now:
+            raw = _redis.get(_next_run_key(rule.id))
+            next_run = float(raw) if raw is not None else 0.0
+            if next_run > now:
                 continue
-            interval = max(rule.interval_seconds, MIN_INTERVAL_SECONDS)
-            _redis.set(key, now + interval)
+            due.append((next_run, rule))
+        due.sort(key=lambda pair: pair[0])
+
+        owners: dict[int, User] = {}
+        for _, rule in due[:MAX_DISPATCH_PER_TICK]:
+            owner = owners.get(rule.user_id)
+            if owner is None:
+                owner = await session.get(User, rule.user_id)
+                if owner is not None:
+                    owners[rule.user_id] = owner
+            # The rule's stored interval is only a wish: the tier decides.
+            floor = MIN_INTERVAL_SECONDS
+            if owner is not None:
+                floor = max(floor, owner.min_interval_seconds)
+            interval = max(rule.interval_seconds, floor)
+            # Jitter keeps many rules of the same interval from lining up.
+            _redis.set(_next_run_key(rule.id), now + interval + random.uniform(0, 5))
             run_search_rule.delay(rule.id)
             dispatched += 1
+
     await health.mark_dispatch()
     if dispatched:
-        logger.info("Dispatched {} due search rule(s)", dispatched)
+        logger.info(
+            "Dispatched {}/{} due search rule(s)", dispatched, len(due)
+        )
     return dispatched
 
 
@@ -104,25 +130,34 @@ def run_search_rule(self, rule_id: int) -> dict:  # noqa: ANN001
 
 
 async def _run_search_rule(rule_id: int) -> dict:
+    from app.services.throttle import rule_lock
+
     notable_ids: list[int] = []
     telegram_id: int | None = None
     lang = "de"
 
-    async with session_scope() as session:
-        repo = SearchRuleRepository(session)
-        rule = await repo.get(rule_id)
-        if rule is None or not rule.is_active:
-            return {"rule_id": rule_id, "skipped": True}
+    # A slow run must not be started again by the next dispatcher tick: two
+    # concurrent runs read the same "already known" set and insert duplicates.
+    async with rule_lock(rule_id) as acquired:
+        if not acquired:
+            logger.info("Rule {} is already running — skipping this tick", rule_id)
+            return {"rule_id": rule_id, "skipped": "running"}
 
-        service = SearchService(session)
-        notable = await service.run_rule(rule)
-        notable_ids = [row.id for row in notable]
+        async with session_scope() as session:
+            repo = SearchRuleRepository(session)
+            rule = await repo.get_unscoped(rule_id)
+            if rule is None or not rule.is_active:
+                return {"rule_id": rule_id, "skipped": True}
 
-        # Grab the owner's telegram id + language for notification.
-        owner = await session.get(User, rule.user_id)
-        if owner is not None:
-            telegram_id = owner.telegram_id
-            lang = owner.language_code
+            service = SearchService(session)
+            notable = await service.run_rule(rule)
+            notable_ids = [row.id for row in notable]
+
+            # Grab the owner's telegram id + language for notification.
+            owner = await session.get(User, rule.user_id)
+            if owner is not None:
+                telegram_id = owner.telegram_id
+                lang = owner.language_code
 
     from app.services import health
 
@@ -339,6 +374,132 @@ async def _check_expired_subscriptions() -> int:
     finally:
         await bot.session.close()
     return len(downgraded)
+
+
+# --- Watchdog ------------------------------------------------------------------
+@celery_app.task(name="app.worker.tasks.watchdog")
+def watchdog() -> dict:
+    """Notice a stalled pipeline in minutes instead of hours.
+
+    Everything else in this system reports from the same machine that can fail,
+    so silence looks exactly like "nothing to report". This task therefore does
+    two things: it alerts the admins about problems it CAN see from inside, and
+    it pings an external dead-man's switch. When the laptop, Docker or Postgres
+    dies, that ping stops and the external service raises the alarm.
+    """
+    return _run_async(_watchdog())
+
+
+async def _watchdog() -> dict:
+    import shutil
+
+    from app.services import health
+
+    findings: list[str] = []
+    status = await health.get_status()
+
+    max_age = getattr(settings, "watchdog_max_dispatch_age", 600)
+    if status.last_dispatch_age is not None and status.last_dispatch_age > max_age:
+        findings.append(
+            f"⚠️ Keine Suche seit {int(status.last_dispatch_age / 60)} Minuten — "
+            "Worker oder Beat steht."
+        )
+
+    depth = await health.queue_depth()
+    max_depth = getattr(settings, "watchdog_max_queue_depth", 100)
+    if depth is not None and depth > max_depth:
+        findings.append(
+            f"⚠️ Warteschlange staut sich: {depth} Aufgaben offen — "
+            "Worker kommt nicht hinterher."
+        )
+
+    try:
+        usage = shutil.disk_usage("/")
+        free_percent = usage.free / usage.total * 100
+        min_free = getattr(settings, "watchdog_min_disk_free_percent", 10)
+        if free_percent < min_free:
+            findings.append(
+                f"⚠️ Nur noch {free_percent:.1f}% Speicherplatz frei — "
+                "Postgres stirbt bei voller Platte."
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("watchdog disk check failed: {}", exc)
+
+    for index, message in enumerate(findings):
+        await health.report(f"watchdog:{index}:{message[:40]}", message, dedup_ttl=3600)
+
+    # Dead-man's switch: silence is what the external monitor reacts to.
+    ping_url = getattr(settings, "healthcheck_ping_url", "")
+    pinged = False
+    if ping_url and not findings:
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.get(ping_url)
+            pinged = True
+        except Exception as exc:  # noqa: BLE001 - a failed ping is itself the signal
+            logger.warning("Healthcheck ping failed: {}", exc)
+
+    return {"findings": len(findings), "queue": depth, "pinged": pinged}
+
+
+# --- Rescue sweep ---------------------------------------------------------------
+@celery_app.task(name="app.worker.tasks.flush_unnotified")
+def flush_unnotified() -> int:
+    """Re-deliver listings that were stored but never sent.
+
+    New rows are committed first and the delivery task is enqueued afterwards.
+    If the worker dies in between, those listings would count as "already
+    known" on the next run and could never reach the user. This sweep picks
+    them up again.
+    """
+    return _run_async(_flush_unnotified())
+
+
+#: Only rescue rows old enough that their normal delivery must have happened.
+UNNOTIFIED_MIN_AGE_SECONDS = 600
+UNNOTIFIED_MAX_PER_USER = 10
+
+
+async def _flush_unnotified() -> int:
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.database.models import Listing, SearchRule
+
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=UNNOTIFIED_MIN_AGE_SECONDS)
+    rescued = 0
+    async with session_scope() as session:
+        result = await session.execute(
+            select(Listing, SearchRule.user_id)
+            .join(SearchRule, SearchRule.id == Listing.rule_id)
+            .where(
+                Listing.notified.is_(False),
+                Listing.is_ignored.is_(False),
+                Listing.created_at < cutoff,
+                Listing.deal_score >= SearchRule.min_deal_score,
+                SearchRule.is_active.is_(True),
+            )
+            .order_by(Listing.deal_score.desc())
+            .limit(200)
+        )
+        by_user: dict[int, list[int]] = {}
+        for listing, user_id in result.all():
+            by_user.setdefault(user_id, []).append(listing.id)
+
+        for user_id, listing_ids in by_user.items():
+            owner = await session.get(User, user_id)
+            if owner is None:
+                continue
+            batch = listing_ids[:UNNOTIFIED_MAX_PER_USER]
+            deliver_notifications.delay(owner.telegram_id, batch, owner.language_code)
+            rescued += len(batch)
+
+    if rescued:
+        logger.info("Rescued {} undelivered listing(s)", rescued)
+    return rescued
 
 
 # --- Broadcasts -------------------------------------------------------------------

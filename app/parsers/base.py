@@ -18,7 +18,7 @@ import httpx
 from loguru import logger
 from tenacity import (
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -51,6 +51,8 @@ class BaseParser(ABC):
             raise TypeError(f"{type(self).__name__} must set a `site` attribute")
         self.label = self.label or self.site.value.title()
         self._last_request_ts: float = 0.0
+        #: Set by a parser when a response looked like a block page.
+        self._suspect_block: bool = False
         # Parser instances are process-wide singletons, but the Celery worker
         # runs every task in a fresh event loop. An asyncio.Lock binds to the
         # loop it is first awaited in and raises "bound to a different event
@@ -77,12 +79,24 @@ class BaseParser(ABC):
 
     async def collect(self, query: SearchQuery) -> list[ParsedListing]:
         """Wrapper around :meth:`search` with logging and error isolation."""
+        self._suspect_block = False
         try:
             results = await self.search(query)
         except Exception as exc:  # noqa: BLE001 - one bad site must not kill the run
             logger.exception("[{}] search failed: {}", self.site.value, exc)
             await self._report_health(ok=False)
             return []
+
+        # An empty result is ambiguous: either nothing matched, or the site
+        # served a captcha/interstitial with HTTP 200. Treating the second case
+        # as success resets the failure counter, so a permanent soft block
+        # would produce "zero deals forever" with no alert anywhere.
+        if not results and self._suspect_block:
+            logger.warning("[{}] looks blocked (no results, no result markup)",
+                           self.site.value)
+            await self._report_health(ok=False)
+            return []
+
         logger.info(
             "[{}] found {} listing(s) for {!r}",
             self.site.value,
@@ -91,6 +105,10 @@ class BaseParser(ABC):
         )
         await self._report_health(ok=True)
         return results
+
+    def mark_suspected_block(self) -> None:
+        """Called by a parser when a page carries no result markup at all."""
+        self._suspect_block = True
 
     async def _report_health(self, *, ok: bool) -> None:
         """Feed the admin-alerting failure counter (never raises)."""
@@ -125,21 +143,40 @@ class BaseParser(ABC):
     async def _throttle(self) -> None:
         """Enforce a polite minimum delay between requests to this site.
 
-        Uses ``time.monotonic()`` (process-wide) instead of ``loop.time()``:
-        the worker spawns a new event loop per task, and per-loop clocks have
-        unrelated epochs, which would corrupt the elapsed-time math.
+        The delay is coordinated through Redis, because the worker runs several
+        processes: a purely in-process timer let four workers hit the same site
+        at four times the configured rate. The local timer stays as a fallback
+        for when Redis is unreachable.
         """
+        from app.services.throttle import site_slot_wait
+
         async with self._throttle_lock():
-            elapsed = time.monotonic() - self._last_request_ts
-            wait = settings.scraper_min_delay_seconds - elapsed
+            wait = await site_slot_wait(
+                self.site.value, settings.scraper_min_delay_seconds
+            )
+            if wait <= 0:
+                elapsed = time.monotonic() - self._last_request_ts
+                wait = settings.scraper_min_delay_seconds - elapsed
             if wait > 0:
                 await asyncio.sleep(wait + random.uniform(0, 0.5))
             self._last_request_ts = time.monotonic()
 
+    @staticmethod
+    def _is_retryable(exc: BaseException) -> bool:
+        """Retry transport hiccups and 5xx, never a deliberate refusal.
+
+        Retrying a 403 three times from the same IP does not help — the site
+        meant it — and only deepens the block.
+        """
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = exc.response.status_code
+            return status == 429 or status >= 500
+        return isinstance(exc, httpx.TransportError)
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=15),
-        retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)),
+        retry=retry_if_exception(lambda exc: BaseParser._is_retryable(exc)),
         reraise=True,
     )
     async def fetch(self, url: str, params: dict | None = None) -> httpx.Response:
@@ -153,6 +190,13 @@ class BaseParser(ABC):
             proxy=proxy,
         ) as client:
             resp = await client.get(url, params=params)
+            if resp.status_code in (403, 429) or resp.status_code == 503:
+                # A refusal is a block signal, not a parsing problem.
+                self.mark_suspected_block()
+                logger.warning(
+                    "[{}] HTTP {} — treating as block signal",
+                    self.site.value, resp.status_code,
+                )
             resp.raise_for_status()
             return resp
 

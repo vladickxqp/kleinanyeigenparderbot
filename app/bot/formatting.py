@@ -41,6 +41,8 @@ def format_deal_card(listing: Listing) -> str:
     ]
 
     price_line = f"💶 <b>{_money(listing.price, listing.currency)}</b>"
+    if getattr(listing, "is_negotiable", False):
+        price_line += "  <i>VB</i>"
     if listing.shipping_cost:
         price_line += f"  (+ {_money(listing.shipping_cost, listing.currency)} Versand)"
     elif listing.shipping_cost == 0:

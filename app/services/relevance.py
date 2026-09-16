@@ -52,7 +52,11 @@ def is_relevant(query: SearchQuery, item: ParsedListing) -> bool:
     # 3) Accessory noise: filter titles dominated by accessory words, unless
     #    the user explicitly searches for accessories.
     for word in _active_accessory_words(query):
-        if re.search(rf"(?<![a-zä]){re.escape(word)}", title):
+        # Both boundaries matter: without the right one "kabel" also matches
+        # inside "kabellose", and every wireless mouse was thrown away as a
+        # cable accessory. German compounds are still caught because the
+        # accessory word then ends the token ("ladekabel", "handyhuelle").
+        if re.search(rf"(?<![a-zäöüß]){re.escape(word)}(?![a-zäöüß])", title):
             return False
 
     # 4) User-defined exclude words (also enforced in parsers; kept here so the
