@@ -44,10 +44,17 @@ SENT_GUARD_TTL_SECONDS = 14 * 86400
 CAP_TEASER_COOLDOWN_SECONDS = 86400
 #: Ad titles are scraped text; keep the teaser readable on a phone.
 TEASER_TITLE_CHARS = 80
+#: Rows scanned when picking the day's best withheld find. The count beside it
+#: is an exact COUNT(*); this bound only keeps a pathological day (thousands of
+#: matches) from loading the whole table to name one title.
+TEASER_CANDIDATE_ROWS = 200
 #: Width of ``notifications.title``.
 AUDIT_TITLE_CHARS = 256
 #: Upper bound for the error text stored on a failed delivery.
 ERROR_TEXT_CHARS = 500
+#: Audit reason for a delivery the duplicate guard swallowed. Stored in
+#: ``notifications.error`` so "sent 3" and three rows in the log agree.
+DUPLICATE_REASON = "duplicate: already delivered to this chat"
 
 
 async def notify_user_about_listings(
@@ -82,19 +89,29 @@ async def notify_user_about_listings(
                     continue
 
                 if await _duplicate_send(user_telegram_id, listing):
-                    # Nothing left to deliver, but the row must never come back
-                    # through the rescue sweep.
+                    # Invariant chosen here: ``sent`` counts cards that really
+                    # went out, and every listing that reached the delivery step
+                    # leaves exactly one audit row. A suppressed duplicate is
+                    # therefore recorded as not-sent with a reason rather than
+                    # counted as a delivery nobody can find in the log. Nothing
+                    # left to deliver, but the row must never come back through
+                    # the rescue sweep.
                     listing.notified = True
-                    sent += 1
+                    if user is not None:
+                        _record_attempt(session, user, listing, DUPLICATE_REASON)
                     continue
 
-                if user is not None and not await _claim_card_slot(user):
-                    listing.withheld = True
-                    # flush_unnotified() hunts for notified=False, so a capped
-                    # card would otherwise be re-queued for the rest of its life.
-                    listing.notified = True
-                    withheld.append(listing)
-                    continue
+                booked: quota.QuotaState | None = None
+                if user is not None:
+                    booked = await _claim_card_slot(user)
+                    if booked is None:
+                        listing.withheld = True
+                        # flush_unnotified() hunts for notified=False, so a
+                        # capped card would otherwise be re-queued for the rest
+                        # of its life.
+                        listing.notified = True
+                        withheld.append(listing)
+                        continue
 
                 error = await _deliver(bot, user_telegram_id, listing, lang)
                 if error is None:
@@ -108,8 +125,12 @@ async def notify_user_about_listings(
                     # The guard was claimed before the attempt; give it back so
                     # the rescue sweep can really retry this card.
                     await _release_send_guard(user_telegram_id, listing)
-                    if user is not None:
-                        await quota.release(quota.KIND_CARDS, user)
+                    if user is not None and booked is not None:
+                        # Refund the window the unit was actually booked in —
+                        # a batch that starts at 23:59 finishes after midnight.
+                        await quota.release(
+                            quota.KIND_CARDS, user, stamp=booked.stamp
+                        )
                 if user is not None:
                     _record_attempt(session, user, listing, error)
 
@@ -136,11 +157,24 @@ async def send_listing_card(
     Used by the in-chat "run now" action. Passing ``user`` routes the card
     through the same daily quota and audit trail as the Celery path — without
     it the button would be a way around the cap.
+
+    The return value means "this row is settled, do not retry it", which a
+    suppressed duplicate also is; the audit row carries what actually happened.
     """
-    if user is not None and not await _claim_card_slot(user):
-        return False
+    booked: quota.QuotaState | None = None
+    if user is not None:
+        booked = await _claim_card_slot(user)
+        if booked is None:
+            return False
 
     if await _duplicate_send(chat_id, listing):
+        # Same invariant as the Celery path: nothing went out, so the audit row
+        # says so — and the unit booked a moment ago goes straight back, since
+        # here the quota is claimed before the guard is asked.
+        if user is not None and booked is not None:
+            await quota.release(quota.KIND_CARDS, user, stamp=booked.stamp)
+        if user is not None and session is not None:
+            _record_attempt(session, user, listing, DUPLICATE_REASON)
         return True
 
     error = await _deliver(bot, chat_id, listing, lang)
@@ -149,28 +183,36 @@ async def send_listing_card(
         listing.withheld = False
     else:
         await _release_send_guard(chat_id, listing)
-        if user is not None:
-            await quota.release(quota.KIND_CARDS, user)
+        if user is not None and booked is not None:
+            await quota.release(quota.KIND_CARDS, user, stamp=booked.stamp)
     if user is not None and session is not None:
         _record_attempt(session, user, listing, error)
     return error is None
 
 
 # --- Quota ----------------------------------------------------------------------------
-async def _claim_card_slot(user: User) -> bool:
-    """Book one unit of the daily card quota. False = the cap is reached.
+async def _claim_card_slot(user: User) -> quota.QuotaState | None:
+    """Book one unit of the daily card quota. None = the cap is reached.
 
     ``consume`` refuses without booking once the cap is reached, and otherwise
     returns the state AFTER booking — so a refusal is recognised by the counter
     not having moved. Reading the decision off ``consume`` alone (rather than a
     check-then-consume pair) is what keeps two parallel workers from handing out
     the same last unit twice.
+
+    The booked state is returned rather than a bool because a refund has to name
+    the window it was booked in.
     """
     before = await quota.check(quota.KIND_CARDS, user)
-    if before.exhausted:
-        return False
+    if before.metered and before.exhausted:
+        return None
     after = await quota.consume(quota.KIND_CARDS, user)
-    return after.unlimited or after.used > before.used
+    if not after.metered:
+        # Redis is down, so nothing was counted and "the counter did not move"
+        # no longer means "refused". Deliver: a metering outage must never turn
+        # the bot silent, which is exactly what withholding every card would do.
+        return after
+    return after if after.unlimited or after.used > before.used else None
 
 
 async def _user_by_telegram_id(session: AsyncSession, telegram_id: int) -> User | None:
@@ -185,34 +227,142 @@ def _estimated_profit(listing: Listing) -> float | None:
     return estimated_net_profit(listing.price, listing.estimated_market_price)
 
 
-async def _withheld_today(session: AsyncSession, user_id: int) -> int:
-    """How many of today's finds the cap held back — the figure the teaser names."""
+def _best_find(rows: list[Listing]) -> Listing | None:
+    """The find worth naming: highest expected profit, deal score breaks ties."""
+    return max(
+        rows,
+        key=lambda item: (_estimated_profit(item) or 0.0, item.deal_score),
+        default=None,
+    )
+
+
+async def _withheld_today(
+    session: AsyncSession, user_id: int
+) -> tuple[int, Listing | None]:
+    """The day's real figures: how much the cap swallowed, and the best of it.
+
+    Both come from the whole day rather than from the batch in hand, because
+    the teaser fires on the FIRST card over the limit — reporting that batch
+    would tell the user "1 weiterer Treffer" while dozens more are withheld in
+    silence for the next 23 hours.
+    """
     midnight = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
     # The rows were marked in this transaction; autoflush is off on this session.
     await session.flush()
+    scope = (
+        SearchRule.user_id == user_id,
+        Listing.withheld.is_(True),
+        Listing.created_at >= midnight,
+    )
     total = await session.scalar(
         select(func.count(Listing.id))
         .join(SearchRule, SearchRule.id == Listing.rule_id)
-        .where(
-            SearchRule.user_id == user_id,
-            Listing.withheld.is_(True),
-            Listing.created_at >= midnight,
-        )
+        .where(*scope)
     )
-    return int(total or 0)
+    rows = (
+        (
+            await session.execute(
+                select(Listing)
+                .join(SearchRule, SearchRule.id == Listing.rule_id)
+                .where(*scope)
+                .order_by(Listing.deal_score.desc(), Listing.id.desc())
+                .limit(TEASER_CANDIDATE_ROWS)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return int(total or 0), _best_find(list(rows))
+
+
+def _cap_teaser_text(
+    user: User, total: int, best: Listing | None, lang: str
+) -> str:
+    """The teaser body for the day's current figures (HTML)."""
+    noun = "weiterer Treffer" if total == 1 else "weitere Treffer"
+    headline = f"🔒 Tageslimit erreicht — {total} {noun} heute"
+    if best is not None:
+        # Scraped text goes into an HTML message: escape, then clip.
+        detail = f"bester: <b>{escape(best.title[:TEASER_TITLE_CHARS])}</b>"
+        profit = _estimated_profit(best)
+        if profit is not None and profit > 0:
+            detail += f", ca. +{money(profit)} netto"
+        elif best.price is not None:
+            detail += f", {money(best.price)}"
+        headline += f", {detail}"
+    lines = [f"{headline}."]
+    hint = quota.upgrade_hint(quota.KIND_CARDS, user, lang)
+    if hint:
+        lines.append(f"Mehr Karten pro Tag: {hint}")
+    return "\n".join(lines)
+
+
+def _teaser_message_key(telegram_id: int) -> str:
+    return f"captease:msg:{telegram_id}"
+
+
+async def _teaser_message_id(telegram_id: int) -> int | None:
+    """Id of today's teaser, if one is already sitting in the user's chat."""
+    try:
+        from app.services.health import _redis  # lazy: avoid import cycles
+
+        async with _redis() as r:
+            raw = await r.get(_teaser_message_key(telegram_id))
+        return int(raw) if raw else None
+    except Exception as exc:  # noqa: BLE001 - no id simply means "nothing to edit"
+        logger.debug("Cap teaser id lookup for {} failed: {}", telegram_id, exc)
+        return None
+
+
+async def _remember_teaser_message(telegram_id: int, message_id: int) -> None:
+    """Remember the teaser for the rest of the day so it can be kept current."""
+    try:
+        from app.services.health import _redis  # lazy: avoid import cycles
+
+        async with _redis() as r:
+            await r.set(
+                _teaser_message_key(telegram_id),
+                str(message_id),
+                ex=CAP_TEASER_COOLDOWN_SECONDS,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Cap teaser id store for {} failed: {}", telegram_id, exc)
 
 
 async def _send_cap_teaser(
     bot: Bot, session: AsyncSession, user: User, withheld: list[Listing], lang: str
 ) -> None:
-    """Name the best find the cap swallowed, once a day.
+    """Tell the user what the cap costs them today, and keep that number true.
 
     A user who receives nothing assumes the bot is broken and churns; a user who
     learns that the best withheld find was worth +85 € has a reason to upgrade.
+    But the message fires on the first card over the limit, so its figures age
+    out within minutes.
+
+    Of the two workable shapes — edit the one message, or post a summary at a
+    fixed hour — this edits. It needs no scheduler and no second delivery path
+    (the numbers are already in hand at every overflow), it is right the moment
+    it changes instead of hours later, and Telegram does not re-notify on an
+    edit: the user is still alerted exactly once a day, in the place where they
+    already read the bad news. A fixed evening slot would also strand the user
+    who checks their phone at noon with no explanation for the silence.
     """
     if not settings.notification_cap_teaser_enabled:
+        return
+
+    total, best = await _withheld_today(session, user.id)
+    # The query is the source of truth for the day, but it must never understate
+    # the batch in hand (e.g. rows created before midnight, capped only now).
+    total = max(total, len(withheld))
+    if best is None:
+        best = _best_find(withheld)
+    text = _cap_teaser_text(user, total, best, lang)
+
+    message_id = await _teaser_message_id(user.telegram_id)
+    if message_id is not None:
+        await _edit_cap_teaser(bot, user.telegram_id, message_id, text)
         return
 
     from app.services import throttle  # lazy: avoid import cycles
@@ -220,30 +370,40 @@ async def _send_cap_teaser(
     if await throttle.cooldown(
         f"captease:{user.telegram_id}", CAP_TEASER_COOLDOWN_SECONDS
     ):
+        # Cooldown burnt but no message id (Redis lost the key, or the send
+        # failed): staying silent keeps the one-notification-a-day promise.
         return
 
-    best = max(withheld, key=lambda item: (_estimated_profit(item) or 0.0, item.deal_score))
-    profit = _estimated_profit(best)
-    detail = f"bester: <b>{escape(best.title[:TEASER_TITLE_CHARS])}</b>"
-    if profit is not None and profit > 0:
-        detail += f", ca. +{money(profit)} netto"
-    elif best.price is not None:
-        detail += f", {money(best.price)}"
-
-    # Never name fewer finds than the batch that was just held back.
-    total = max(len(withheld), await _withheld_today(session, user.id))
-    noun = "weiterer Treffer" if total == 1 else "weitere Treffer"
-    lines = [f"🔒 Tageslimit erreicht — {total} {noun} heute, {detail}."]
-    hint = quota.upgrade_hint(quota.KIND_CARDS, user, lang)
-    if hint:
-        lines.append(f"Mehr Karten pro Tag: {hint}")
-
     try:
-        await bot.send_message(
-            user.telegram_id, "\n".join(lines), disable_web_page_preview=True
+        message = await bot.send_message(
+            user.telegram_id, text, disable_web_page_preview=True
         )
     except Exception as exc:  # noqa: BLE001 - a failed teaser must not fail the batch
         logger.warning("Cap teaser to {} failed: {}", user.telegram_id, exc)
+        return
+
+    message_id = getattr(message, "message_id", None)
+    if message_id is not None:
+        await _remember_teaser_message(user.telegram_id, int(message_id))
+
+
+async def _edit_cap_teaser(
+    bot: Bot, telegram_id: int, message_id: int, text: str
+) -> None:
+    """Refresh today's teaser in place — an edit does not notify again."""
+    try:
+        await bot.edit_message_text(
+            text=text,
+            chat_id=telegram_id,
+            message_id=message_id,
+            disable_web_page_preview=True,
+        )
+    except TelegramBadRequest as exc:
+        # "message is not modified" (nothing changed) or "message to edit not
+        # found" (the user deleted it). Re-sending would nag; stay quiet.
+        logger.debug("Cap teaser edit for {} skipped: {}", telegram_id, exc)
+    except Exception as exc:  # noqa: BLE001 - a failed teaser must not fail the batch
+        logger.warning("Cap teaser edit to {} failed: {}", telegram_id, exc)
 
 
 # --- Auditing -------------------------------------------------------------------------

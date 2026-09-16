@@ -30,6 +30,10 @@ ALERT_QUEUE = "health:alerts"
 FAIL_THRESHOLD = 3
 #: Default dedup window: the same alert key fires at most once per 6 hours.
 DEDUP_TTL_SECONDS = 6 * 3600
+#: The retention sweep runs nightly. Missing one run can be a reboot; missing
+#: a day and a half means it is broken, and an unswept database once filled
+#: this project's production disk.
+SWEEP_MAX_AGE_SECONDS = 36 * 3600
 
 
 @asynccontextmanager
@@ -181,13 +185,71 @@ class StatusSnapshot:
     last_dispatch_age: float | None   # seconds; None = never seen
     runs_today: int
     cards_sent_today: int
+    # --- Nightly retention sweep (see app.services.retention) --------------
+    #: Seconds since the last SUCCESSFUL sweep; None = never succeeded.
+    sweep_age: float | None = None
+    sweep_listings: int = 0
+    sweep_price_points: int = 0
+    sweep_notifications: int = 0
+    #: Rows the sweep's row budget did not reach, across all categories.
+    sweep_remaining: int = 0
+    sweep_failed: bool = False
+    sweep_error: str | None = None
+
+    @property
+    def sweep_ran(self) -> bool:
+        """A sweep that found nothing still ran — the two must not look alike."""
+        return self.sweep_age is not None
+
+    @property
+    def sweep_stale(self) -> bool:
+        return self.sweep_age is None or self.sweep_age > SWEEP_MAX_AGE_SECONDS
+
+    @property
+    def sweep_line(self) -> str:
+        """One line about the cleanup, for /status and the heartbeat."""
+        if self.sweep_failed:
+            detail = f": <code>{self.sweep_error}</code>" if self.sweep_error else ""
+            return f"🔴 Aufräumen: letzter Lauf fehlgeschlagen{detail}"
+        if self.sweep_age is None:
+            return "🔴 Aufräumen: lief noch nie"
+        removed = (
+            f"{self.sweep_listings} Angebote, {self.sweep_price_points} Preispunkte, "
+            f"{self.sweep_notifications} Meldungen"
+        )
+        age = _age_text(self.sweep_age)
+        icon = "🟠" if self.sweep_stale else "🧹"
+        rest = f" · {self.sweep_remaining} Zeilen offen" if self.sweep_remaining else ""
+        return f"{icon} Aufräumen: {age} — {removed} gelöscht{rest}"
+
+
+def _age_text(seconds: float) -> str:
+    """German, informal age of an event ("vor 3 h")."""
+    if seconds < 3600:
+        return f"vor {int(seconds // 60)} min"
+    if seconds < 86400:
+        return f"vor {int(seconds // 3600)} h"
+    return f"vor {int(seconds // 86400)} Tag(en)"
+
+
+def _as_int(raw: dict[str, str], key: str) -> int:
+    try:
+        return int(raw.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 async def get_status() -> StatusSnapshot:
     """Read the activity counters. Degrades to 'unknown' on Redis errors."""
+    # The sweep's own key, so /status and the heartbeat report the cleanup
+    # instead of nobody ever reading the numbers it writes. Imported late:
+    # retention pulls in the ORM models, which the bot does not need for this.
+    from app.services.retention import STATS_KEY as SWEEP_KEY
+
     last_age: float | None = None
     runs = 0
     sent = 0
+    sweep: dict[str, str] = {}
     try:
         async with _redis() as r:
             raw = await r.get("stats:last_dispatch")
@@ -195,13 +257,70 @@ async def get_status() -> StatusSnapshot:
                 last_age = max(0.0, _time.time() - float(raw))
             runs = int(await r.get(f"stats:runs:{_today()}") or 0)
             sent = int(await r.get(f"stats:sent:{_today()}") or 0)
+            sweep = await r.hgetall(SWEEP_KEY) or {}
     except Exception as exc:  # noqa: BLE001
         logger.debug("health.get_status failed: {}", exc)
     # The dispatcher fires every 20s; anything under 2 minutes counts as alive.
     alive = last_age is not None and last_age < 120
+
+    sweep_at = _as_int(sweep, "at")
     return StatusSnapshot(
         worker_alive=alive,
         last_dispatch_age=last_age,
         runs_today=runs,
         cards_sent_today=sent,
+        sweep_age=max(0.0, _time.time() - sweep_at) if sweep_at else None,
+        sweep_listings=_as_int(sweep, "listings"),
+        sweep_price_points=_as_int(sweep, "price_points"),
+        sweep_notifications=_as_int(sweep, "notifications"),
+        sweep_remaining=(
+            _as_int(sweep, "remaining_listings")
+            + _as_int(sweep, "remaining_notifications")
+        ),
+        sweep_failed=bool(sweep) and _as_int(sweep, "ok") == 0,
+        sweep_error=(sweep.get("error") or None),
     )
+
+
+async def check_sweep(status: StatusSnapshot | None = None) -> str | None:
+    """Alert the admins when the nightly cleanup failed or stopped succeeding.
+
+    Numbers that only exist in Redis are numbers nobody reads: the disk filled
+    up once because a broken sweep is as quiet as a sweep with nothing to do.
+    Returns the finding so the caller can show it too, None when all is well.
+    """
+    status = status or await get_status()
+
+    if status.sweep_failed:
+        detail = f": <code>{status.sweep_error}</code>" if status.sweep_error else ""
+        finding = f"🧹 Letztes Aufräumen ist fehlgeschlagen{detail}"
+        await report(
+            "retention:failed",
+            f"{finding}\nOhne Aufräumen wächst die Datenbank weiter — "
+            "Logs prüfen: <code>docker compose logs worker</code>",
+        )
+        return finding
+
+    if status.sweep_age is None:
+        finding = "🧹 Das Aufräumen lief noch nie erfolgreich"
+        # Once a day is enough for a state that only changes at 03:30.
+        await report(
+            "retention:never",
+            f"{finding} — läuft der Beat-Zeitplan? "
+            "<code>docker compose logs beat</code>",
+            dedup_ttl=24 * 3600,
+        )
+        return finding
+
+    if status.sweep_age > SWEEP_MAX_AGE_SECONDS:
+        hours = int(status.sweep_age // 3600)
+        finding = f"🧹 Seit {hours} h kein erfolgreiches Aufräumen"
+        await report(
+            "retention:stale",
+            f"{finding} (normal: jede Nacht).\n"
+            "Die Datenbank wächst währenddessen weiter: "
+            "<code>docker compose logs worker</code>",
+        )
+        return finding
+
+    return None

@@ -10,9 +10,10 @@ This is the heart of the pipeline used by the Celery worker:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import Listing, PriceHistory, SearchRule, User
@@ -25,7 +26,7 @@ from app.services.dedup import filter_new_listings
 from app.services.freshness import is_fresh_enough
 from app.services.price_analysis import PriceStats, compute_price_stats
 from app.services.flips import get_flip_min, passes_flip_mode
-from app.services.relevance import filter_relevant
+from app.services.relevance import filter_relevant, is_part_listing, keeps_part_listings
 from app.services.vehicle import is_vehicle_batch, similar_market_stats
 from app.services.repositories import ListingRepository
 
@@ -41,11 +42,50 @@ PRICE_DROP_MIN_PERCENT = 1.0
 #: Below this many stored prices a rule is treated as "cold" and an item is
 #: not compared against a sample that contains itself.
 MIN_STORED_FOR_SELF_COMPARISON = 10
+#: Below this many whole-unit prices the part exclusion is dropped again: a
+#: rule whose hits are parts almost end to end ("iPhone 12 Ersatzdisplay")
+#: would otherwise be left with no market sample at all.
+MIN_WHOLE_UNIT_PRICES = 3
+#: ...and this many part prices before parts get a market of their own.
+MIN_PART_PRICES = 3
 
 
 def price_drop_threshold(previous_price: float) -> float:
     """How much a price must fall before the user is told again."""
     return max(PRICE_DROP_MIN_DELTA, previous_price * PRICE_DROP_MIN_PERCENT / 100.0)
+
+
+def split_part_prices(
+    parsed: list[ParsedListing],
+) -> tuple[list[float], list[float]]:
+    """Split a batch's prices into whole units and spare-part/repair ads.
+
+    A "defekt" rule keeps part and repair ads on purpose — they are what a
+    repairer hunts — but a loose display or board costs a fraction of a whole
+    broken device. Letting those prices into the median moves the market
+    reference the whole deal score rests on down to fragment level, and every
+    ordinary ad then looks like a bargain. It is the same distortion the Idealo
+    exclusion prevents from the other side, where brand-new retail offers
+    pulled the median up.
+
+    Parts are therefore dropped from the STATISTICS sample while staying in the
+    result — chosen over building a separate "defective only" sample, because
+    on a defect rule the batch already IS the defective market (the condition
+    filter ran in the parser), so a second split would only shrink the sample
+    without changing what it contains. Parts get their own sample instead, so
+    a display is judged against other displays rather than silently against
+    whole devices.
+    """
+    whole: list[float] = []
+    parts: list[float] = []
+    for item in parsed:
+        if item.price is None:
+            continue
+        (parts if is_part_listing(item.title) else whole).append(item.price)
+    if len(whole) < MIN_WHOLE_UNIT_PRICES:
+        # Nothing whole left to compare against: then the parts ARE the market.
+        return whole + parts, []
+    return whole, parts
 
 
 class SearchService:
@@ -83,11 +123,17 @@ class SearchService:
         # Market context: 30 days of stored prices plus the current batch —
         # far more stable than the current batch alone. Computed before the
         # price-drop pass so a dropped listing can be re-scored right away.
-        stored_prices = await self.listings.recent_prices(
-            rule.id, days=MARKET_WINDOW_DAYS
-        )
-        batch_prices = [p.price for p in parsed if p.price is not None]
+        stored_prices = await self._market_history(rule, query)
+        batch_prices, part_prices = split_part_prices(parsed)
         stats = compute_price_stats(stored_prices + batch_prices)
+        # Parts stay in the result; they are simply scored against each other
+        # instead of against whole devices, which is the only comparison that
+        # says anything about a 40 € display.
+        part_stats = (
+            compute_price_stats(part_prices)
+            if len(part_prices) >= MIN_PART_PRICES
+            else None
+        )
 
         # Price drops on listings we already know (matched by external id):
         # update the stored row, record a history point and re-notify.
@@ -118,7 +164,13 @@ class SearchService:
         for item in fresh:
             if vehicles:
                 item_stats = similar_market_stats(item, parsed, stats)
-            elif exclude_self and item.price is not None and len(batch_prices) > 2:
+            elif part_stats is not None and is_part_listing(item.title):
+                item_stats = part_stats
+            elif (
+                exclude_self
+                and item.price in batch_prices  # a part price is not in there
+                and len(batch_prices) > 2
+            ):
                 peers = list(batch_prices)
                 peers.remove(item.price)
                 item_stats = compute_price_stats(stored_prices + peers)
@@ -286,6 +338,38 @@ class SearchService:
             exclude_auctions=rule.exclude_auctions,
             shipping_available=rule.shipping_available,
         )
+
+    async def _market_history(
+        self, rule: SearchRule, query: SearchQuery
+    ) -> list[float]:
+        """Stored prices that may serve as a market reference for ``rule``.
+
+        For every normal rule the relevance pass has already removed part and
+        repair ads, so the repository's plain price list is exactly right. A
+        defect rule keeps them, and their prices must not creep back in as
+        "market" on the next run — which they would, because the repository
+        returns bare prices with no way to tell a 40 € display from a 350 €
+        broken phone. Excluding them only in the current batch would leave the
+        fix working for a single run.
+        """
+        if not keeps_part_listings(query):
+            return await self.listings.recent_prices(
+                rule.id, days=MARKET_WINDOW_DAYS
+            )
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=MARKET_WINDOW_DAYS)
+        rows = await self.session.execute(
+            select(Listing.price, Listing.title).where(
+                Listing.rule_id == rule.id,
+                Listing.created_at >= cutoff,
+                Listing.price.isnot(None),
+            )
+        )
+        return [
+            price
+            for price, title in rows.all()
+            if price is not None and not is_part_listing(title or "")
+        ]
 
     async def _collect(
         self, rule: SearchRule, query: SearchQuery

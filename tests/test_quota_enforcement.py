@@ -41,24 +41,45 @@ class FakeQuota:
         self.limit = limit
         self.used: dict[str, int] = {}
         self.released: list[str] = []
+        #: The window each refund was booked against, so a test can prove the
+        #: unit went back where it came from.
+        self.refunded: list[str] = []
 
     def install(self, monkeypatch) -> None:
         monkeypatch.setattr(quota, "check", self.check)
         monkeypatch.setattr(quota, "consume", self.consume)
         monkeypatch.setattr(quota, "release", self.release)
 
+    # The real windowing is used rather than re-implemented: a double that
+    # invents its own day boundary cannot catch a refund landing on the wrong
+    # side of midnight, which is the bug these counters are prone to.
+    @staticmethod
+    def window(kind: str, now=None) -> str:  # noqa: ANN001
+        return quota._stamp(quota._WINDOW[kind], now)
+
     async def check(self, kind, user, now=None):  # noqa: ANN001
-        return quota.QuotaState(kind=kind, used=self.used.get(kind, 0), limit=self.limit)
+        return quota.QuotaState(
+            kind=kind,
+            used=self.used.get(kind, 0),
+            limit=self.limit,
+            stamp=self.window(kind, now),
+        )
 
     async def consume(self, kind, user, *, amount=1, now=None):  # noqa: ANN001
+        stamp = self.window(kind, now)
         used = self.used.get(kind, 0)
         if used + amount > self.limit >= 0:
-            return quota.QuotaState(kind=kind, used=used, limit=self.limit)
+            return quota.QuotaState(
+                kind=kind, used=used, limit=self.limit, stamp=stamp
+            )
         self.used[kind] = used + amount
-        return quota.QuotaState(kind=kind, used=self.used[kind], limit=self.limit)
+        return quota.QuotaState(
+            kind=kind, used=self.used[kind], limit=self.limit, stamp=stamp
+        )
 
-    async def release(self, kind, user, *, amount=1):  # noqa: ANN001
+    async def release(self, kind, user, *, amount=1, now=None, stamp=None):  # noqa: ANN001
         self.released.append(kind)
+        self.refunded.append(stamp or self.window(kind, now))
         self.used[kind] = max(0, self.used.get(kind, 0) - amount)
 
 
@@ -332,8 +353,12 @@ def test_every_delivery_attempt_is_written_to_notifications(sqlite_db, monkeypat
             assert "Telegram sagt nein" in failed[0].error
             assert (await session.get(Listing, listing_id)).notified is False
 
-        # The user must not be billed for a crash on our side.
+        # The user must not be billed for a crash on our side — and the refund
+        # has to name the window the unit was booked in, because a batch that
+        # starts at 23:59 finishes after midnight and would otherwise leave
+        # yesterday's counter inflated forever.
         assert fake.released == [quota.KIND_CARDS]
+        assert fake.refunded == [fake.window(quota.KIND_CARDS)]
         assert fake.used[quota.KIND_CARDS] == 0
 
         bot.fail = False

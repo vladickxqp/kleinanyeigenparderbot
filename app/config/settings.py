@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     #: and a rule with an empty site list runs on EVERY registered parser — so
     #: the parser stays unregistered until this is switched on deliberately.
     vinted_enabled: bool = False
+    #: AutoScout24 serves its result list as structured JSON inside the page,
+    #: verified live. Cars are the highest-value category here, so this one is
+    #: on by default.
+    autoscout24_enabled: bool = True
 
     # --- AI -----------------------------------------------------------------
     ai_enabled: bool = False
@@ -196,6 +200,28 @@ class Settings(BaseSettings):
     pro_history_days: int = 365
     dealer_history_days: int = 1095
     retention_sweep_enabled: bool = True
+    #: After a downgrade the shorter window only applies once the user has been
+    #: on the lower level this long. Dropping a year of history to two weeks on
+    #: the same night is a data loss the user never agreed to.
+    history_grace_days: int = 30
+    #: Batch ceiling per category and run, so a first sweep on a large table
+    #: cannot lock the database or starve one category of the budget.
+    retention_batch_limit: int = 5_000
+
+    # --- Sold comparables ------------------------------------------------------
+    #: An ad that stops appearing in its rule's results is almost always sold.
+    #: That is the only honest source of realised prices we have, since no
+    #: marketplace here publishes them.
+    sold_comps_enabled: bool = True
+    #: Consecutive runs an ad must be missing before it counts as sold.
+    sold_comp_missing_runs: int = 3
+    #: Ads older than this are not judged (the rule may simply have changed).
+    sold_comp_max_age_days: int = 45
+
+    # --- Natural-language rules ------------------------------------------------
+    #: "Tesla Model 3 unter 25.000, höchstens 100.000 km, 100 km um Worms"
+    #: turned into a real rule. Needs AI_ENABLED and an API key.
+    nl_rules_enabled: bool = True
     #: Feature flags per tier: flip-only delivery mode, rule power fields,
     #: export, market report, forwarding cards to an own channel/group.
     free_features: str = ""

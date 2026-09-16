@@ -227,8 +227,12 @@ def test_a_zero_window_is_refused(sqlite_db, monkeypatch):
     asyncio.run(scenario())
 
 
-def test_batch_ceiling_stops_the_sweep_and_says_so(sqlite_db):
-    """A first run on a grown table must not delete everything in one lock."""
+def test_row_budget_stops_the_sweep_and_says_how_much_is_left(sqlite_db):
+    """A first run on a grown table must not delete everything in one lock.
+
+    And the leftover has to be a number: a sweep that stops early looks exactly
+    like a sweep with nothing to do unless it says what it did not reach.
+    """
 
     async def scenario() -> None:
         await _create_tables()
@@ -239,11 +243,51 @@ def test_batch_ceiling_stops_the_sweep_and_says_so(sqlite_db):
                 session.add(_listing(rule.id, f"old-{i}", age_days=60))
             await session.commit()
 
-            stats = await retention.sweep(session, batch_size=2, max_batches=1)
+            stats = await retention.sweep(session, batch_size=2, row_limit=2)
 
             assert stats.listings == 2
             assert stats.capped is True
+            assert stats.remaining[retention.CATEGORY_LISTINGS] == 3
             assert len(await _external_ids(session)) == 3
+        await db.dispose_engine()
+
+    asyncio.run(scenario())
+
+
+def test_each_category_gets_its_own_budget(sqlite_db):
+    """A listing backlog must not starve the notification cleanup.
+
+    Both categories shared one budget once, spent in listing order, so a table
+    that had grown for months meant the notifications were never reached at all
+    — and those are the rows that grow fastest.
+    """
+
+    async def scenario() -> None:
+        await _create_tables()
+        maker = db.get_sessionmaker()
+        async with maker() as session:
+            user, rule = await _owner_with_rule(session, SubscriptionTier.FREE, 41)
+            for i in range(4):
+                session.add(_listing(rule.id, f"old-{i}", age_days=60))
+            for i in range(4):
+                session.add(
+                    Notification(
+                        user_id=user.id,
+                        title=f"note-{i}",
+                        is_sent=True,
+                        created_at=_ago(60),
+                    )
+                )
+            await session.commit()
+
+            stats = await retention.sweep(session, batch_size=2, row_limit=2)
+
+            # The listing budget ran out after 2 rows — and the notifications
+            # still got their own 2.
+            assert stats.listings == 2
+            assert stats.notifications == 2
+            assert stats.remaining[retention.CATEGORY_LISTINGS] == 2
+            assert stats.remaining[retention.CATEGORY_NOTIFICATIONS] == 2
         await db.dispose_engine()
 
     asyncio.run(scenario())

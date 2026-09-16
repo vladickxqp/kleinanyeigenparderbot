@@ -28,6 +28,17 @@ CATEGORY_IDS: dict[str, str] = {
     "konsolen": "139971",     # Spielekonsolen
 }
 
+#: Rule condition -> eBay's ``LH_ItemCondition`` facet value. These are eBay's
+#: own global ConditionIDs, the very table 1000/3000 already came from; 7000 is
+#: "Defekt oder nur Teile" ("For parts or not working"). Without the last entry
+#: a defect hunt was answered with ordinary working items, because eBay applies
+#: no condition facet at all when the parameter is missing.
+CONDITION_IDS: dict[Condition, int] = {
+    Condition.NEW: 1000,
+    Condition.USED: 3000,
+    Condition.DEFECTIVE: 7000,
+}
+
 
 @register_parser
 class EbayParser(BaseParser):
@@ -43,10 +54,9 @@ class EbayParser(BaseParser):
             params["_udhi"] = int(query.max_price)
         if query.min_price is not None:
             params["_udlo"] = int(query.min_price)
-        if query.condition is Condition.NEW:
-            params["LH_ItemCondition"] = 1000
-        elif query.condition is Condition.USED:
-            params["LH_ItemCondition"] = 3000
+        condition_id = CONDITION_IDS.get(query.condition)
+        if condition_id is not None:
+            params["LH_ItemCondition"] = condition_id
         if query.exclude_auctions:
             params["LH_BIN"] = 1  # Buy-It-Now only
         if query.category and query.category in CATEGORY_IDS:

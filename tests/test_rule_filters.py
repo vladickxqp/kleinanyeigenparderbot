@@ -27,7 +27,12 @@ from app.parsers.sites.kleinanzeigen import (
 from app.services.relevance import is_relevant
 
 
-def _item(title: str, desc: str | None = None, shipping: float | None = None) -> ParsedListing:
+def _item(
+    title: str,
+    desc: str | None = None,
+    shipping: float | None = None,
+    offers: bool | None = None,
+) -> ParsedListing:
     return ParsedListing(
         site=SiteName.KLEINANZEIGEN,
         external_id=title,
@@ -36,6 +41,7 @@ def _item(title: str, desc: str | None = None, shipping: float | None = None) ->
         price=500.0,
         description=desc,
         shipping_cost=shipping,
+        shipping_available=offers,
     )
 
 
@@ -108,10 +114,23 @@ def test_shipping_filter_drops_only_known_mismatches():
 
 
 def test_shipping_flag_reads_the_card_marker():
-    # shipping_cost == 0.0 is the parser's "Versand möglich" marker; the site
-    # prints that hint whenever shipping is offered, so its absence is a "no".
-    assert shipping_flag(_item("A", shipping=0.0)) is True
-    assert shipping_flag(_item("B", shipping=None)) is False
+    # The parser reads the price/shipping block and says what it found.
+    assert shipping_flag(_item("A", offers=True)) is True
+    # Block present, hint absent: a real "no", the card says so.
+    assert shipping_flag(_item("B", offers=False)) is False
+    # shipping_cost == 0.0 is the older marker for the same "Versand möglich"
+    # hint, so a card that carries only it still reads as a yes.
+    assert shipping_flag(_item("C", shipping=0.0)) is True
+
+
+def test_shipping_flag_shrugs_when_the_card_says_nothing():
+    # No block at all means the markup changed, not that the seller refuses to
+    # ship. Answering "no" here would silently empty a paid rule while the
+    # health monitor still called the parser healthy — matches_shipping keeps
+    # the ad instead.
+    assert shipping_flag(_item("D")) is None
+    assert matches_shipping(True, shipping_flag(_item("D"))) is True
+    assert matches_shipping(False, shipping_flag(_item("D"))) is True
 
 
 # --- Kleinanzeigen end to end ------------------------------------------------------

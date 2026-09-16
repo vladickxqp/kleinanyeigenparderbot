@@ -98,4 +98,10 @@ celery_app.conf.beat_schedule = {
         # the same tables, and nobody hunts deals at 03:30.
         "schedule": crontab(hour=3, minute=30),
     },
+    "prune-sold-comps": {
+        "task": "app.worker.tasks.prune_sold_comps",
+        # After the retention sweep: it is what leaves the missing-run counters
+        # pointing at listings that no longer exist.
+        "schedule": crontab(hour=4, minute=0),
+    },
 }

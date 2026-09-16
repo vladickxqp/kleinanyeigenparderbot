@@ -36,6 +36,22 @@ _REPAIR_WORDS: frozenset[str] = frozenset(
     {"reparatur", "ersatzteil", "ersatzdisplay", "ersatzakku", "platine"}
 )
 
+#: The same vocabulary, spelled out in the inflected forms sellers actually
+#: use. The plurals need their own entries because the word-boundary match
+#: below treats "Ersatzteile" as a different token than "Ersatzteil".
+_PART_WORDS: tuple[str, ...] = (
+    "reparatur", "reparaturen",
+    "ersatzteil", "ersatzteile",
+    "ersatzdisplay", "ersatzdisplays",
+    "ersatzakku", "ersatzakkus",
+    "platine", "platinen",
+)
+
+_PART_RE = re.compile(
+    "(?<![a-zäöüß])(?:%s)(?![a-zäöüß])"
+    % "|".join(re.escape(word) for word in _PART_WORDS)
+)
+
 
 def _active_accessory_words(query: SearchQuery) -> list[str]:
     """Accessory words that are safe to filter for this query."""
@@ -46,6 +62,28 @@ def _active_accessory_words(query: SearchQuery) -> list[str]:
         # repair words in would throw away exactly the ads the rule asks for.
         words = [w for w in words if w not in _REPAIR_WORDS]
     return words
+
+
+def keeps_part_listings(query: SearchQuery) -> bool:
+    """Whether this pass deliberately lets spare-part and repair ads through.
+
+    Only a defect hunt gets them for free (see :func:`_active_accessory_words`);
+    a user who typed the part word themselves gets them because it is their own
+    keyword, and then the parts ARE the market they asked about. Callers that
+    build price statistics need to know the difference, because a loose display
+    is a fragment of the searched item, not the item.
+    """
+    return query.condition is Condition.DEFECTIVE
+
+
+def is_part_listing(title: str) -> bool:
+    """True if the ad sells a spare part or a repair service, not a unit.
+
+    Title only, exactly like the accessory check above: descriptions mention
+    spare parts in passing ("Ersatzteile noch vorhanden") far too often to be
+    usable evidence about what is being sold.
+    """
+    return bool(_PART_RE.search(title.lower()))
 
 
 def is_relevant(query: SearchQuery, item: ParsedListing) -> bool:

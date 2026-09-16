@@ -86,6 +86,56 @@ def _marker_pattern(words: tuple[str, ...]) -> re.Pattern[str]:
 _NEW_RE = _marker_pattern(_NEW_MARKERS)
 _DEFECTIVE_RE = _marker_pattern(_DEFECTIVE_MARKERS)
 
+#: A marker means its opposite when one of these stands shortly BEFORE it.
+#: "ohne OVP" and "keine OVP" are among the most common phrases in used-ad
+#: titles, and "nicht defekt" has exactly the same problem on the other side —
+#: without this guard both of them counted as evidence FOR the marker.
+_NEGATIONS_BEFORE: frozenset[str] = frozenset(
+    {
+        "ohne", "kein", "keine", "keinen", "keiner", "keinem", "keins",
+        "keines", "nicht", "nichts", "nie", "niemals", "weder",
+    }
+)
+
+#: ...and these cancel it from behind ("OVP fehlt", "OVP nicht mehr dabei",
+#: "defekt? nein").
+_NEGATIONS_AFTER: frozenset[str] = frozenset(
+    {"fehlt", "fehlen", "fehlend", "nicht", "nein", "weg", "verloren", "entsorgt"}
+)
+
+#: How many words on each side the guard reads. Two covers "keine originale
+#: OVP" and "OVP nicht mehr vorhanden" and is short enough that a negation
+#: belonging to a different noun cannot reach the marker.
+_NEGATION_WINDOW = 2
+
+#: The guard never looks past a clause boundary: in "defekt, kein Bild" the
+#: "kein" belongs to the photo, not to the defect in front of the comma.
+_CLAUSE_BREAK_RE = re.compile(r"[.,;:!?()\[\]/\n\r·–—]")
+_WORD_RE = re.compile(r"[a-zäöüß0-9]+")
+
+
+def _is_negated(text: str, start: int, end: int) -> bool:
+    """Whether the marker at ``text[start:end]`` is cancelled by its context."""
+    clause_start = 0
+    for brk in _CLAUSE_BREAK_RE.finditer(text, 0, start):
+        clause_start = brk.end()
+    tail = _CLAUSE_BREAK_RE.search(text, end)
+    clause_end = tail.start() if tail else len(text)
+
+    before = _WORD_RE.findall(text[clause_start:start])[-_NEGATION_WINDOW:]
+    after = _WORD_RE.findall(text[end:clause_end])[:_NEGATION_WINDOW]
+    return any(word in _NEGATIONS_BEFORE for word in before) or any(
+        word in _NEGATIONS_AFTER for word in after
+    )
+
+
+def _has_marker(pattern: re.Pattern[str], text: str) -> bool:
+    """True if ``text`` carries at least one marker that is not negated."""
+    return any(
+        not _is_negated(text, match.start(), match.end())
+        for match in pattern.finditer(text)
+    )
+
 
 def guess_condition(title: str, description: str | None = None) -> Condition:
     """Best-effort item condition from the ad text.
@@ -96,9 +146,9 @@ def guess_condition(title: str, description: str | None = None) -> Condition:
     more expensive mistake.
     """
     text = f"{title} {description or ''}".lower()
-    if _DEFECTIVE_RE.search(text):
+    if _has_marker(_DEFECTIVE_RE, text):
         return Condition.DEFECTIVE
-    if _NEW_RE.search(text):
+    if _has_marker(_NEW_RE, text):
         return Condition.NEW
     return Condition.USED
 
@@ -120,20 +170,22 @@ def matches_condition(
 def shipping_flag(item: ParsedListing) -> bool | None:
     """Whether a Kleinanzeigen card offers shipping, or None if unknowable.
 
-    ``shipping_cost == 0.0`` is this parser's marker for "Versand möglich" (a
-    real shipping price would cost one extra request per ad). The site prints
-    that hint whenever the seller offers shipping, so a card without it is a
-    "no", not a shrug.
+    The parser decides this per card and states it in ``shipping_available``:
+    the site prints its "Versand möglich" line inside the price/shipping block
+    whenever the seller ships, so that block WITHOUT the line is a real "no".
+    The block missing altogether is a third state — the markup changed — and
+    answering "no shipping" there would silently empty a paid rule while the
+    health monitor still reported the parser as healthy.
 
-    The parser carries that distinction explicitly: if the shipping container
-    was missing from EVERY card the markup changed, and answering "no shipping"
-    would silently empty a paid rule while the health monitor still reported
-    the parser as healthy. In that case the answer is None and the unknown
-    branch of :func:`matches_shipping` keeps the ad.
+    ``shipping_cost == 0.0`` remains this parser's older marker for the same
+    "Versand möglich" hint (a real shipping price would cost one extra request
+    per ad), so a listing that carries only the marker still reads as a yes.
+    No evidence at all is a shrug, and the unknown branch of
+    :func:`matches_shipping` keeps the ad.
     """
     if item.shipping_available is not None:
         return item.shipping_available
-    return item.shipping_cost is not None
+    return True if item.shipping_cost is not None else None
 
 
 def matches_shipping(wanted: bool | None, offered: bool | None) -> bool:
@@ -366,15 +418,18 @@ class KleinanzeigenParser(BaseParser):
         price = self._parse_price(price_el.get_text() if price_el else None)
 
         # --- Shipping hint ---
+        # Two different absences: the price/shipping BLOCK is missing (the site
+        # changed its markup — we know nothing), or the block is there without
+        # the "Versand möglich" line, which is the site's way of saying the
+        # seller does not ship. That difference decides whether a "shipping
+        # only" rule keeps working or silently returns nothing.
+        shipping_box = card.select_one(".aditem-main--middle--price-shipping")
         shipping_el = card.select_one(
             ".aditem-main--middle--price-shipping--shipping"
         )
-        # A missing container means the site changed its markup, not that the
-        # seller refuses to ship — that difference decides whether a "shipping
-        # only" rule keeps working or silently returns nothing.
         shipping_text = shipping_el.get_text(strip=True).lower() if shipping_el else ""
-        shipping_available = "versand" in shipping_text
-        shipping_known = shipping_el is not None
+        offers_shipping = "versand" in shipping_text
+        shipping_known = shipping_box is not None
 
         # --- Location ---
         loc_el = card.select_one(".aditem-main--top--left")
@@ -422,8 +477,8 @@ class KleinanzeigenParser(BaseParser):
             url=url,
             price=price,
             currency="EUR",
-            shipping_cost=0.0 if shipping_available else None,
-            shipping_available=shipping_available if shipping_known else None,
+            shipping_cost=0.0 if offers_shipping else None,
+            shipping_available=offers_shipping if shipping_known else None,
             image_url=image_url,
             description=description,
             location=location,

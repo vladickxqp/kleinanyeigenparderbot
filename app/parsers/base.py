@@ -140,26 +140,49 @@ class BaseParser(ABC):
         proxies = settings.proxy_list
         return random.choice(proxies) if proxies else None
 
-    async def _throttle(self) -> None:
-        """Enforce a polite minimum delay between requests to this site.
+    @staticmethod
+    def _egress_label(proxy: str | None) -> str:
+        """Short, stable name of an exit address for the pacing key.
 
-        The delay is coordinated through Redis, because the worker runs several
-        processes: a purely in-process timer let four workers hit the same site
-        at four times the configured rate. The local timer stays as a fallback
-        for when Redis is unreachable.
+        Proxy URLs carry credentials; only a hash of them ever reaches Redis
+        or a log line.
         """
-        from app.services.throttle import site_slot_wait
+        if not proxy:
+            return "direct"
+        import hashlib
+
+        return hashlib.sha256(proxy.encode()).hexdigest()[:12]
+
+    async def _reserve_egress(self) -> str | None:
+        """Wait for a free slot and return the proxy to use for this request.
+
+        Pacing is per exit address, so a pool of N addresses really carries N
+        times the request rate. Without a pool this is exactly the old
+        behaviour with one shared token.
+        """
+        from app.services.throttle import pick_egress
+
+        proxies = settings.proxy_list
+        candidates = [self._egress_label(p) for p in proxies] or ["direct"]
+        by_label = {self._egress_label(p): p for p in proxies}
 
         async with self._throttle_lock():
-            wait = await site_slot_wait(
-                self.site.value, settings.scraper_min_delay_seconds
+            label, wait = await pick_egress(
+                self.site.value, candidates, settings.scraper_min_delay_seconds
             )
-            if wait <= 0:
+            if wait <= 0 and not proxies:
+                # Local fallback for when Redis is unreachable: without it the
+                # pacing would silently disappear instead of degrading.
                 elapsed = time.monotonic() - self._last_request_ts
                 wait = settings.scraper_min_delay_seconds - elapsed
             if wait > 0:
                 await asyncio.sleep(wait + random.uniform(0, 0.5))
             self._last_request_ts = time.monotonic()
+            return by_label.get(label)
+
+    async def _throttle(self) -> None:
+        """Backwards-compatible entry point for parsers that pace themselves."""
+        await self._reserve_egress()
 
     @staticmethod
     def _is_retryable(exc: BaseException) -> bool:
@@ -180,9 +203,13 @@ class BaseParser(ABC):
         reraise=True,
     )
     async def fetch(self, url: str, params: dict | None = None) -> httpx.Response:
-        """GET ``url`` politely, with retries, returning the response."""
-        await self._throttle()
-        proxy = self._random_proxy()
+        """GET ``url`` politely, with retries, returning the response.
+
+        The exit address is chosen by the pacer, not at random: it hands back
+        the proxy whose own slot is free, so the whole pool is used instead of
+        the fleet queueing behind one busy address.
+        """
+        proxy = await self._reserve_egress()
         async with httpx.AsyncClient(
             headers=self._headers(),
             timeout=settings.scraper_request_timeout,

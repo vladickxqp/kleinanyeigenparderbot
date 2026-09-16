@@ -182,6 +182,7 @@ def run_search_rule(self, rule_id: int) -> dict:  # noqa: ANN001
 
 
 async def _run_search_rule(rule_id: int) -> dict:
+    from app.services import sold_comps
     from app.services.throttle import rule_lock
 
     notable_ids: list[int] = []
@@ -202,8 +203,12 @@ async def _run_search_rule(rule_id: int) -> dict:
                 return {"rule_id": rule_id, "skipped": True}
 
             service = SearchService(session)
+            # Which ads this run actually saw is the only evidence there is for
+            # the ones that SOLD — nobody publishes realised prices.
+            seen = sold_comps.watch(service)
             notable = await service.run_rule(rule)
             notable_ids = [row.id for row in notable]
+            await sold_comps.observe_run(session, rule.id, seen)
 
             # Grab the owner's telegram id + language for notification.
             owner = await session.get(User, rule.user_id)
@@ -296,13 +301,18 @@ async def _daily_heartbeat() -> int:
             )
         ) or 0
 
+    # The cleanup only ever reports itself here and in the watchdog, so an
+    # alert also goes out when it stopped succeeding.
+    await health.check_sweep(status)
+
     worker_icon = "🟢" if status.worker_alive else "🔴"
     message = (
         "🫀 <b>Täglicher Statusbericht</b>\n\n"
         f"{worker_icon} Worker: {'läuft' if status.worker_alive else 'KEIN Lebenszeichen!'}\n"
         f"🔄 Suchläufe heute: <b>{status.runs_today}</b>\n"
         f"🆕 Neue Angebote (24h): <b>{new_today}</b>\n"
-        f"📨 Karten gesendet heute: <b>{status.cards_sent_today}</b>\n\n"
+        f"📨 Karten gesendet heute: <b>{status.cards_sent_today}</b>\n"
+        f"{status.sweep_line}\n\n"
         "ℹ️ Keine Karten trotz Suchläufen = es gab nichts wirklich Neues. "
         "Jederzeit prüfen: /status"
     )
@@ -608,6 +618,11 @@ async def _watchdog() -> dict:
     for index, message in enumerate(findings):
         await health.report(f"watchdog:{index}:{message[:40]}", message, dedup_ttl=3600)
 
+    # Alerts on its own key and deliberately NOT part of `findings`: a cleanup
+    # that stopped working must not silence the dead-man's switch below, which
+    # answers the much bigger question of whether this machine is alive at all.
+    sweep_finding = await health.check_sweep(status)
+
     # Dead-man's switch: silence is what the external monitor reacts to.
     ping_url = getattr(settings, "healthcheck_ping_url", "")
     pinged = False
@@ -621,7 +636,12 @@ async def _watchdog() -> dict:
         except Exception as exc:  # noqa: BLE001 - a failed ping is itself the signal
             logger.warning("Healthcheck ping failed: {}", exc)
 
-    return {"findings": len(findings), "queue": depth, "pinged": pinged}
+    return {
+        "findings": len(findings),
+        "queue": depth,
+        "pinged": pinged,
+        "sweep": sweep_finding,
+    }
 
 
 # --- Rescue sweep ---------------------------------------------------------------
@@ -692,19 +712,45 @@ def purge_old_data() -> dict:
 async def _purge_old_data() -> dict:
     from app.services import retention
 
-    async with session_scope() as session:
-        stats = await retention.sweep(session)
+    started = time.monotonic()
+    try:
+        async with session_scope() as session:
+            stats = await retention.sweep(session)
+    except Exception as exc:  # noqa: BLE001 - a crashed cleanup must be visible
+        elapsed = time.monotonic() - started
+        # A sweep that raised used to write nothing at all, which from the
+        # outside is indistinguishable from a night with nothing to delete.
+        logger.exception("Retention sweep failed after {:.1f}s: {}", elapsed, exc)
+        await retention.record_sweep_failure(exc, elapsed=elapsed)
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
     # Unbounded growth once filled this project's production disk, and from the
     # outside a sweep that silently stopped working looks exactly like a sweep
     # with nothing to do — so the numbers go into the health stats every night.
     await retention.record_sweep(stats)
     return {
+        "ok": True,
+        "ran": stats.ran,
         "listings": stats.listings,
         "price_points": stats.price_points,
         "notifications": stats.notifications,
-        "capped": stats.capped,
+        "remaining": stats.remaining,
+        "elapsed": round(stats.elapsed, 1),
     }
+
+
+# --- Sold comparables --------------------------------------------------------------
+@celery_app.task(name="app.worker.tasks.prune_sold_comps")
+def prune_sold_comps() -> int:
+    """Age out realised prices and counters of listings that no longer exist."""
+    return _run_async(_prune_sold_comps())
+
+
+async def _prune_sold_comps() -> int:
+    from app.services import sold_comps
+
+    async with session_scope() as session:
+        return await sold_comps.prune(session)
 
 
 # --- Broadcasts -------------------------------------------------------------------

@@ -108,12 +108,49 @@ def all_plans() -> list[Plan]:
     ]
 
 
+def egress_capacity_per_minute() -> float:
+    """Requests per minute the current exit addresses can carry together.
+
+    Pacing is per exit address, so each proxy adds a full budget. Without a
+    pool there is exactly one address: the machine's own connection.
+    """
+    delay = max(settings.scraper_min_delay_seconds, 0.1)
+    addresses = max(len(settings.proxy_list), 1)
+    return addresses * 60.0 / delay
+
+
+def egress_shortfall() -> tuple[float, float, int]:
+    """(capacity now, capacity needed, exit addresses still missing).
+
+    The operator should not have to reverse-engineer why the top plan is not on
+    sale, so the gap is expressed in the unit that fixes it: addresses.
+    """
+    from app.services.entitlements import for_tier
+
+    e = for_tier(SubscriptionTier.UNLIMITED)
+    needed = e.requests_per_minute(e.max_rules)
+    have = egress_capacity_per_minute()
+    per_address = 60.0 / max(settings.scraper_min_delay_seconds, 0.1)
+    missing = 0 if have >= needed else int(-(-(needed - have) // per_address))
+    return have, needed, missing
+
+
 def dealer_on_sale() -> bool:
-    """The Händler plan needs a proxy pool: one dealer at full speed generates
-    more requests per minute than a single home IP can carry."""
+    """Whether the Händler plan may be sold right now.
+
+    It is the only level whose promised load can exceed what one connection
+    carries, so it stays off the page until the exit capacity actually covers
+    what a single subscriber may generate. Selling a speed the scraper cannot
+    deliver is the fastest route to refunds.
+    """
     if not settings.dealer_requires_proxies:
         return True
-    return bool(settings.proxy_list)
+    if not settings.proxy_list:
+        return False
+    from app.services.entitlements import for_tier
+
+    e = for_tier(SubscriptionTier.UNLIMITED)
+    return egress_capacity_per_minute() >= e.requests_per_minute(e.max_rules)
 
 
 def available_plans() -> list[Plan]:
@@ -281,7 +318,10 @@ async def activate_premium(
 
     sub = await get_active_subscription(session, user.telegram_id)
     if sub is not None:
-        base = max(sub.subscription_end, now)
+        # Not every backend hands timestamps back with their timezone, and an
+        # extension must never fail on that: losing this comparison would mean
+        # a paid month is not added.
+        base = max(_aware(sub.subscription_end), now)
         sub.subscription_end = base + timedelta(days=days)
         sub.renewal_date = sub.subscription_end
         sub.payments_count += 1
@@ -345,6 +385,11 @@ async def deactivate_premium(
     await session.flush()
     await enforce_tier_limits(session, user)
     logger.info("PREMIUM: {} deactivated ({})", user.telegram_id, status.value)
+
+
+def _aware(value: datetime) -> datetime:
+    """Read a stored timestamp as UTC when the backend dropped its timezone."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
 def _tier_from_string(value: str | None) -> SubscriptionTier | None:

@@ -6,12 +6,21 @@ short-lived-connection pattern as :mod:`app.services.health` (the worker runs
 every task in its own event loop). Every check fails OPEN: if Redis is down the
 action is allowed, because a metering outage must never silence the product.
 
-Two operations only:
+Three operations only:
 
 * :func:`check` — how much is left, without consuming anything.
 * :func:`consume` — atomically take one unit; tells the caller whether the cap
   was already reached so it can show the named "you would have seen X" teaser
   instead of quietly dropping the action.
+* :func:`release` — hand a unit back when the action failed after booking.
+
+A booking and its refund can land in different windows: a photo booked at
+23:59:58 whose analysis fails at 00:00:03 would decrement the fresh day and
+leave yesterday inflated for the rest of its TTL. Every :class:`QuotaState`
+therefore carries the ``stamp`` of the window it touched, which :func:`release`
+accepts; and :func:`consume` additionally parks that stamp in Redis, so even a
+caller that kept nothing (``release(kind, user)``) still refunds the window the
+last booking came from.
 """
 
 from __future__ import annotations
@@ -73,8 +82,22 @@ def _ttl(window: str) -> int:
     return 2 * 86400 if window == "day" else 35 * 86400
 
 
+def _key_for(kind: str, telegram_id: int, stamp: str) -> str:
+    return f"quota:{kind}:{telegram_id}:{stamp}"
+
+
 def _key(kind: str, telegram_id: int, now: datetime | None = None) -> str:
-    return f"quota:{kind}:{telegram_id}:{_stamp(_WINDOW[kind], now)}"
+    return _key_for(kind, telegram_id, _stamp(_WINDOW[kind], now))
+
+
+def _booked_key(kind: str, telegram_id: int) -> str:
+    """Where :func:`consume` parks the window it booked from.
+
+    It is what makes a stamp-less ``release()`` land in the right window, so
+    call sites that do not carry the :class:`QuotaState` around are correct
+    without changing them.
+    """
+    return f"quota:booked:{kind}:{telegram_id}"
 
 
 def limit_for(kind: str, user: User) -> int:
@@ -102,6 +125,14 @@ class QuotaState:
     kind: str
     used: int
     limit: int          # -1 = unlimited
+    #: Window this state was read from / booked in ("20260916" or "202609").
+    #: Hand it back to :func:`release` to refund exactly that window.
+    stamp: str = ""
+    #: False when Redis was unavailable and the action was NOT counted. Callers
+    #: decide a refusal by comparing counters, and a fail-open state has a
+    #: counter that did not move — indistinguishable from "the cap refused me"
+    #: unless they can see that nothing was metered at all.
+    metered: bool = True
 
     @property
     def unlimited(self) -> bool:
@@ -133,13 +164,14 @@ class QuotaState:
 async def check(kind: str, user: User, now: datetime | None = None) -> QuotaState:
     """Current usage without consuming."""
     limit = ent.UNLIMITED if _exempt(user) else limit_for(kind, user)
-    used = 0
+    stamp = _stamp(_WINDOW[kind], now)
     try:
         async with _redis() as r:
-            used = int(await r.get(_key(kind, user.telegram_id, now)) or 0)
+            used = int(await r.get(_key_for(kind, user.telegram_id, stamp)) or 0)
     except Exception as exc:  # noqa: BLE001 - fail open
         logger.debug("quota.check({}) unavailable: {}", kind, exc)
-    return QuotaState(kind=kind, used=used, limit=limit)
+        return QuotaState(kind=kind, used=0, limit=limit, stamp=stamp, metered=False)
+    return QuotaState(kind=kind, used=used, limit=limit, stamp=stamp)
 
 
 async def consume(
@@ -149,35 +181,66 @@ async def consume(
 
     When the cap is already reached nothing is consumed and ``exhausted`` is
     True, so the caller can explain instead of silently dropping the action.
+
+    The returned ``stamp`` names the window the unit came from — pass it to
+    :func:`release` and a refund can never hit the wrong side of midnight.
     """
     limit = ent.UNLIMITED if _exempt(user) else limit_for(kind, user)
-    key = _key(kind, user.telegram_id, now)
+    window = _WINDOW[kind]
+    stamp = _stamp(window, now)
+    key = _key_for(kind, user.telegram_id, stamp)
     try:
         async with _redis() as r:
             used = int(await r.get(key) or 0)
             if not ent.is_unlimited(limit) and used + amount > limit:
-                return QuotaState(kind=kind, used=used, limit=limit)
+                return QuotaState(kind=kind, used=used, limit=limit, stamp=stamp)
             used = int(await r.incrby(key, amount))
             if used == amount:
-                await r.expire(key, _ttl(_WINDOW[kind]))
-            return QuotaState(kind=kind, used=used, limit=limit)
+                await r.expire(key, _ttl(window))
+            # Park the window so a refund that arrives in the NEXT one still
+            # knows where the unit came from, even from a call site that keeps
+            # no state.
+            await r.set(_booked_key(kind, user.telegram_id), stamp, ex=_ttl(window))
+            return QuotaState(kind=kind, used=used, limit=limit, stamp=stamp)
     except Exception as exc:  # noqa: BLE001 - fail open
         logger.debug("quota.consume({}) unavailable: {}", kind, exc)
-        return QuotaState(kind=kind, used=0, limit=limit)
+        return QuotaState(kind=kind, used=0, limit=limit, stamp=stamp, metered=False)
+
+
+async def _booked_stamp(r, kind: str, telegram_id: int, fallback: str) -> str:
+    """The window the last booking used, or ``fallback`` if Redis forgot it."""
+    try:
+        return str(await r.get(_booked_key(kind, telegram_id)) or fallback)
+    except Exception as exc:  # noqa: BLE001 - a missing hint is not an error
+        logger.debug("quota.release({}) window lookup failed: {}", kind, exc)
+        return fallback
 
 
 async def release(
-    kind: str, user: User, *, amount: int = 1, now: datetime | None = None
+    kind: str,
+    user: User,
+    *,
+    amount: int = 1,
+    now: datetime | None = None,
+    stamp: str | None = None,
 ) -> None:
     """Give a unit back (e.g. the photo could not be analysed after all).
 
-    ``now`` addresses the window the unit was taken from: a refund that crosses
-    midnight or a month boundary would otherwise decrement the fresh counter
-    and leave the old one inflated.
+    The window is resolved in decreasing order of certainty: the ``stamp`` the
+    booking returned, else the booking time in ``now``, else the window Redis
+    remembers from the last :func:`consume`, else the current one. Without that
+    ladder a refund issued just after midnight (or just after the first of the
+    month) decrements the fresh counter and leaves the old one inflated.
     """
     try:
         async with _redis() as r:
-            key = _key(kind, user.telegram_id, now)
+            current = _stamp(_WINDOW[kind], now)
+            window = stamp or (
+                current
+                if now is not None
+                else await _booked_stamp(r, kind, user.telegram_id, current)
+            )
+            key = _key_for(kind, user.telegram_id, window)
             if int(await r.get(key) or 0) >= amount:
                 await r.decrby(key, amount)
     except Exception as exc:  # noqa: BLE001
