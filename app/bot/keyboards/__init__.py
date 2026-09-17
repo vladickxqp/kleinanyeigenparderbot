@@ -12,6 +12,7 @@ from app.bot.keyboards.common import (
     auction_short,
     auctions_keyboard,
     cancel_keyboard,
+    draft_confirm_keyboard,
     category_keyboard,
     condition_keyboard,
     condition_short,
@@ -26,6 +27,7 @@ from app.bot.keyboards.common import (
     shipping_keyboard,
     shipping_short,
     sites_select_keyboard,
+    sentence_keyboard,
     skip_cancel_keyboard,
 )
 
@@ -41,6 +43,7 @@ __all__ = [
     "auction_short",
     "auctions_keyboard",
     "cancel_keyboard",
+    "draft_confirm_keyboard",
     "category_keyboard",
     "condition_keyboard",
     "condition_short",
@@ -55,5 +58,6 @@ __all__ = [
     "shipping_keyboard",
     "shipping_short",
     "sites_select_keyboard",
+    "sentence_keyboard",
     "skip_cancel_keyboard",
 ]

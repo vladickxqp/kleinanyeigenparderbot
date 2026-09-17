@@ -20,6 +20,12 @@ cards straight to Telegram.
   central registry — add a new site without touching the core.
 - **Flexible search rules**: keywords, exclude-words, price range, condition, location,
   radius, seller rating, category, brand, and arbitrary extra filters.
+- **A rule from one sentence**: *"Tesla Model 3 unter 25.000 €, 100 km um Worms, keine
+  Unfallwagen"* becomes a finished proposal to confirm — the eight-question wizard is
+  still one tap away. Deterministic German parsing first (`app/services/rule_nlp.py`,
+  works with `AI_ENABLED=false`); the optional model pass may only fill fields the
+  rules could not, never overwrite one they did, and every value it returns is
+  re-validated through the same coercers. Switch: `NL_RULES_ENABLED`.
 - **Price intelligence**: price history, average/min/max, discount %, anomaly detection
   ("possible seller mistake"), optional AI scoring (0–100) and resale/ROI mode.
 - **Deduplication**: never send the same offer twice, even across different parsers.

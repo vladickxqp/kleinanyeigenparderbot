@@ -8,6 +8,8 @@ from aiogram.fsm.state import State, StatesGroup
 class RuleWizard(StatesGroup):
     """Step-by-step collection of a new SearchRule's fields."""
 
+    #: The short path: one sentence instead of the eight questions below.
+    sentence = State()
     name = State()
     keywords = State()
     category = State()

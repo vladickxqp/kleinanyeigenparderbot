@@ -8,6 +8,7 @@ callers transparently fall back to the deterministic heuristic scorer.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 
@@ -55,29 +56,51 @@ def is_available() -> bool:
     return True
 
 
-async def score_listing_ai(listing: ParsedListing, stats: PriceStats) -> AIScore | None:
-    """Ask Claude to assess a listing. Returns None on any failure."""
+#: Every model call is bounded. A worker task is killed at 150s, so a hanging
+#: request would take the whole task down with it instead of falling back.
+DEFAULT_TIMEOUT_SECONDS = 20.0
+
+
+async def ask(
+    system: str,
+    prompt: str,
+    *,
+    max_tokens: int = 300,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> str | None:
+    """One model call, bounded in time. Returns the text, or None on failure.
+
+    The single place the SDK is spoken to: model, timeout and the "a failure is
+    a None, not an exception" contract are decided here, so a second caller
+    cannot quietly ship without a timeout.
+    """
     if not is_available():
         return None
+    from anthropic import AsyncAnthropic
 
-    try:
-        from anthropic import AsyncAnthropic
-
-        client = AsyncAnthropic(api_key=settings.anthropic_api_key)
-        prompt = _build_user_prompt(listing, stats)
-        message = await client.messages.create(
+    client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    message = await asyncio.wait_for(
+        client.messages.create(
             model=settings.ai_model,
-            max_tokens=300,
-            system=_SYSTEM_PROMPT,
+            max_tokens=max_tokens,
+            system=system,
             messages=[{"role": "user", "content": prompt}],
-        )
-        text = "".join(
-            block.text for block in message.content if block.type == "text"
-        )
-        return _parse_response(text)
+        ),
+        timeout=timeout,
+    )
+    return "".join(block.text for block in message.content if block.type == "text")
+
+
+async def score_listing_ai(listing: ParsedListing, stats: PriceStats) -> AIScore | None:
+    """Ask Claude to assess a listing. Returns None on any failure."""
+    try:
+        text = await ask(_SYSTEM_PROMPT, _build_user_prompt(listing, stats))
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:  # noqa: BLE001 - never let AI break the pipeline
         logger.warning("AI scoring failed, falling back to heuristic: {}", exc)
         return None
+    return _parse_response(text) if text else None
 
 
 def _build_user_prompt(listing: ParsedListing, stats: PriceStats) -> str:

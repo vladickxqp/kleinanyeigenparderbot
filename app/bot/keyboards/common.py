@@ -54,6 +54,25 @@ def skip_cancel_keyboard(lang: str) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def sentence_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Free-text entry, with the eight-question wizard one tap away."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text=t("btn.rule_steps", lang), callback_data="rule:steps")
+    kb.button(text=t("btn.cancel", lang), callback_data="wizard:cancel")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def draft_confirm_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """What to do with an understood sentence: search, refine, or drop it."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text=t("btn.draft_save", lang), callback_data="rule:draft:save")
+    kb.button(text=t("btn.draft_adjust", lang), callback_data="rule:draft:adjust")
+    kb.button(text=t("btn.cancel", lang), callback_data="wizard:cancel")
+    kb.adjust(2, 1)
+    return kb.as_markup()
+
+
 def rules_list_keyboard(rules: Sequence[SearchRule], lang: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for rule in rules:

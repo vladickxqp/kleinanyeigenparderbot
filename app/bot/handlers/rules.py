@@ -16,11 +16,14 @@ from app.bot.keyboards import (
     RADIUS_CHOICES,
     cancel_keyboard,
     category_keyboard,
+    condition_short,
+    draft_confirm_keyboard,
     interval_keyboard,
     main_menu_keyboard,
     radius_keyboard,
     rule_actions_keyboard,
     rules_list_keyboard,
+    sentence_keyboard,
     sites_select_keyboard,
     skip_cancel_keyboard,
 )
@@ -28,9 +31,10 @@ from app.bot.states import RuleWizard
 from app.bot.texts import t
 from app.config.settings import settings
 from app.database.models import SearchRule, User
-from app.database.models.enums import SiteName
+from app.database.models.enums import Condition, SiteName
 from app.parsers import registry
 from app.parsers.registry import site_label
+from app.services import rule_nlp
 from app.services.parsing import parse_price_range
 from app.services.repositories import SearchRuleRepository
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -234,9 +238,150 @@ async def cb_new_rule(
             t("rule.limit_reached", lang, max=user.max_rules), show_alert=True
         )
         return
-    await state.set_state(RuleWizard.name)
-    await cb.message.answer(t("rule.ask_name", lang), reply_markup=cancel_keyboard(lang))
+    if rule_nlp.is_enabled():
+        # The eight questions below are where most people stop. One sentence
+        # gets to a finished proposal; the wizard stays one tap away.
+        await state.set_state(RuleWizard.sentence)
+        await cb.message.answer(
+            t("rule.ask_sentence", lang), reply_markup=sentence_keyboard(lang)
+        )
+        await cb.answer()
+        return
+    await _ask_name(cb.message, lang, state)
     await cb.answer()
+
+
+@router.callback_query(F.data == "rule:steps")
+async def cb_rule_steps(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
+    """Leave the short path for the full wizard."""
+    await _ask_name(cb.message, lang, state)
+    await cb.answer()
+
+
+# --- The short path: one sentence -------------------------------------------
+@router.message(RuleWizard.sentence, F.text)
+async def wiz_sentence(message: Message, lang: str, state: FSMContext) -> None:
+    draft = await rule_nlp.build_draft(message.text or "")
+    if not draft.is_usable:
+        # Nothing to search for. Say so and keep the field open rather than
+        # creating a rule that would quietly match everything.
+        await message.answer(
+            t("rule.sentence_unclear", lang), reply_markup=sentence_keyboard(lang)
+        )
+        return
+    await state.update_data(draft=draft.as_dict())
+    await message.answer(
+        _draft_summary(draft, lang), reply_markup=draft_confirm_keyboard(lang)
+    )
+
+
+@router.callback_query(RuleWizard.sentence, F.data == "rule:draft:save")
+async def cb_draft_save(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
+) -> None:
+    """Take the proposal as it stands: every platform, the tier's own speed."""
+    draft = await _stored_draft(state)
+    if draft is None:
+        await cb.answer()
+        return
+    seconds, tier_note = _clamp_interval_for_tier(
+        user, settings.scraper_default_interval_seconds
+    )
+    await _apply_draft(state, draft)
+    await _finalize(
+        cb.message, user, session, lang, state,
+        exclude=list(draft.exclude_keywords),
+        sites=[],
+        interval_seconds=seconds,
+    )
+    await cb.answer(tier_note or "", show_alert=bool(tier_note))
+
+
+@router.callback_query(RuleWizard.sentence, F.data == "rule:draft:adjust")
+async def cb_draft_adjust(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
+    """Keep the sentence, then pick the two things it can never express."""
+    draft = await _stored_draft(state)
+    if draft is None:
+        await cb.answer()
+        return
+    await _apply_draft(state, draft)
+    await _ask_sites(cb.message, lang, state)
+    await cb.answer()
+
+
+async def _stored_draft(state: FSMContext) -> rule_nlp.RuleDraft | None:
+    """The proposal behind the buttons — re-validated on the way out of storage."""
+    data = await state.get_data()
+    draft = rule_nlp.RuleDraft.from_dict(data.get("draft"))
+    return draft if draft.is_usable else None
+
+
+async def _apply_draft(state: FSMContext, draft: rule_nlp.RuleDraft) -> None:
+    """Move the proposal into the fields the wizard's own finish step reads."""
+    await state.update_data(
+        name=draft.name,
+        keywords=draft.keywords,
+        min_price=draft.min_price,
+        max_price=draft.max_price,
+        exclude=list(draft.exclude_keywords),
+        location=draft.location,
+        zip_code=draft.zip_code,
+        max_distance_km=draft.max_distance_km,
+        condition=draft.condition.value,
+        category=None,
+    )
+
+
+def _draft_summary(draft: rule_nlp.RuleDraft, lang: str) -> str:
+    """What the sentence was understood to mean, in the user's language."""
+    if draft.min_price is not None and draft.max_price is not None:
+        price = f"{draft.min_price:.0f}–{draft.max_price:.0f} €"
+    elif draft.min_price is not None:
+        price = f"ab {draft.min_price:.0f} €"
+    elif draft.max_price is not None:
+        price = f"bis {draft.max_price:.0f} €"
+    else:
+        price = t("rule.f_any", lang)
+
+    place = t("rule.f_everywhere", lang)
+    if draft.location or draft.zip_code:
+        place = escape(draft.location or draft.zip_code or "")
+        if draft.max_distance_km:
+            place += f" (±{draft.max_distance_km} km)"
+
+    lines = [
+        f"{t('rule.sentence_understood', lang)}\n",
+        f"<b>{escape(draft.name)}</b>",
+        f"🔎 {t('rule.f_keywords', lang)}: <code>{escape(draft.keywords)}</code>",
+        f"💶 {t('rule.f_price', lang)}: {escape(price)}",
+        f"📍 {t('rule.f_place', lang)}: {place}",
+    ]
+    if draft.condition is not Condition.ANY:
+        lines.append(
+            f"🏷 {t('rule.f_condition', lang)}: {condition_short(draft.condition)}"
+        )
+    if draft.exclude_keywords:
+        excluded = ", ".join(escape(word) for word in draft.exclude_keywords)
+        lines.append(f"🚫 {t('rule.f_exclude', lang)}: {excluded}")
+    if draft.max_mileage_km is not None:
+        # Understood but not filterable — saying so beats dropping it silently.
+        lines.append("")
+        lines.append(t("rule.sentence_mileage", lang, km=f"{draft.max_mileage_km:,}"
+                       .replace(",", ".")))
+    return "\n".join(lines)
+
+
+def _stored_condition(value: object) -> Condition:
+    """A condition out of FSM storage — an unknown value filters nothing."""
+    try:
+        return Condition(str(value))
+    except ValueError:
+        return Condition.ANY
+
+
+async def _ask_name(message: Message, lang: str, state: FSMContext) -> None:
+    await state.set_state(RuleWizard.name)
+    await message.answer(t("rule.ask_name", lang), reply_markup=cancel_keyboard(lang))
 
 
 @router.callback_query(F.data == "wizard:cancel")
@@ -540,6 +685,9 @@ async def _finalize(
         location=data.get("location"),
         zip_code=data.get("zip_code"),
         max_distance_km=data.get("max_distance_km"),
+        # Only the sentence path can set this; the step-by-step wizard leaves
+        # it to the edit menu, which is why the fallback is "any".
+        condition=_stored_condition(data.get("condition")),
         interval_seconds=interval_seconds or settings.scraper_default_interval_seconds,
         sites=sites or [],  # empty = all registered parsers
     )

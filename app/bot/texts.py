@@ -163,6 +163,74 @@ _TEXTS: dict[str, dict[str, str]] = {
         "ru": "✅ Поиск <b>{name}</b> создан и активен!",
         "uk": "✅ Пошук <b>{name}</b> створено та активовано!",
     },
+    # --- The short path: one sentence instead of eight questions -------------
+    "rule.ask_sentence": {
+        "de": "✍️ Beschreib in einem Satz, was du suchst.\n\n"
+        "<i>Tesla Model 3 unter 25.000 €, 100 km um Worms, keine Unfallwagen</i>",
+        "en": "✍️ Describe what you are looking for in one sentence.\n\n"
+        "<i>Tesla Model 3 under €25,000, within 100 km of Worms, no salvage</i>",
+        "ru": "✍️ Опиши одним предложением, что ты ищешь.\n\n"
+        "<i>Tesla Model 3 до 25 000 €, 100 км вокруг Вормса, без аварийных</i>",
+        "uk": "✍️ Опиши одним реченням, що ти шукаєш.\n\n"
+        "<i>Tesla Model 3 до 25 000 €, 100 км навколо Вормса, без аварійних</i>",
+    },
+    "rule.sentence_unclear": {
+        "de": "🤔 Daraus konnte ich keine Suchbegriffe lesen. Schreib den Satz "
+        "anders — oder leg die Suche Schritt für Schritt an.",
+        "en": "🤔 I could not read any keywords from that. Try another wording — "
+        "or set the search up step by step.",
+        "ru": "🤔 Я не смог выделить ключевые слова. Сформулируй иначе — "
+        "или создай поиск пошагово.",
+        "uk": "🤔 Я не зміг виділити ключові слова. Сформулюй інакше — "
+        "або створи пошук покроково.",
+    },
+    "rule.sentence_understood": {
+        "de": "So habe ich das verstanden:",
+        "en": "Here is what I understood:",
+        "ru": "Вот как я это понял:",
+        "uk": "Ось як я це зрозумів:",
+    },
+    "rule.f_keywords": {"de": "Suche", "en": "Search", "ru": "Поиск", "uk": "Пошук"},
+    "rule.f_price": {"de": "Preis", "en": "Price", "ru": "Цена", "uk": "Ціна"},
+    "rule.f_place": {"de": "Ort", "en": "Location", "ru": "Место", "uk": "Місце"},
+    "rule.f_condition": {
+        "de": "Zustand", "en": "Condition", "ru": "Состояние", "uk": "Стан",
+    },
+    "rule.f_exclude": {
+        "de": "Ohne", "en": "Without", "ru": "Без", "uk": "Без",
+    },
+    "rule.f_any": {"de": "beliebig", "en": "any", "ru": "любая", "uk": "будь-яка"},
+    "rule.f_everywhere": {
+        "de": "überall", "en": "everywhere", "ru": "везде", "uk": "всюди",
+    },
+    "rule.sentence_mileage": {
+        "de": "ℹ️ Kilometerstand verstanden ({km} km), aber dafür gibt es noch "
+        "keinen Filter — die Suche läuft ohne ihn.",
+        "en": "ℹ️ Understood the mileage ({km} km), but there is no filter for it "
+        "yet — the search runs without it.",
+        "ru": "ℹ️ Пробег понят ({km} км), но фильтра для него пока нет — "
+        "поиск работает без него.",
+        "uk": "ℹ️ Пробіг зрозумів ({km} км), але фільтра для нього ще немає — "
+        "пошук працює без нього.",
+    },
+    "btn.rule_steps": {
+        "de": "📋 Schritt für Schritt",
+        "en": "📋 Step by step",
+        "ru": "📋 Пошагово",
+        "uk": "📋 Покроково",
+    },
+    "btn.draft_save": {
+        "de": "✅ So suchen",
+        "en": "✅ Search like this",
+        "ru": "✅ Искать так",
+        "uk": "✅ Шукати так",
+    },
+    "btn.draft_adjust": {
+        "de": "⚙️ Anpassen",
+        "en": "⚙️ Adjust",
+        "ru": "⚙️ Настроить",
+        "uk": "⚙️ Налаштувати",
+    },
     "rule.limit_reached": {
         "de": "⚠️ Limit erreicht ({max}). Lösche eine Suche oder upgrade dein Abo.",
         "en": "⚠️ Limit reached ({max}). Delete a search or upgrade your plan.",
