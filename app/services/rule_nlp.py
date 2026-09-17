@@ -42,6 +42,9 @@ from app.services.parsing import parse_price_range
 # --- Limits (all values are clamped to these before they leave the module) ----
 #: Longest free text we look at. Bounds the regex work on hostile input.
 MAX_INPUT_CHARS = 500
+#: Ein Baujahr ausserhalb dieser Spanne meint etwas anderes.
+MIN_YEAR = 1950
+MAX_YEAR = 2100
 MAX_NAME_CHARS = 128
 MAX_KEYWORDS_CHARS = 256
 #: The wizard cuts a location to 64 chars (the column allows 128).
@@ -84,10 +87,11 @@ class RuleDraft:
     zip_code: str | None = None
     max_distance_km: int | None = None
     condition: Condition = Condition.ANY
-    #: Understood, but SearchRule has no mileage column — shown to the user as
-    #: "not filtered" instead of being silently dropped or, worse, turned into
-    #: a price.
     max_mileage_km: int | None = None
+    #: Erstzulassung ab. Wie die Kilometer ein Auto-Feld; beide muessen
+    #: vor der Preissuche gelesen werden, sonst wird "ab 2018" ein
+    #: Mindestpreis von 2018 Euro.
+    min_year: int | None = None
     source: str = SOURCE_RULES
 
     @property
@@ -108,6 +112,7 @@ class RuleDraft:
             "max_distance_km": self.max_distance_km,
             "condition": self.condition.value,
             "max_mileage_km": self.max_mileage_km,
+            "min_year": self.min_year,
             "source": self.source,
         }
 
@@ -131,6 +136,7 @@ class RuleDraft:
             max_distance_km=_coerce_distance(data.get("max_distance_km")),
             condition=_coerce_condition(data.get("condition")),
             max_mileage_km=_coerce_mileage(data.get("max_mileage_km")),
+            min_year=_coerce_year(data.get("min_year")),
             source=str(data.get("source") or SOURCE_RULES)[:16],
         )
         return _finalize(draft)
@@ -214,6 +220,14 @@ def _coerce_mileage(value: Any) -> int | None:
     if km is None or km <= 0 or km > MAX_MILEAGE_KM:
         return None
     return km
+
+
+def _coerce_year(value: Any) -> int | None:
+    """Ein Baujahr ist vierstellig und liegt in der Gegenwart."""
+    year = _coerce_int(value)
+    if year is None or year < MIN_YEAR or year > MAX_YEAR:
+        return None
+    return year
 
 
 def _coerce_zip(value: Any) -> str | None:
@@ -384,6 +398,19 @@ _MILEAGE_RE = re.compile(
     rf"nicht\s+mehr\s+als)\s+)?{_NUM}\s*(?P<unit>tkm|k\s*km|km)\b"
 )
 
+# 4b) Baujahr: "ab Baujahr 2018", "EZ ab 2018", "Baujahr 2018".
+#     Die Jahreszahl braucht ein Wort davor - eine nackte 2018 im Satz
+#     ist oefter ein Preis oder eine Modellnummer als ein Baujahr.
+_YEAR_RE = re.compile(
+    r"(?:baujahr|bj\.?|erstzulassung|ez|zulassung)\s*"
+    r"(?:ab|seit|von|ab\s+dem)?\s*(?P<year>(?:19|20)\d{2})\b"
+    r"|(?:ab|seit|neuer\s+als|juenger\s+als|j(?:ü|ue)nger\s+als)\s+"
+    r"(?:baujahr|bj\.?|erstzulassung|ez)?\s*(?P<year2>(?:19|20)\d{2})\b"
+    # "ab 2018 €" ist ein Mindestpreis, kein Baujahr. Eine Zahl mit Waehrung
+    # dahinter gehoert der Preissuche, die gleich danach laeuft.
+    r"(?!\s*(?:€|euro|eur))"
+)
+
 # 5) Prices. Ranges first — "bis" inside "zwischen 500 und 900" must not be
 #    read as a maximum. A bare "A bis B" is deliberately NOT a range: in
 #    "RTX 4090 bis 900 €" the first number is a model, not a lower bound.
@@ -539,6 +566,9 @@ def parse_rule_text(text: str) -> RuleDraft:
     _extract_negations(raw, low, mask, draft)
     _extract_distance(raw, low, mask, draft)
     _extract_mileage(low, mask, draft)
+    # Vor den Preisen: sonst liest _extract_prices "ab 2018" als
+    # Mindestpreis von 2018 Euro und das Baujahr ist weg.
+    _extract_year(low, mask, draft)
     _extract_prices(low, mask, draft)
     _extract_location(raw, low, mask, draft)
     _extract_zip(low, mask, draft)
@@ -650,6 +680,19 @@ def _extract_mileage(low: str, mask: _Mask, draft: RuleDraft) -> None:
         return
 
 
+def _extract_year(low: str, mask: _Mask, draft: RuleDraft) -> None:
+    """Baujahr/Erstzulassung ab."""
+    for match in _YEAR_RE.finditer(low):
+        if not mask.free(*match.span()):
+            continue
+        year = _coerce_year(match.group("year") or match.group("year2"))
+        if year is None:
+            continue
+        draft.min_year = year
+        mask.take(*match.span())
+        return
+
+
 def _extract_prices(low: str, mask: _Mask, draft: RuleDraft) -> None:
     for pattern in _RANGE_RES:
         for match in pattern.finditer(low):
@@ -724,6 +767,7 @@ _AI_KEYS: frozenset[str] = frozenset(
         "max_distance_km",
         "condition",
         "max_mileage_km",
+        "min_year",
     }
 )
 
@@ -737,7 +781,7 @@ _AI_SYSTEM_PROMPT = (
     '"location": German town or null, "zip_code": five digits or null, '
     '"max_distance_km": number or null, "condition": one of '
     '["any","new","like_new","used","defective","refurbished"], '
-    '"max_mileage_km": number or null}. '
+    '"max_mileage_km": number or null, "min_year": 4-digit year or null}. '
     "Prices are euros. Use null when the sentence does not say."
 )
 
@@ -827,6 +871,11 @@ def merge_ai_fields(draft: RuleDraft, data: Any) -> RuleDraft:
         condition = _coerce_condition(fields.get("condition"))
         if condition is not Condition.ANY:
             draft.condition = condition
+            used = True
+    if draft.min_year is None:
+        year = _coerce_year(fields.get("min_year"))
+        if year is not None:
+            draft.min_year = year
             used = True
     if draft.max_mileage_km is None:
         mileage = _coerce_mileage(fields.get("max_mileage_km"))

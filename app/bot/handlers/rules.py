@@ -329,6 +329,7 @@ async def _apply_draft(state: FSMContext, draft: rule_nlp.RuleDraft) -> None:
         zip_code=draft.zip_code,
         max_distance_km=draft.max_distance_km,
         max_mileage_km=draft.max_mileage_km,
+        min_year=draft.min_year,
         condition=draft.condition.value,
         category=None,
     )
@@ -365,10 +366,10 @@ def _draft_summary(draft: rule_nlp.RuleDraft, lang: str) -> str:
     if draft.exclude_keywords:
         excluded = ", ".join(escape(word) for word in draft.exclude_keywords)
         lines.append(f"🚫 {t('rule.f_exclude', lang)}: {excluded}")
-    if draft.max_mileage_km is not None:
+    if draft.max_mileage_km is not None or draft.min_year is not None:
         lines.append(
-            f"🚗 {t('rule.f_mileage', lang)}: "
-            f"{vehicle_short(draft.max_mileage_km, None, lang)}"
+            f"🚗 {t('rule.f_vehicle', lang)}: "
+            f"{vehicle_short(draft.max_mileage_km, draft.min_year, lang)}"
         )
     return "\n".join(lines)
 
@@ -742,6 +743,7 @@ async def _finalize(
         zip_code=data.get("zip_code"),
         max_distance_km=data.get("max_distance_km"),
         max_mileage_km=data.get("max_mileage_km"),
+        min_year=data.get("min_year"),
         # Only the sentence path can set these; the step-by-step wizard leaves
         # them to the edit menu, which is why the fallbacks are "unfiltered".
         condition=_stored_condition(data.get("condition")),

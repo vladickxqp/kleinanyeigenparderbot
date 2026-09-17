@@ -418,3 +418,80 @@ def test_the_step_by_step_wizard_still_creates_an_unfiltered_condition(sqlite_db
         await db.dispose_engine()
 
     asyncio.run(scenario())
+
+
+# --- Baujahr ----------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "text, year",
+    [
+        ("BMW 320d ab Baujahr 2018", 2018),
+        ("BMW 320d Baujahr 2018", 2018),
+        ("BMW 320d EZ ab 2018", 2018),
+        ("BMW 320d Erstzulassung ab 2020", 2020),
+        ("BMW 320d ab 2018", 2018),
+        ("BMW 320d neuer als 2015", 2015),
+        ("BMW 320d", None),
+    ],
+)
+def test_the_year_of_registration_is_read_from_the_sentence(text, year):
+    assert draft(text).min_year == year
+
+
+def test_a_year_is_never_mistaken_for_a_price():
+    # "ab 2018 €" is a budget. Reading it as a year would drop the price bound
+    # AND add a filter the user never asked for.
+    d = draft("Sofa ab 2018 €")
+    assert d.min_year is None
+    assert d.min_price == 2018.0
+    # And the other way round: without a currency it is a year.
+    assert draft("Couch ab 2018").min_year == 2018
+
+
+def test_a_model_number_is_not_a_year():
+    assert draft("RTX 4090 bis 1500 €").min_year is None
+    assert draft("iPhone 15 ab 300 €").min_year is None
+
+
+def test_year_mileage_and_price_all_survive_one_sentence():
+    d = draft("Golf ab 2018, bis 15.000 €, höchstens 100.000 km")
+    assert (d.min_year, d.max_mileage_km, d.max_price) == (2018, 100_000, 15000.0)
+    assert d.keywords.lower().strip() == "golf"
+
+
+def test_an_impossible_year_is_refused():
+    assert draft("Oldtimer ab 1850").min_year is None
+    assert RuleDraft.from_dict({"keywords": "golf", "min_year": 3000}).min_year is None
+    assert RuleDraft.from_dict({"keywords": "golf", "min_year": "zweitausend"}).min_year is None
+
+
+def test_the_year_reaches_the_saved_rule(sqlite_db):
+    async def scenario() -> None:
+        engine = db.get_engine()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        maker = db.get_sessionmaker()
+        async with maker() as session:
+            user = User(telegram_id=5160, subscription=SubscriptionTier.FREE)
+            session.add(user)
+            await session.flush()
+
+            d = draft("BMW 3er ab Baujahr 2019, höchstens 80.000 km, bis 20.000 €")
+            state = FakeState()
+            await rules._apply_draft(state, d)
+            await rules._finalize(
+                FakeMessage(), user, session, "de", state, exclude=[], sites=[],
+            )
+            await session.flush()
+            rule = (await session.execute(select(SearchRule))).scalars().one()
+            assert rule.min_year == 2019
+            assert rule.max_mileage_km == 80_000
+            assert rule.max_price == 20000.0
+        await db.dispose_engine()
+
+    asyncio.run(scenario())
+
+
+def test_the_summary_shows_both_car_bounds():
+    d = draft("BMW 3er ab Baujahr 2019, höchstens 80.000 km")
+    text = rules._draft_summary(d, "de")
+    assert "80.000" in text and "2019" in text
