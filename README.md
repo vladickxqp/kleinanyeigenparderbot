@@ -183,6 +183,13 @@ login. Authentication is Telegram's signed `initData` (verified server-side in
 `app/api/webapp_auth.py`), so a user can only ever see their own data, and the
 check interval is clamped to their tier on the server.
 
+Same frontend, but **not the same bundle**: `src/App.tsx` loads the admin panel
+lazily, so `/app` no longer ships the dashboard's chart library to a phone
+(65 kB gzip instead of 174 kB). The split is deliberately asymmetric — the Mini
+App stays eager and arrives in one request, the admin panel takes the extra
+round trip because it runs on a desktop. Keep it that way when adding pages:
+anything imported from `App.tsx` lands in the Mini App's bundle.
+
 Telegram only loads Mini Apps from a **public HTTPS URL**. Cheapest setup
 (free): a domain + Cloudflare Tunnel — nothing is exposed on your router.
 

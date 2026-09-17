@@ -1,17 +1,19 @@
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { Layout } from "./components/Layout";
-import { useAuth } from "./lib/auth";
-import { Dashboard } from "./pages/Dashboard";
-import { Listings } from "./pages/Listings";
-import { Login } from "./pages/Login";
+import { Suspense, lazy } from "react";
+import { useLocation } from "react-router-dom";
 import { MiniApp } from "./pages/MiniApp";
-import { Parsers } from "./pages/Parsers";
-import { Rules } from "./pages/Rules";
-import { Settings } from "./pages/Settings";
-import { Users } from "./pages/Users";
+
+/**
+ * The admin panel is fetched only when someone actually opens it.
+ *
+ * The split is deliberately asymmetric. The Mini App stays eager, so it still
+ * arrives in a single request on a phone; the admin panel takes the extra
+ * round trip, because it runs on a desktop and has one user. Before this, /app
+ * downloaded the whole dashboard — chart library included — to render a list
+ * of deals.
+ */
+const AdminApp = lazy(() => import("./AdminApp"));
 
 export default function App() {
-  const { isAuthed } = useAuth();
   const { pathname } = useLocation();
 
   // The Telegram Mini App authenticates with Telegram's initData, not with
@@ -20,26 +22,9 @@ export default function App() {
     return <MiniApp />;
   }
 
-  if (!isAuthed) {
-    return (
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    );
-  }
-
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<Dashboard />} />
-        <Route path="rules" element={<Rules />} />
-        <Route path="listings" element={<Listings />} />
-        <Route path="users" element={<Users />} />
-        <Route path="parsers" element={<Parsers />} />
-        <Route path="settings" element={<Settings />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <Suspense fallback={<div className="p-8 text-slate-500">Lädt…</div>}>
+      <AdminApp />
+    </Suspense>
   );
 }
