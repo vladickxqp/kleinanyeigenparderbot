@@ -197,3 +197,93 @@ def test_translated_screens_keep_their_content():
     assert "На складе" in _screens("ru")["flips.inventory"]
     assert "Your data" in _screens("en")["privacy.page"]
     assert "Твои данные" in _screens("ru")["privacy.page"]
+
+
+# --- The rule card and its edit menu ---------------------------------------------
+#: German that has no business appearing on a Russian or English screen. These
+#: are the words the rule surfaces used to print in every language.
+RULE_TELLTALES = (
+    "Suchbegriffe", "Kategorie", "Preis", "Ausschluss", "Plattformen",
+    "Intervall", "aktiv", "pausiert", "beliebig", "überall", "alle",
+    "bis 25000", "ab 25000",
+    "Zustand", "Versand", "Auktionen", "gebraucht", "defekt", "egal",
+    "Suchwörter", "Auto",
+)
+
+
+def _rule() -> "SearchRule":
+    from app.database.models import SearchRule
+    from app.database.models.enums import Condition
+
+    rule = SearchRule(
+        name="Tesla", keywords="tesla model 3", exclude_keywords=["unfall"],
+        category="autos", min_price=None, max_price=25000.0,
+        condition=Condition.USED, shipping_available=True, exclude_auctions=True,
+        location="Worms", max_distance_km=100, max_mileage_km=100_000,
+        min_year=2018, sites=[], interval_seconds=600, is_active=True,
+        min_deal_score=60,
+    )
+    rule.id = 7
+    return rule
+
+
+def _rule_screens(lang: str) -> dict[str, str]:
+    from app.bot.handlers.rules import _render_rule
+    from app.bot.keyboards import rule_edit_keyboard
+
+    rule = _rule()
+    keyboard = rule_edit_keyboard(rule, lang)
+    buttons = " · ".join(
+        button.text for row in keyboard.inline_keyboard for button in row
+    )
+    locked = rule_edit_keyboard(rule, lang, has_rule_power=False)
+    return {
+        "rule.card": _render_rule(rule, lang),
+        "rule.edit_menu": buttons,
+        "rule.edit_menu_locked": " · ".join(
+            button.text for row in locked.inline_keyboard for button in row
+        ),
+        # The prompts behind those buttons: a translated button that opens a
+        # German wall of text is not a translated screen.
+        "edit.ask_condition": t("edit.ask_condition", lang),
+        "edit.ask_shipping": t("edit.ask_shipping", lang),
+        "edit.ask_auctions": t("edit.ask_auctions", lang),
+        "edit.ask_vehicle": t("edit.ask_vehicle", lang, clear="-"),
+        "edit.power_pitch": t("edit.power_pitch", lang, level="Pro"),
+    }
+
+
+#: The condition prompt quotes the words the parser looks for in German ad
+#: TEXT ("defekt", "Bastler", …). Those stay German in every language because
+#: that is what the ads say — they are data, not copy.
+_QUOTED_MARKERS = re.compile(r"[„«\"][^„«\"»“]*[“»\"]")
+
+
+@pytest.mark.parametrize("lang", ["en", "ru", "uk"])
+def test_the_rule_card_and_edit_menu_have_no_german_left(lang):
+    for name, rendered in _rule_screens(lang).items():
+        prose = _QUOTED_MARKERS.sub(" ", rendered).lower()
+        for word in RULE_TELLTALES:
+            assert word.lower() not in prose, f"{name}/{lang} still says '{word}'"
+
+
+def test_the_rule_surfaces_really_change_with_the_language():
+    german = _rule_screens(DEFAULT_LANGUAGE)
+    for lang in SUPPORTED_LANGUAGES:
+        if lang == DEFAULT_LANGUAGE:
+            continue
+        translated = _rule_screens(lang)
+        for name, rendered in translated.items():
+            assert rendered.strip(), f"{name}/{lang} renders empty"
+            assert rendered != german[name], f"{name}/{lang} is still German"
+
+
+def test_the_rule_card_keeps_its_values_in_every_language():
+    """Translated, not emptied: the numbers a user checks must survive."""
+    for lang in SUPPORTED_LANGUAGES:
+        card = _rule_screens(lang)["rule.card"]
+        assert "tesla model 3" in card
+        assert "25000 €" in card or "25.000 €" in card
+        assert "Worms" in card and "100" in card
+        assert "100.000" in card  # the mileage bound, however "km" is spelled
+        assert "2018" in card and "60" in card

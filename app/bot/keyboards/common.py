@@ -106,31 +106,41 @@ def rule_edit_keyboard(
     """
     rid = rule.id
     kb = InlineKeyboardBuilder()
-    kb.button(text="📝 Name", callback_data=f"edit:name:{rid}")
-    kb.button(text="🔎 Suchwörter", callback_data=f"edit:keywords:{rid}")
-    kb.button(text="📂 Kategorie", callback_data=f"edit:category:{rid}")
-    kb.button(text="💶 Preis", callback_data=f"edit:price:{rid}")
-    kb.button(text="🚫 Ausschluss", callback_data=f"edit:exclude:{rid}")
-    kb.button(text="📍 Ort", callback_data=f"edit:location:{rid}")
-    kb.button(text="⏱ Intervall", callback_data=f"edit:interval:{rid}")
-    kb.button(text="🎯 Min-Score", callback_data=f"edit:minscore:{rid}")
+    for field, key in (
+        ("name", "btn.edit_name"),
+        ("keywords", "btn.edit_keywords"),
+        ("category", "btn.edit_category"),
+        ("price", "btn.edit_price"),
+        ("exclude", "btn.edit_exclude"),
+        ("location", "btn.edit_location"),
+        ("interval", "btn.edit_interval"),
+        ("minscore", "btn.edit_minscore"),
+    ):
+        kb.button(text=t(key, lang), callback_data=f"edit:{field}:{rid}")
     kb.button(
-        text=f"🚗 Auto: {vehicle_short(rule.max_mileage_km, rule.min_year)}",
+        text=t(
+            "btn.edit_vehicle",
+            lang,
+            value=vehicle_short(rule.max_mileage_km, rule.min_year, lang),
+        ),
         callback_data=f"edit:vehicle:{rid}",
     )
     if has_rule_power:
         # The label carries the current value: these three are invisible on the
         # rule card, so the menu is the only place a user can check them.
         kb.button(
-            text=f"🏷 Zustand: {condition_short(rule.condition)}",
+            text=t("btn.edit_condition", lang,
+                   value=condition_short(rule.condition, lang)),
             callback_data=f"edit:condition:{rid}",
         )
         kb.button(
-            text=f"📦 Versand: {shipping_short(rule.shipping_available)}",
+            text=t("btn.edit_shipping", lang,
+                   value=shipping_short(rule.shipping_available, lang)),
             callback_data=f"edit:shipping:{rid}",
         )
         kb.button(
-            text=f"🔨 Auktionen: {auction_short(rule.exclude_auctions)}",
+            text=t("btn.edit_auctions", lang,
+                   value=auction_short(rule.exclude_auctions, lang)),
             callback_data=f"edit:auctions:{rid}",
         )
         kb.adjust(2, 2, 2, 2, 1, 2, 1)
@@ -138,7 +148,7 @@ def rule_edit_keyboard(
         kb.adjust(2, 2, 2, 2, 1)
         kb.row(
             InlineKeyboardButton(
-                text="🔒 Zustand · Versand · Auktionen",
+                text=t("btn.edit_locked", lang),
                 callback_data=f"edit:locked:{rid}",
             )
         )
@@ -218,22 +228,19 @@ def interval_keyboard(lang: str) -> InlineKeyboardMarkup:
 # Category choices: (slug stored on the rule, label shown to the user).
 # Parsers map these slugs to their site-specific category ids.
 CATEGORY_CHOICES: list[tuple[str, str]] = [
-    ("handys", "📱 Handys"),
-    ("notebooks", "💻 Notebooks"),
-    ("pcs", "🖥 PCs"),
-    ("pc-zubehoer", "🎮 GPU / PC-Teile"),
-    ("konsolen", "🕹 Konsolen"),
-    ("elektronik", "🔌 Elektronik"),
-    ("autos", "🚗 Autos"),
-    ("fahrraeder", "🚲 Fahrräder"),
+    (slug, f"choice.cat.{slug}")
+    for slug in (
+        "handys", "notebooks", "pcs", "pc-zubehoer",
+        "konsolen", "elektronik", "autos", "fahrraeder",
+    )
 ]
 
 
 def category_keyboard(lang: str) -> InlineKeyboardMarkup:
     """Pick a category for the search (or all)."""
     kb = InlineKeyboardBuilder()
-    for slug, label in CATEGORY_CHOICES:
-        kb.button(text=label, callback_data=f"wizcat:{slug}")
+    for slug, key in CATEGORY_CHOICES:
+        kb.button(text=t(key, lang), callback_data=f"wizcat:{slug}")
     kb.adjust(2)
     kb.row(
         InlineKeyboardButton(
@@ -265,72 +272,65 @@ def radius_keyboard(lang: str) -> InlineKeyboardMarkup:
 # dependable marker in German ad texts, and eBay folds them into "gebraucht"
 # anyway — a filter nobody can satisfy is worse than no filter.
 CONDITION_CHOICES: list[tuple[str, str]] = [
-    ("any", "🔀 Egal"),
-    ("new", "✨ Neu / OVP"),
-    ("used", "📦 Gebraucht"),
-    ("defective", "🔧 Defekt / Bastler"),
+    (slug, f"choice.cond.{slug}")
+    for slug in ("any", "new", "used", "defective")
 ]
 
-#: Short forms for the edit-menu button. Legacy values are listed too, so a
-#: rule written by an older version still renders a readable label.
-_CONDITION_SHORT: dict[str, str] = {
-    "any": "egal",
-    "new": "neu",
-    "used": "gebraucht",
-    "defective": "defekt",
-    "like_new": "wie neu",
-    "refurbished": "refurbished",
-}
+#: Condition values that have a short label, legacy ones included, so a rule
+#: written by an older version still renders something readable.
+_CONDITION_KEYS: frozenset[str] = frozenset(
+    {"any", "new", "used", "defective", "like_new", "refurbished"}
+)
 
 #: Shipping choice slug -> value stored on the rule (None = does not matter).
 SHIPPING_VALUES: dict[str, bool | None] = {"any": None, "yes": True, "no": False}
 SHIPPING_CHOICES: list[tuple[str, str]] = [
-    ("any", "🔀 Egal"),
-    ("yes", "📦 Nur mit Versand"),
-    ("no", "🚗 Nur Abholung"),
+    (slug, f"choice.ship.{slug}") for slug in ("any", "yes", "no")
 ]
 
 #: Auction choice slug -> value stored on SearchRule.exclude_auctions.
 AUCTION_VALUES: dict[str, bool] = {"keep": False, "hide": True}
 AUCTION_CHOICES: list[tuple[str, str]] = [
-    ("keep", "🔨 Auktionen zeigen"),
-    ("hide", "🚫 Auktionen ausblenden"),
+    (slug, f"choice.auction.{slug}") for slug in ("keep", "hide")
 ]
 
 
-def condition_short(value: Condition | None) -> str:
+def condition_short(value: Condition | None, lang: str | None = None) -> str:
     """Label for the current condition (None until the INSERT applies the default)."""
+    slug = value.value if value is not None else "any"
+    if slug not in _CONDITION_KEYS:
+        return slug
+    return t(f"val.cond.{slug}", lang)
+
+
+def shipping_short(value: bool | None, lang: str | None = None) -> str:
+    """Label for the current shipping filter — None genuinely means "any"."""
     if value is None:
-        return _CONDITION_SHORT["any"]
-    return _CONDITION_SHORT.get(value.value, value.value)
+        return t("val.ship.any", lang)
+    return t("val.ship.yes" if value else "val.ship.no", lang)
 
 
-def shipping_short(value: bool | None) -> str:
-    """Label for the current shipping filter — None genuinely means "egal"."""
-    if value is None:
-        return "egal"
-    return "mit Versand" if value else "nur Abholung"
+def auction_short(exclude_auctions: bool | None, lang: str | None = None) -> str:
+    return t("val.auction.off" if exclude_auctions else "val.auction.on", lang)
 
 
-def auction_short(exclude_auctions: bool | None) -> str:
-    return "aus" if exclude_auctions else "an"
-
-
-def vehicle_short(max_mileage_km: int | None, min_year: int | None) -> str:
+def vehicle_short(
+    max_mileage_km: int | None, min_year: int | None, lang: str | None = None
+) -> str:
     """Label for the car bounds — both are invisible on the rule card."""
     parts: list[str] = []
     if max_mileage_km is not None:
-        parts.append(f"bis {max_mileage_km:,} km".replace(",", "."))
+        parts.append(t("val.km_upto", lang, km=f"{max_mileage_km:,}".replace(",", ".")))
     if min_year is not None:
-        parts.append(f"ab {min_year}")
-    return " · ".join(parts) if parts else "egal"
+        parts.append(t("val.year_from", lang, year=min_year))
+    return " · ".join(parts) if parts else t("val.ship.any", lang)
 
 
 def condition_keyboard(lang: str) -> InlineKeyboardMarkup:
     """Pick which item condition a rule should keep."""
     kb = InlineKeyboardBuilder()
-    for slug, label in CONDITION_CHOICES:
-        kb.button(text=label, callback_data=f"wizcond:{slug}")
+    for slug, key in CONDITION_CHOICES:
+        kb.button(text=t(key, lang), callback_data=f"wizcond:{slug}")
     kb.adjust(2, 2)
     kb.row(
         InlineKeyboardButton(text=t("btn.cancel", lang), callback_data="wizard:cancel")
@@ -341,8 +341,8 @@ def condition_keyboard(lang: str) -> InlineKeyboardMarkup:
 def shipping_keyboard(lang: str) -> InlineKeyboardMarkup:
     """Pick whether the rule wants shippable ads, pickup-only ads or both."""
     kb = InlineKeyboardBuilder()
-    for slug, label in SHIPPING_CHOICES:
-        kb.button(text=label, callback_data=f"wizship:{slug}")
+    for slug, key in SHIPPING_CHOICES:
+        kb.button(text=t(key, lang), callback_data=f"wizship:{slug}")
     kb.adjust(1)
     kb.row(
         InlineKeyboardButton(text=t("btn.cancel", lang), callback_data="wizard:cancel")
@@ -353,8 +353,8 @@ def shipping_keyboard(lang: str) -> InlineKeyboardMarkup:
 def auctions_keyboard(lang: str) -> InlineKeyboardMarkup:
     """Show or hide auction listings for this rule."""
     kb = InlineKeyboardBuilder()
-    for slug, label in AUCTION_CHOICES:
-        kb.button(text=label, callback_data=f"wizauc:{slug}")
+    for slug, key in AUCTION_CHOICES:
+        kb.button(text=t(key, lang), callback_data=f"wizauc:{slug}")
     kb.adjust(1)
     kb.row(
         InlineKeyboardButton(text=t("btn.cancel", lang), callback_data="wizard:cancel")

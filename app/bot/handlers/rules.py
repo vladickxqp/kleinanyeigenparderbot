@@ -67,9 +67,9 @@ async def cb_open_rule(
     rule_id = int(cb.data.split(":")[-1])
     rule = await SearchRuleRepository(session).get(rule_id, user.id)
     if rule is None:
-        await cb.answer("Nicht gefunden", show_alert=True)
+        await cb.answer(t("edit.not_found", lang), show_alert=True)
         return
-    text = _render_rule(rule) + await _stats_line(session, rule.id)
+    text = _render_rule(rule, lang) + await _stats_line(session, rule.id)
     await cb.message.edit_text(text, reply_markup=rule_actions_keyboard(rule, lang))
     await cb.answer()
 
@@ -102,7 +102,7 @@ async def cb_run_rule(
     rule_id = int(cb.data.split(":")[-1])
     rule = await SearchRuleRepository(session).get(rule_id, user.id)
     if rule is None:
-        await cb.answer("Nicht gefunden", show_alert=True)
+        await cb.answer(t("edit.not_found", lang), show_alert=True)
         return
     from app.services.throttle import manual_run_allowed
 
@@ -197,11 +197,13 @@ async def cb_toggle_rule(
     repo = SearchRuleRepository(session)
     rule = await repo.get(rule_id, user.id)
     if rule is None:
-        await cb.answer("Nicht gefunden", show_alert=True)
+        await cb.answer(t("edit.not_found", lang), show_alert=True)
         return
     rule.is_active = not rule.is_active
     await session.flush()
-    await cb.message.edit_text(_render_rule(rule), reply_markup=rule_actions_keyboard(rule, lang))
+    await cb.message.edit_text(
+        _render_rule(rule, lang), reply_markup=rule_actions_keyboard(rule, lang)
+    )
     await cb.answer("🟢 Aktiv" if rule.is_active else "⚪️ Pausiert")
 
 
@@ -339,9 +341,9 @@ def _draft_summary(draft: rule_nlp.RuleDraft, lang: str) -> str:
     if draft.min_price is not None and draft.max_price is not None:
         price = f"{draft.min_price:.0f}–{draft.max_price:.0f} €"
     elif draft.min_price is not None:
-        price = f"ab {draft.min_price:.0f} €"
+        price = t("val.price_from", lang, amount=f"{draft.min_price:.0f} €")
     elif draft.max_price is not None:
-        price = f"bis {draft.max_price:.0f} €"
+        price = t("val.price_upto", lang, amount=f"{draft.max_price:.0f} €")
     else:
         price = t("rule.f_any", lang)
 
@@ -360,7 +362,7 @@ def _draft_summary(draft: rule_nlp.RuleDraft, lang: str) -> str:
     ]
     if draft.condition is not Condition.ANY:
         lines.append(
-            f"🏷 {t('rule.f_condition', lang)}: {condition_short(draft.condition)}"
+            f"🏷 {t('rule.f_condition', lang)}: {condition_short(draft.condition, lang)}"
         )
     if draft.exclude_keywords:
         excluded = ", ".join(escape(word) for word in draft.exclude_keywords)
@@ -368,7 +370,7 @@ def _draft_summary(draft: rule_nlp.RuleDraft, lang: str) -> str:
     if draft.max_mileage_km is not None:
         lines.append(
             f"🚗 {t('rule.f_mileage', lang)}: "
-            f"{vehicle_short(draft.max_mileage_km, None)}"
+            f"{vehicle_short(draft.max_mileage_km, None, lang)}"
         )
     return "\n".join(lines)
 
@@ -429,7 +431,7 @@ async def wiz_max_price(message: Message, lang: str, state: FSMContext) -> None:
     parsed = parse_price_range(message.text or "")
     if parsed is None:
         await message.answer(
-            "⚠️ Bitte Zahl oder Bereich senden (z. B. 1200 oder 500-1200).",
+            t("edit.price_invalid", lang),
             reply_markup=skip_cancel_keyboard(lang),
         )
         return
@@ -709,47 +711,56 @@ def _interval_label(seconds: int) -> str:
     return f"{seconds}s"
 
 
-def _category_label(slug: str | None) -> str:
-    for s, label in CATEGORY_CHOICES:
+def _category_label(slug: str | None, lang: str | None = None) -> str:
+    for s, key in CATEGORY_CHOICES:
         if s == slug:
-            return label
-    return "alle"
+            return t(key, lang)
+    return t("rule.f_all", lang)
 
 
-def _render_rule(rule: SearchRule) -> str:
+def _render_rule(rule: SearchRule, lang: str | None = None) -> str:
     # All user-entered values are HTML-escaped: a rule named "RTX <3000"
     # would otherwise break Telegram's HTML parser on every render.
-    state = "🟢 aktiv" if rule.is_active else "⚪️ pausiert"
+    state = t("rule.state_active" if rule.is_active else "rule.state_paused", lang)
     if rule.min_price and rule.max_price:
         price = f"{rule.min_price:.0f}–{rule.max_price:.0f} €"
     elif rule.min_price:
-        price = f"ab {rule.min_price:.0f} €"
+        price = t("val.price_from", lang, amount=f"{rule.min_price:.0f} €")
     elif rule.max_price:
-        price = f"bis {rule.max_price:.0f} €"
+        price = t("val.price_upto", lang, amount=f"{rule.max_price:.0f} €")
     else:
-        price = "beliebig"
-    excl = escape(", ".join(rule.exclude_keywords)) if rule.exclude_keywords else "—"
-    sites = ", ".join(site_label(s) for s in rule.sites) if rule.sites else "alle"
-    ort = "überall"
+        price = t("rule.f_any", lang)
+    excl = (
+        escape(", ".join(rule.exclude_keywords))
+        if rule.exclude_keywords
+        else t("rule.f_none", lang)
+    )
+    sites = (
+        ", ".join(site_label(s) for s in rule.sites)
+        if rule.sites
+        else t("rule.f_all", lang)
+    )
+    ort = t("rule.f_everywhere", lang)
     if rule.location:
         ort = escape(rule.location)
         if rule.max_distance_km:
             ort += f" (±{rule.max_distance_km} km)"
     lines = [
         f"📋 <b>{escape(rule.name)}</b>  ({state})\n",
-        f"🔎 Suchbegriffe: <code>{escape(rule.keywords)}</code>",
-        f"📂 Kategorie: {_category_label(rule.category)}",
-        f"💶 Preis: {price}",
-        f"🚫 Ausschluss: {excl}",
-        f"📍 Ort: {ort}",
+        f"🔎 {t('rule.f_keywords', lang)}: <code>{escape(rule.keywords)}</code>",
+        f"📂 {t('rule.f_category', lang)}: {_category_label(rule.category, lang)}",
+        f"💶 {t('rule.f_price', lang)}: {price}",
+        f"🚫 {t('rule.f_exclude', lang)}: {excl}",
+        f"📍 {t('rule.f_place', lang)}: {ort}",
     ]
     # Only for a rule that actually set them: on a phone hunt the line would
     # be noise, and the card is already long.
     if rule.max_mileage_km is not None or rule.min_year is not None:
-        lines.append(f"🚗 Auto: {vehicle_short(rule.max_mileage_km, rule.min_year)}")
+        bounds = vehicle_short(rule.max_mileage_km, rule.min_year, lang)
+        lines.append(f"🚗 {t('rule.f_vehicle', lang)}: {bounds}")
     lines += [
-        f"🏪 Plattformen: {sites}",
-        f"⏱ Intervall: {_interval_label(rule.interval_seconds)}",
-        f"🎯 Min. Deal-Score: {rule.min_deal_score}",
+        f"🏪 {t('rule.f_sites', lang)}: {sites}",
+        f"⏱ {t('rule.f_interval', lang)}: {_interval_label(rule.interval_seconds)}",
+        f"🎯 {t('rule.f_minscore', lang)}: {rule.min_deal_score}",
     ]
     return "\n".join(lines)

@@ -67,6 +67,248 @@ _TEXTS: dict[str, dict[str, str]] = {
         "ru": "✅ Сохранено!",
         "uk": "✅ Збережено!",
     },
+    # --- Rule card and edit menu: the screen a user looks at most ----------
+    "rule.state_active": {
+        "de": "🟢 aktiv", "en": "🟢 active", "ru": "🟢 активен", "uk": "🟢 активний",
+    },
+    "rule.state_paused": {
+        "de": "⚪️ pausiert", "en": "⚪️ paused",
+        "ru": "⚪️ на паузе", "uk": "⚪️ на паузі",
+    },
+    "rule.f_category": {
+        "de": "Kategorie", "en": "Category", "ru": "Категория", "uk": "Категорія",
+    },
+    "rule.f_sites": {
+        "de": "Plattformen", "en": "Marketplaces",
+        "ru": "Площадки", "uk": "Майданчики",
+    },
+    "rule.f_interval": {
+        "de": "Intervall", "en": "Interval", "ru": "Интервал", "uk": "Інтервал",
+    },
+    "rule.f_minscore": {
+        "de": "Min. Deal-Score", "en": "Min. deal score",
+        "ru": "Мин. балл сделки", "uk": "Мін. бал угоди",
+    },
+    "rule.f_vehicle": {"de": "Auto", "en": "Car", "ru": "Авто", "uk": "Авто"},
+    "rule.f_all": {"de": "alle", "en": "all", "ru": "все", "uk": "усі"},
+    "rule.f_none": {"de": "—", "en": "—", "ru": "—", "uk": "—"},
+    # --- Values a filter can hold -----------------------------------------
+    "val.cond.any": {"de": "egal", "en": "any", "ru": "любое", "uk": "будь-який"},
+    "val.cond.new": {"de": "neu", "en": "new", "ru": "новое", "uk": "новий"},
+    "val.cond.used": {"de": "gebraucht", "en": "used", "ru": "б/у", "uk": "вживаний"},
+    "val.cond.defective": {
+        "de": "defekt", "en": "faulty", "ru": "неисправное", "uk": "несправний",
+    },
+    "val.cond.like_new": {
+        "de": "wie neu", "en": "like new", "ru": "как новое", "uk": "як новий",
+    },
+    "val.cond.refurbished": {
+        "de": "refurbished", "en": "refurbished",
+        "ru": "восстановленное", "uk": "відновлений",
+    },
+    "val.ship.any": {"de": "egal", "en": "any", "ru": "любая", "uk": "будь-яка"},
+    "val.ship.yes": {
+        "de": "mit Versand", "en": "with shipping",
+        "ru": "с доставкой", "uk": "з доставкою",
+    },
+    "val.ship.no": {
+        "de": "nur Abholung", "en": "pickup only",
+        "ru": "только самовывоз", "uk": "лише самовивіз",
+    },
+    "val.auction.on": {"de": "an", "en": "on", "ru": "вкл", "uk": "увімк"},
+    "val.auction.off": {"de": "aus", "en": "off", "ru": "выкл", "uk": "вимк"},
+    "val.price_upto": {
+        "de": "bis {amount}", "en": "up to {amount}",
+        "ru": "до {amount}", "uk": "до {amount}",
+    },
+    "val.price_from": {
+        "de": "ab {amount}", "en": "from {amount}",
+        "ru": "от {amount}", "uk": "від {amount}",
+    },
+    "val.km_upto": {
+        "de": "bis {km} km", "en": "up to {km} km",
+        "ru": "до {km} км", "uk": "до {km} км",
+    },
+    "val.year_from": {
+        "de": "ab {year}", "en": "from {year}", "ru": "от {year}", "uk": "від {year}",
+    },
+    # --- Edit-menu buttons ------------------------------------------------
+    "btn.edit_name": {"de": "📝 Name", "en": "📝 Name", "ru": "📝 Название",
+                      "uk": "📝 Назва"},
+    "btn.edit_keywords": {"de": "🔎 Suchwörter", "en": "🔎 Keywords",
+                          "ru": "🔎 Ключевые слова", "uk": "🔎 Ключові слова"},
+    "btn.edit_category": {"de": "📂 Kategorie", "en": "📂 Category",
+                          "ru": "📂 Категория", "uk": "📂 Категорія"},
+    "btn.edit_price": {"de": "💶 Preis", "en": "💶 Price", "ru": "💶 Цена",
+                       "uk": "💶 Ціна"},
+    "btn.edit_exclude": {"de": "🚫 Ausschluss", "en": "🚫 Exclude",
+                         "ru": "🚫 Исключить", "uk": "🚫 Виключити"},
+    "btn.edit_location": {"de": "📍 Ort", "en": "📍 Location", "ru": "📍 Место",
+                          "uk": "📍 Місце"},
+    "btn.edit_interval": {"de": "⏱ Intervall", "en": "⏱ Interval",
+                          "ru": "⏱ Интервал", "uk": "⏱ Інтервал"},
+    "btn.edit_minscore": {"de": "🎯 Min-Score", "en": "🎯 Min score",
+                          "ru": "🎯 Мин. балл", "uk": "🎯 Мін. бал"},
+    "btn.edit_vehicle": {"de": "🚗 Auto: {value}", "en": "🚗 Car: {value}",
+                         "ru": "🚗 Авто: {value}", "uk": "🚗 Авто: {value}"},
+    "btn.edit_condition": {"de": "🏷 Zustand: {value}", "en": "🏷 Condition: {value}",
+                           "ru": "🏷 Состояние: {value}", "uk": "🏷 Стан: {value}"},
+    "btn.edit_shipping": {"de": "📦 Versand: {value}", "en": "📦 Shipping: {value}",
+                          "ru": "📦 Доставка: {value}", "uk": "📦 Доставка: {value}"},
+    "btn.edit_auctions": {"de": "🔨 Auktionen: {value}", "en": "🔨 Auctions: {value}",
+                          "ru": "🔨 Аукционы: {value}", "uk": "🔨 Аукціони: {value}"},
+    "btn.edit_locked": {
+        "de": "🔒 Zustand · Versand · Auktionen",
+        "en": "🔒 Condition · Shipping · Auctions",
+        "ru": "🔒 Состояние · Доставка · Аукционы",
+        "uk": "🔒 Стан · Доставка · Аукціони",
+    },
+    # --- Wizard choices ---------------------------------------------------
+    "choice.cat.handys": {"de": "📱 Handys", "en": "📱 Phones",
+                          "ru": "📱 Телефоны", "uk": "📱 Телефони"},
+    "choice.cat.notebooks": {"de": "💻 Notebooks", "en": "💻 Laptops",
+                             "ru": "💻 Ноутбуки", "uk": "💻 Ноутбуки"},
+    "choice.cat.pcs": {"de": "🖥 PCs", "en": "🖥 PCs", "ru": "🖥 ПК", "uk": "🖥 ПК"},
+    "choice.cat.pc-zubehoer": {"de": "🎮 GPU / PC-Teile", "en": "🎮 GPU / PC parts",
+                               "ru": "🎮 Видеокарты / комплектующие",
+                               "uk": "🎮 Відеокарти / комплектуючі"},
+    "choice.cat.konsolen": {"de": "🕹 Konsolen", "en": "🕹 Consoles",
+                            "ru": "🕹 Консоли", "uk": "🕹 Консолі"},
+    "choice.cat.elektronik": {"de": "🔌 Elektronik", "en": "🔌 Electronics",
+                              "ru": "🔌 Электроника", "uk": "🔌 Електроніка"},
+    "choice.cat.autos": {"de": "🚗 Autos", "en": "🚗 Cars",
+                         "ru": "🚗 Автомобили", "uk": "🚗 Автомобілі"},
+    "choice.cat.fahrraeder": {"de": "🚲 Fahrräder", "en": "🚲 Bicycles",
+                              "ru": "🚲 Велосипеды", "uk": "🚲 Велосипеди"},
+    "choice.cond.any": {"de": "🔀 Egal", "en": "🔀 Any",
+                        "ru": "🔀 Любое", "uk": "🔀 Будь-який"},
+    "choice.cond.new": {"de": "✨ Neu / OVP", "en": "✨ New / sealed",
+                        "ru": "✨ Новое / запечатано", "uk": "✨ Новий / запечатаний"},
+    "choice.cond.used": {"de": "📦 Gebraucht", "en": "📦 Used",
+                         "ru": "📦 Б/у", "uk": "📦 Вживаний"},
+    "choice.cond.defective": {"de": "🔧 Defekt / Bastler", "en": "🔧 Faulty / for parts",
+                              "ru": "🔧 Неисправное / на запчасти",
+                              "uk": "🔧 Несправний / на запчастини"},
+    "choice.ship.any": {"de": "🔀 Egal", "en": "🔀 Any",
+                        "ru": "🔀 Любая", "uk": "🔀 Будь-яка"},
+    "choice.ship.yes": {"de": "📦 Nur mit Versand", "en": "📦 Shipping only",
+                        "ru": "📦 Только с доставкой", "uk": "📦 Лише з доставкою"},
+    "choice.ship.no": {"de": "🚗 Nur Abholung", "en": "🚗 Pickup only",
+                       "ru": "🚗 Только самовывоз", "uk": "🚗 Лише самовивіз"},
+    "choice.auction.keep": {"de": "🔨 Auktionen zeigen", "en": "🔨 Show auctions",
+                            "ru": "🔨 Показывать аукционы",
+                            "uk": "🔨 Показувати аукціони"},
+    "choice.auction.hide": {"de": "🚫 Auktionen ausblenden", "en": "🚫 Hide auctions",
+                            "ru": "🚫 Скрыть аукционы", "uk": "🚫 Сховати аукціони"},
+    # --- The three paid filters: what they can and cannot do ---------------
+    "edit.ask_condition": {
+        "de": "🏷 <b>Zustand</b>\n\n"
+        "Kleinanzeigen schreibt den Zustand nicht in die Trefferliste — ich lese "
+        "ihn aus Titel und Beschreibung („neu“, „OVP“, „versiegelt“, „defekt“, "
+        "„Bastler“). Anzeigen ohne solche Wörter zählen als <b>gebraucht</b>, "
+        "einzelne Treffer können dir also durchrutschen oder fehlen.\n"
+        "Auf eBay filtert eBay selbst, Idealo liefert bei „gebraucht“ und "
+        "„defekt“ nichts — dort gibt es nur Neuware.",
+        "en": "🏷 <b>Condition</b>\n\n"
+        "Kleinanzeigen does not state the condition in its result list — I read "
+        "it from the title and description („neu“, „OVP“, „versiegelt“, "
+        "„defekt“, „Bastler“). Ads that say none of this count as <b>used</b>, "
+        "so the odd listing may slip through or go missing.\n"
+        "On eBay the site filters itself; Idealo returns nothing for used or "
+        "faulty — it sells new goods only.",
+        "ru": "🏷 <b>Состояние</b>\n\n"
+        "Kleinanzeigen не указывает состояние в списке — я читаю его из "
+        "заголовка и описания («neu», «OVP», «versiegelt», «defekt», "
+        "«Bastler»). Объявления без таких слов считаются <b>б/у</b>, поэтому "
+        "отдельные находки могут проскочить или потеряться.\n"
+        "На eBay фильтрует сам eBay, Idealo по «б/у» и «неисправно» не даёт "
+        "ничего — там только новые товары.",
+        "uk": "🏷 <b>Стан</b>\n\n"
+        "Kleinanzeigen не зазначає стан у списку — я читаю його із заголовка "
+        "та опису («neu», «OVP», «versiegelt», «defekt», «Bastler»). "
+        "Оголошення без таких слів вважаються <b>вживаними</b>, тож окремі "
+        "знахідки можуть прослизнути або зникнути.\n"
+        "На eBay фільтрує сам eBay, Idealo за «вживане» і «несправне» не дає "
+        "нічого — там лише нові товари.",
+    },
+    "edit.ask_shipping": {
+        "de": "📦 <b>Versand</b>\n\n"
+        "Zieht bei Kleinanzeigen, wo „Versand möglich“ auf der Karte steht. "
+        "Plattformen, die nichts dazu sagen (z. B. eBay), werden nicht "
+        "gefiltert — sonst wäre deine Regel dort schlagartig leer.",
+        "en": "📦 <b>Shipping</b>\n\n"
+        "Works on Kleinanzeigen, where the card says whether the seller ships. "
+        "Marketplaces that say nothing about it (eBay, for one) are not "
+        "filtered — your rule would simply be empty there.",
+        "ru": "📦 <b>Доставка</b>\n\n"
+        "Работает на Kleinanzeigen, где это указано на карточке. Площадки, "
+        "которые об этом молчат (например, eBay), не фильтруются — иначе твоё "
+        "правило там мгновенно опустело бы.",
+        "uk": "📦 <b>Доставка</b>\n\n"
+        "Працює на Kleinanzeigen, де це зазначено на картці. Майданчики, які "
+        "про це мовчать (наприклад, eBay), не фільтруються — інакше твоє "
+        "правило там миттєво спорожніло б.",
+    },
+    "edit.ask_auctions": {
+        "de": "🔨 <b>Auktionen</b>\n\n"
+        "Ein Auktionspreis ist bis zum letzten Gebot nicht echt und verzerrt "
+        "den Deal-Score. Blende Auktionen aus, wenn du nur Festpreise willst.",
+        "en": "🔨 <b>Auctions</b>\n\n"
+        "An auction price is not a real price until the last bid, and it skews "
+        "the deal score. Hide auctions if you only want fixed prices.",
+        "ru": "🔨 <b>Аукционы</b>\n\n"
+        "Цена аукциона до последней ставки ненастоящая и искажает балл сделки. "
+        "Скрой аукционы, если хочешь только фиксированные цены.",
+        "uk": "🔨 <b>Аукціони</b>\n\n"
+        "Ціна аукціону до останньої ставки несправжня і викривлює бал угоди. "
+        "Сховай аукціони, якщо хочеш лише фіксовані ціни.",
+    },
+    "edit.power_pitch": {
+        "de": "\n\n🔒 <b>Zustand, Versand &amp; Auktionen</b> gibt es ab "
+        "<b>{level}</b>:\n"
+        "• nur Neu/OVP — oder gezielt Defekt &amp; Bastler zum Herrichten\n"
+        "• nur Anzeigen mit Versand — oder nur Abholung in deiner Nähe\n"
+        "• Auktionen ausblenden und nur Festpreise sehen\n"
+        "→ /premium",
+        "en": "\n\n🔒 <b>Condition, shipping &amp; auctions</b> come with "
+        "<b>{level}</b>:\n"
+        "• new and sealed only — or faulty and for-parts on purpose\n"
+        "• only ads that ship — or only pickup near you\n"
+        "• hide auctions and see fixed prices only\n"
+        "→ /premium",
+        "ru": "\n\n🔒 <b>Состояние, доставка и аукционы</b> доступны с "
+        "<b>{level}</b>:\n"
+        "• только новое/запечатанное — или наоборот, неисправное под ремонт\n"
+        "• только объявления с доставкой — или только самовывоз рядом\n"
+        "• скрыть аукционы и видеть только фиксированные цены\n"
+        "→ /premium",
+        "uk": "\n\n🔒 <b>Стан, доставка та аукціони</b> доступні з "
+        "<b>{level}</b>:\n"
+        "• лише нове/запечатане — або навпаки, несправне під ремонт\n"
+        "• лише оголошення з доставкою — або лише самовивіз поруч\n"
+        "• сховати аукціони й бачити тільки фіксовані ціни\n"
+        "→ /premium",
+    },
+    "edit.power_alert": {
+        "de": "🔒 Zustand-, Versand- und Auktions-Filter gibt es ab {level}. "
+        "Mehr dazu: /premium",
+        "en": "🔒 Condition, shipping and auction filters come with {level}. "
+        "More: /premium",
+        "ru": "🔒 Фильтры состояния, доставки и аукционов доступны с {level}. "
+        "Подробнее: /premium",
+        "uk": "🔒 Фільтри стану, доставки та аукціонів доступні з {level}. "
+        "Докладніше: /premium",
+    },
+    "edit.price_invalid": {
+        "de": "⚠️ Bitte Zahl oder Bereich senden (z. B. 1200 oder 500-1200).",
+        "en": "⚠️ Please send a number or a range (e.g. 1200 or 500-1200).",
+        "ru": "⚠️ Пришли число или диапазон (напр. 1200 или 500-1200).",
+        "uk": "⚠️ Надішли число або діапазон (напр. 1200 або 500-1200).",
+    },
+    "edit.not_found": {
+        "de": "Nicht gefunden", "en": "Not found",
+        "ru": "Не найдено", "uk": "Не знайдено",
+    },
     "edit.ask_vehicle": {
         "de": "🚗 Kilometer und Baujahr.\n"
         "z. B. <code>100000 2018</code> (max. km + ab Baujahr), "

@@ -76,49 +76,14 @@ def _rule_power_level() -> str:
     return tiers[-1].label
 
 
-def _rule_power_pitch() -> str:
+def _rule_power_pitch(lang: str) -> str:
     """HTML block for the edit menu — what the upgrade actually buys."""
-    return (
-        f"\n\n🔒 <b>Zustand, Versand &amp; Auktionen</b> gibt es ab "
-        f"<b>{_rule_power_level()}</b>:\n"
-        "• nur Neu/OVP — oder gezielt Defekt &amp; Bastler zum Herrichten\n"
-        "• nur Anzeigen mit Versand — oder nur Abholung in deiner Nähe\n"
-        "• Auktionen ausblenden und nur Festpreise sehen\n"
-        "→ /premium"
-    )
+    return t("edit.power_pitch", lang, level=_rule_power_level())
 
 
-def _rule_power_alert() -> str:
+def _rule_power_alert(lang: str) -> str:
     """Plain one-liner — Telegram alerts render no HTML and are short."""
-    return (
-        f"🔒 Zustand-, Versand- und Auktions-Filter gibt es ab "
-        f"{_rule_power_level()}. Mehr dazu: /premium"
-    )
-
-
-# --- German copy for the three filters (kept next to their handlers) -------------
-ASK_CONDITION = (
-    "🏷 <b>Zustand</b>\n\n"
-    "Kleinanzeigen schreibt den Zustand nicht in die Trefferliste — ich lese "
-    "ihn aus Titel und Beschreibung („neu“, „OVP“, „versiegelt“, „defekt“, "
-    "„Bastler“). Anzeigen ohne solche Wörter zählen als <b>gebraucht</b>, "
-    "einzelne Treffer können dir also durchrutschen oder fehlen.\n"
-    "Auf eBay filtert eBay selbst, Idealo liefert bei „gebraucht“ und "
-    "„defekt“ nichts — dort gibt es nur Neuware."
-)
-
-ASK_SHIPPING = (
-    "📦 <b>Versand</b>\n\n"
-    "Zieht bei Kleinanzeigen, wo „Versand möglich“ auf der Karte steht. "
-    "Plattformen, die nichts dazu sagen (z. B. eBay), werden nicht gefiltert "
-    "— sonst wäre deine Regel dort schlagartig leer."
-)
-
-ASK_AUCTIONS = (
-    "🔨 <b>Auktionen</b>\n\n"
-    "Ein Auktionspreis ist bis zum letzten Gebot nicht echt und verzerrt den "
-    "Deal-Score. Blende Auktionen aus, wenn du nur Festpreise willst."
-)
+    return t("edit.power_alert", lang, level=_rule_power_level())
 
 
 # --- Menu ---------------------------------------------------------------------
@@ -129,14 +94,14 @@ async def cb_edit_menu(
     rule_id = int(cb.data.split(":")[-1])
     rule = await SearchRuleRepository(session).get(rule_id, user.id)
     if rule is None:
-        await cb.answer("Nicht gefunden", show_alert=True)
+        await cb.answer(t("edit.not_found", lang), show_alert=True)
         return
     from html import escape
 
     power = _has_rule_power(user)
     text = t("edit.menu", lang, name=escape(rule.name))
     if not power:
-        text += _rule_power_pitch()
+        text += _rule_power_pitch(lang)
     await cb.message.edit_text(
         text, reply_markup=rule_edit_keyboard(rule, lang, has_rule_power=power)
     )
@@ -162,7 +127,7 @@ async def cb_edit_field(
     # The keyboard hides the paid filters, but callback data is user-controlled:
     # the entitlement decides, not the button that was tapped.
     if (field in POWER_FIELDS or field == "locked") and not _has_rule_power(user):
-        await cb.answer(_rule_power_alert(), show_alert=True)
+        await cb.answer(_rule_power_alert(lang), show_alert=True)
         return
 
     await state.update_data(edit_rule_id=int(raw_id))
@@ -205,13 +170,19 @@ async def cb_edit_field(
         )
     elif field == "condition":
         await state.set_state(EditWizard.condition)
-        await cb.message.answer(ASK_CONDITION, reply_markup=condition_keyboard(lang))
+        await cb.message.answer(
+            t("edit.ask_condition", lang), reply_markup=condition_keyboard(lang)
+        )
     elif field == "shipping":
         await state.set_state(EditWizard.shipping)
-        await cb.message.answer(ASK_SHIPPING, reply_markup=shipping_keyboard(lang))
+        await cb.message.answer(
+            t("edit.ask_shipping", lang), reply_markup=shipping_keyboard(lang)
+        )
     elif field == "auctions":
         await state.set_state(EditWizard.auctions)
-        await cb.message.answer(ASK_AUCTIONS, reply_markup=auctions_keyboard(lang))
+        await cb.message.answer(
+            t("edit.ask_auctions", lang), reply_markup=auctions_keyboard(lang)
+        )
     await cb.answer()
 
 
@@ -239,7 +210,9 @@ async def _finish(
     # The rule card has no line for the filter fields, so the confirmation is
     # the only place the new value is ever shown back to the user.
     await message.answer(t("edit.saved", lang) + (f"\n{note}" if note else ""))
-    await message.answer(_render_rule(rule), reply_markup=rule_actions_keyboard(rule, lang))
+    await message.answer(
+        _render_rule(rule, lang), reply_markup=rule_actions_keyboard(rule, lang)
+    )
 
 
 # --- Text-field handlers ---------------------------------------------------------
@@ -274,7 +247,7 @@ async def edit_price(
     parsed = parse_price_range(message.text or "")
     if parsed is None:
         await message.answer(
-            "⚠️ Bitte Zahl oder Bereich senden (z. B. 1200 oder 500-1200).",
+            t("edit.price_invalid", lang),
             reply_markup=cancel_keyboard(lang),
         )
         return
@@ -436,7 +409,7 @@ async def _load_for_power_edit(
     """Load the rule for a paid-filter edit, or end the interaction."""
     if not _has_rule_power(user):
         await state.clear()
-        await cb.answer(_rule_power_alert(), show_alert=True)
+        await cb.answer(_rule_power_alert(lang), show_alert=True)
         return None
     rule = await _load_rule(session, state, user)
     if rule is None:
@@ -463,7 +436,7 @@ async def edit_condition(
         return
     await _finish(
         cb.message, session, state, rule, lang,
-        note=f"🏷 Zustand: {condition_short(rule.condition)}",
+        note=t("btn.edit_condition", lang, value=condition_short(rule.condition, lang)),
     )
     await cb.answer()
 
@@ -482,7 +455,8 @@ async def edit_shipping(
     rule.shipping_available = SHIPPING_VALUES[slug]
     await _finish(
         cb.message, session, state, rule, lang,
-        note=f"📦 Versand: {shipping_short(rule.shipping_available)}",
+        note=t("btn.edit_shipping", lang,
+               value=shipping_short(rule.shipping_available, lang)),
     )
     await cb.answer()
 
@@ -501,6 +475,6 @@ async def edit_auctions(
     rule.exclude_auctions = AUCTION_VALUES[slug]
     await _finish(
         cb.message, session, state, rule, lang,
-        note=f"🔨 Auktionen: {auction_short(rule.exclude_auctions)}",
+        note=t("btn.edit_auctions", lang, value=auction_short(rule.exclude_auctions, lang)),
     )
     await cb.answer()
