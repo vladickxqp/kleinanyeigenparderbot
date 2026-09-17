@@ -337,6 +337,8 @@ class SearchService:
             max_distance_km=rule.max_distance_km,
             exclude_auctions=rule.exclude_auctions,
             shipping_available=rule.shipping_available,
+            max_mileage_km=rule.max_mileage_km,
+            min_year=rule.min_year,
         )
 
     async def _market_history(

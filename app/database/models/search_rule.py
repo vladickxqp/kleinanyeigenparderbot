@@ -57,6 +57,14 @@ class SearchRule(Base, PKMixin, TimestampMixin):
         nullable=False,
     )
 
+    # --- Vehicles -----------------------------------------------------------
+    #: Kilometres and first registration. Only ads that STATE the value are
+    #: judged by these: a car marketplace that changes its markup would
+    #: otherwise empty the rule silently, which is the failure this project
+    #: keeps running into. None on both = not a car search.
+    max_mileage_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    min_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # --- Location -----------------------------------------------------------
     location: Mapped[str | None] = mapped_column(String(128), nullable=True)
     zip_code: Mapped[str | None] = mapped_column(String(16), nullable=True)

@@ -26,6 +26,7 @@ from app.bot.keyboards import (
     sentence_keyboard,
     sites_select_keyboard,
     skip_cancel_keyboard,
+    vehicle_short,
 )
 from app.bot.states import RuleWizard
 from app.bot.texts import t
@@ -327,6 +328,7 @@ async def _apply_draft(state: FSMContext, draft: rule_nlp.RuleDraft) -> None:
         location=draft.location,
         zip_code=draft.zip_code,
         max_distance_km=draft.max_distance_km,
+        max_mileage_km=draft.max_mileage_km,
         condition=draft.condition.value,
         category=None,
     )
@@ -364,10 +366,10 @@ def _draft_summary(draft: rule_nlp.RuleDraft, lang: str) -> str:
         excluded = ", ".join(escape(word) for word in draft.exclude_keywords)
         lines.append(f"🚫 {t('rule.f_exclude', lang)}: {excluded}")
     if draft.max_mileage_km is not None:
-        # Understood but not filterable — saying so beats dropping it silently.
-        lines.append("")
-        lines.append(t("rule.sentence_mileage", lang, km=f"{draft.max_mileage_km:,}"
-                       .replace(",", ".")))
+        lines.append(
+            f"🚗 {t('rule.f_mileage', lang)}: "
+            f"{vehicle_short(draft.max_mileage_km, None)}"
+        )
     return "\n".join(lines)
 
 
@@ -685,8 +687,9 @@ async def _finalize(
         location=data.get("location"),
         zip_code=data.get("zip_code"),
         max_distance_km=data.get("max_distance_km"),
-        # Only the sentence path can set this; the step-by-step wizard leaves
-        # it to the edit menu, which is why the fallback is "any".
+        max_mileage_km=data.get("max_mileage_km"),
+        # Only the sentence path can set these; the step-by-step wizard leaves
+        # them to the edit menu, which is why the fallbacks are "unfiltered".
         condition=_stored_condition(data.get("condition")),
         interval_seconds=interval_seconds or settings.scraper_default_interval_seconds,
         sites=sites or [],  # empty = all registered parsers
@@ -732,14 +735,21 @@ def _render_rule(rule: SearchRule) -> str:
         ort = escape(rule.location)
         if rule.max_distance_km:
             ort += f" (±{rule.max_distance_km} km)"
-    return (
-        f"📋 <b>{escape(rule.name)}</b>  ({state})\n\n"
-        f"🔎 Suchbegriffe: <code>{escape(rule.keywords)}</code>\n"
-        f"📂 Kategorie: {_category_label(rule.category)}\n"
-        f"💶 Preis: {price}\n"
-        f"🚫 Ausschluss: {excl}\n"
-        f"📍 Ort: {ort}\n"
-        f"🏪 Plattformen: {sites}\n"
-        f"⏱ Intervall: {_interval_label(rule.interval_seconds)}\n"
-        f"🎯 Min. Deal-Score: {rule.min_deal_score}"
-    )
+    lines = [
+        f"📋 <b>{escape(rule.name)}</b>  ({state})\n",
+        f"🔎 Suchbegriffe: <code>{escape(rule.keywords)}</code>",
+        f"📂 Kategorie: {_category_label(rule.category)}",
+        f"💶 Preis: {price}",
+        f"🚫 Ausschluss: {excl}",
+        f"📍 Ort: {ort}",
+    ]
+    # Only for a rule that actually set them: on a phone hunt the line would
+    # be noise, and the card is already long.
+    if rule.max_mileage_km is not None or rule.min_year is not None:
+        lines.append(f"🚗 Auto: {vehicle_short(rule.max_mileage_km, rule.min_year)}")
+    lines += [
+        f"🏪 Plattformen: {sites}",
+        f"⏱ Intervall: {_interval_label(rule.interval_seconds)}",
+        f"🎯 Min. Deal-Score: {rule.min_deal_score}",
+    ]
+    return "\n".join(lines)

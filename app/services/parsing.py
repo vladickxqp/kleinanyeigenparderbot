@@ -56,3 +56,43 @@ def parse_price_range(raw: str) -> tuple[float | None, float | None] | None:
     if "ab" in text or text.endswith("+"):
         return (value, None)
     return (None, value)
+
+
+#: A four-digit number in this range is a registration year, not a mileage.
+#: Nobody filters for "cars under 2.018 km", and everybody writes "ab 2018".
+_YEAR_MIN, _YEAR_MAX = 1950, 2100
+#: Beyond this a "kilometre" bound stops meaning anything.
+_MILEAGE_MAX = 2_000_000
+
+
+def parse_vehicle_bounds(raw: str) -> tuple[int | None, int | None] | None:
+    """Parse "max kilometres" and "registration year from" out of one line.
+
+    Accepted forms (German thousands dots tolerated):
+      - ``"100000"`` / ``"100.000 km"``   -> (100000, None)
+      - ``"100000 2018"``                 -> (100000, 2018)
+      - ``"2018"``                        -> (None, 2018)     a year, not a mileage
+      - ``"ab 2018"``                     -> (None, 2018)
+
+    Which number is which is decided by size, not by order: a four-digit value
+    inside the year range is a year. Returns ``None`` when nothing usable was
+    found, so the caller can ask again instead of storing a filter the user did
+    not mean.
+    """
+    text = _normalize_numbers(raw)
+    if not text:
+        return None
+    values = [int(float(m)) for m in re.findall(r"\d+(?:\.\d+)?", text)]
+    if not values:
+        return None
+
+    mileage: int | None = None
+    year: int | None = None
+    for value in values:
+        if _YEAR_MIN <= value <= _YEAR_MAX and year is None:
+            year = value
+        elif 0 < value <= _MILEAGE_MAX and mileage is None:
+            mileage = value
+    if mileage is None and year is None:
+        return None
+    return mileage, year

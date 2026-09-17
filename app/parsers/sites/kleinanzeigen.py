@@ -358,6 +358,8 @@ class KleinanzeigenParser(BaseParser):
                 continue
             if not matches_shipping(query.shipping_available, shipping_flag(item)):
                 continue
+            if not query.matches_vehicle(item.mileage_km, item.registration_year):
+                continue
             if query.max_price is not None and item.price is not None:
                 if item.price > query.max_price:
                     continue

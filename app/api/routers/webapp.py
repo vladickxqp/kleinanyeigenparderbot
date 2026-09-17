@@ -112,6 +112,8 @@ class RuleOut(BaseModel):
     location: str | None
     max_distance_km: int | None
     category: str | None
+    max_mileage_km: int | None = None
+    min_year: int | None = None
 
 
 class RuleIn(BaseModel):
@@ -125,6 +127,10 @@ class RuleIn(BaseModel):
     max_distance_km: int | None = Field(default=None, ge=0, le=500)
     interval_seconds: int = Field(default=600, ge=60, le=86_400)
     exclude_keywords: list[str] = Field(default_factory=list, max_length=20)
+    #: Car bounds. The upper limits are what the filter can still mean, not
+    #: what a client may claim: everything from outside is bounded here.
+    max_mileage_km: int | None = Field(default=None, ge=0, le=2_000_000)
+    min_year: int | None = Field(default=None, ge=1950, le=2100)
 
     def apply_to(self, rule: SearchRule, user: User) -> None:
         """Copy the validated values onto a rule, honouring the user's tier."""
@@ -138,6 +144,8 @@ class RuleIn(BaseModel):
             location if location.isdigit() and 4 <= len(location) <= 5 else None
         )
         rule.max_distance_km = self.max_distance_km
+        rule.max_mileage_km = self.max_mileage_km
+        rule.min_year = self.min_year
         # The tier decides the floor, never the client.
         rule.interval_seconds = max(self.interval_seconds, user.min_interval_seconds)
         rule.exclude_keywords = [

@@ -258,6 +258,13 @@ def build_search_url(
     if query.zip_code and query.max_distance_km:
         params["zip"] = query.zip_code
         params["zipr"] = int(query.max_distance_km)
+    # Asked server-side so the 20 cards per page are 20 usable ones; the local
+    # check still runs, because a parameter the site quietly drops would
+    # otherwise pass unfiltered results straight through.
+    if query.max_mileage_km is not None:
+        params["kmto"] = int(query.max_mileage_km)
+    if query.min_year is not None:
+        params["fregfrom"] = int(query.min_year)
     # The damage filter is applied server-side where possible, but never relied
     # on: the flag is missing on some cards, and an unknown value must not
     # decide anything on its own (see _listing_condition).
@@ -490,6 +497,8 @@ class AutoScout24Parser(BaseParser):
         if not mentions(leftover, item.title, item.description):
             return False
         if not condition_matches(query.condition, item.condition):
+            return False
+        if not query.matches_vehicle(item.mileage_km, item.registration_year):
             return False
         if query.max_price is not None and item.price is not None:
             if item.price > query.max_price:

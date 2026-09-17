@@ -29,6 +29,7 @@ from app.bot.keyboards.common import (
     sites_select_keyboard,
     sentence_keyboard,
     skip_cancel_keyboard,
+    vehicle_short,
 )
 
 __all__ = [
@@ -60,4 +61,5 @@ __all__ = [
     "sites_select_keyboard",
     "sentence_keyboard",
     "skip_cancel_keyboard",
+    "vehicle_short",
 ]

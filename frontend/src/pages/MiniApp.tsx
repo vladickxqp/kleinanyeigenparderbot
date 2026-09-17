@@ -241,6 +241,8 @@ const EMPTY_RULE: RuleInput = {
   max_distance_km: null,
   interval_seconds: 600,
   exclude_keywords: [],
+  max_mileage_km: null,
+  min_year: null,
 };
 
 function toInput(rule: WaRule): RuleInput {
@@ -253,6 +255,8 @@ function toInput(rule: WaRule): RuleInput {
     max_distance_km: rule.max_distance_km,
     interval_seconds: rule.interval_seconds,
     exclude_keywords: [],
+    max_mileage_km: rule.max_mileage_km,
+    min_year: rule.min_year,
   };
 }
 
@@ -381,6 +385,33 @@ function RuleForm({
             </Field>
           </div>
 
+          {/* Cars only. An ad that states neither value is kept — see the
+              tri-state note on SearchQuery.matches_vehicle. */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Max. Kilometer">
+              <input
+                className="dh-input"
+                inputMode="numeric"
+                placeholder="egal"
+                value={form.max_mileage_km ?? ""}
+                onChange={(e) =>
+                  set("max_mileage_km", e.target.value === "" ? null : Number(e.target.value))
+                }
+              />
+            </Field>
+            <Field label="Baujahr ab">
+              <input
+                className="dh-input"
+                inputMode="numeric"
+                placeholder="egal"
+                value={form.min_year ?? ""}
+                onChange={(e) =>
+                  set("min_year", e.target.value === "" ? null : Number(e.target.value))
+                }
+              />
+            </Field>
+          </div>
+
           <Field label="Prüfen">
             <select
               className="dh-select"
@@ -431,6 +462,8 @@ function RuleRow({
   const criteria = [
     rule.max_price ? `bis ${money(rule.max_price)}` : null,
     rule.location ? `${rule.location}${rule.max_distance_km ? ` +${rule.max_distance_km} km` : ""}` : null,
+    rule.max_mileage_km ? `bis ${rule.max_mileage_km.toLocaleString("de-DE")} km` : null,
+    rule.min_year ? `ab ${rule.min_year}` : null,
     everyText(rule.interval_seconds),
   ].filter(Boolean) as string[];
 

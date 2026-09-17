@@ -130,6 +130,9 @@ export interface WaRule {
   location: string | null;
   max_distance_km: number | null;
   category: string | null;
+  /** Car bounds; null on both means this is not a car search. */
+  max_mileage_km: number | null;
+  min_year: number | null;
 }
 
 export interface WaListing {
@@ -200,6 +203,8 @@ export interface RuleInput {
   max_distance_km: number | null;
   interval_seconds: number;
   exclude_keywords: string[];
+  max_mileage_km: number | null;
+  min_year: number | null;
 }
 
 async function waVoid(path: string, init: RequestInit = {}): Promise<void> {

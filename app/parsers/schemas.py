@@ -32,7 +32,33 @@ class SearchQuery(BaseModel):
     #: None = shipping does not matter, True = only ads offering shipping,
     #: False = pickup only. Parsers that cannot tell must never filter on it.
     shipping_available: bool | None = None
+    #: Vehicle bounds. Like shipping, these only ever judge an ad that STATES
+    #: the value — see :meth:`matches_vehicle`.
+    max_mileage_km: int | None = None
+    min_year: int | None = None
     max_results: int = 40
+
+    @property
+    def wants_vehicle_filter(self) -> bool:
+        return self.max_mileage_km is not None or self.min_year is not None
+
+    def matches_vehicle(
+        self, mileage_km: int | None = None, registration_year: int | None = None
+    ) -> bool:
+        """Whether a car survives the mileage and registration bounds.
+
+        Unknown keeps the ad, exactly as the shipping filter does. A marketplace
+        that stops printing the kilometres on its cards would otherwise empty a
+        paid rule overnight while every health check stayed green — and the
+        user would simply stop getting deals with no way to tell why.
+        """
+        if self.max_mileage_km is not None and mileage_km is not None:
+            if mileage_km > self.max_mileage_km:
+                return False
+        if self.min_year is not None and registration_year is not None:
+            if registration_year < self.min_year:
+                return False
+        return True
 
     def matches_text(self, *texts: str | None) -> bool:
         """Return False if any exclude keyword appears in the given texts."""

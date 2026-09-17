@@ -114,6 +114,10 @@ def rule_edit_keyboard(
     kb.button(text="📍 Ort", callback_data=f"edit:location:{rid}")
     kb.button(text="⏱ Intervall", callback_data=f"edit:interval:{rid}")
     kb.button(text="🎯 Min-Score", callback_data=f"edit:minscore:{rid}")
+    kb.button(
+        text=f"🚗 Auto: {vehicle_short(rule.max_mileage_km, rule.min_year)}",
+        callback_data=f"edit:vehicle:{rid}",
+    )
     if has_rule_power:
         # The label carries the current value: these three are invisible on the
         # rule card, so the menu is the only place a user can check them.
@@ -129,9 +133,9 @@ def rule_edit_keyboard(
             text=f"🔨 Auktionen: {auction_short(rule.exclude_auctions)}",
             callback_data=f"edit:auctions:{rid}",
         )
-        kb.adjust(2, 2, 2, 2, 2, 1)
+        kb.adjust(2, 2, 2, 2, 1, 2, 1)
     else:
-        kb.adjust(2, 2, 2, 2)
+        kb.adjust(2, 2, 2, 2, 1)
         kb.row(
             InlineKeyboardButton(
                 text="🔒 Zustand · Versand · Auktionen",
@@ -310,6 +314,16 @@ def shipping_short(value: bool | None) -> str:
 
 def auction_short(exclude_auctions: bool | None) -> str:
     return "aus" if exclude_auctions else "an"
+
+
+def vehicle_short(max_mileage_km: int | None, min_year: int | None) -> str:
+    """Label for the car bounds — both are invisible on the rule card."""
+    parts: list[str] = []
+    if max_mileage_km is not None:
+        parts.append(f"bis {max_mileage_km:,} km".replace(",", "."))
+    if min_year is not None:
+        parts.append(f"ab {min_year}")
+    return " · ".join(parts) if parts else "egal"
 
 
 def condition_keyboard(lang: str) -> InlineKeyboardMarkup:

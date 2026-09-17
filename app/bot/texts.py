@@ -67,6 +67,39 @@ _TEXTS: dict[str, dict[str, str]] = {
         "ru": "✅ Сохранено!",
         "uk": "✅ Збережено!",
     },
+    "edit.ask_vehicle": {
+        "de": "🚗 Kilometer und Baujahr.\n"
+        "z. B. <code>100000 2018</code> (max. km + ab Baujahr), "
+        "<code>100000</code> (nur km), <code>2018</code> (nur Baujahr), "
+        "<code>{clear}</code> = beides löschen.\n\n"
+        "<i>Angebote ohne Angabe bleiben drin — sonst würde eine Layout-"
+        "Änderung die Suche stillschweigend leeren.</i>",
+        "en": "🚗 Mileage and year of registration.\n"
+        "e.g. <code>100000 2018</code> (max km + from year), "
+        "<code>100000</code> (km only), <code>2018</code> (year only), "
+        "<code>{clear}</code> = clear both.\n\n"
+        "<i>Listings that state neither are kept — otherwise a layout change "
+        "would silently empty the search.</i>",
+        "ru": "🚗 Пробег и год выпуска.\n"
+        "напр. <code>100000 2018</code> (макс. км + от года), "
+        "<code>100000</code> (только км), <code>2018</code> (только год), "
+        "<code>{clear}</code> = очистить оба.\n\n"
+        "<i>Объявления без указания остаются — иначе смена вёрстки молча "
+        "опустошила бы поиск.</i>",
+        "uk": "🚗 Пробіг і рік випуску.\n"
+        "напр. <code>100000 2018</code> (макс. км + від року), "
+        "<code>100000</code> (лише км), <code>2018</code> (лише рік), "
+        "<code>{clear}</code> = очистити обидва.\n\n"
+        "<i>Оголошення без зазначення залишаються — інакше зміна вёрстки "
+        "мовчки спорожнила б пошук.</i>",
+    },
+    "edit.vehicle_invalid": {
+        "de": "⚠️ Bitte Kilometer und/oder Baujahr senden, z. B. "
+        "<code>100000 2018</code>.",
+        "en": "⚠️ Please send mileage and/or year, e.g. <code>100000 2018</code>.",
+        "ru": "⚠️ Пришли пробег и/или год, напр. <code>100000 2018</code>.",
+        "uk": "⚠️ Надішли пробіг і/або рік, напр. <code>100000 2018</code>.",
+    },
     "edit.ask_minscore": {
         "de": "🎯 Ab welchem Deal-Score benachrichtigen? (0–100 senden; "
         "0 = jedes neue Angebot, 70 = nur gute Deals)",
@@ -199,19 +232,12 @@ _TEXTS: dict[str, dict[str, str]] = {
     "rule.f_exclude": {
         "de": "Ohne", "en": "Without", "ru": "Без", "uk": "Без",
     },
+    "rule.f_mileage": {
+        "de": "Kilometer", "en": "Mileage", "ru": "Пробег", "uk": "Пробіг",
+    },
     "rule.f_any": {"de": "beliebig", "en": "any", "ru": "любая", "uk": "будь-яка"},
     "rule.f_everywhere": {
         "de": "überall", "en": "everywhere", "ru": "везде", "uk": "всюди",
-    },
-    "rule.sentence_mileage": {
-        "de": "ℹ️ Kilometerstand verstanden ({km} km), aber dafür gibt es noch "
-        "keinen Filter — die Suche läuft ohne ihn.",
-        "en": "ℹ️ Understood the mileage ({km} km), but there is no filter for it "
-        "yet — the search runs without it.",
-        "ru": "ℹ️ Пробег понят ({km} км), но фильтра для него пока нет — "
-        "поиск работает без него.",
-        "uk": "ℹ️ Пробіг зрозумів ({km} км), але фільтра для нього ще немає — "
-        "пошук працює без нього.",
     },
     "btn.rule_steps": {
         "de": "📋 Schritt für Schritt",

@@ -19,7 +19,10 @@ cards straight to Telegram.
 - **Pluggable parsers**: every marketplace is a self-contained module registered in a
   central registry — add a new site without touching the core.
 - **Flexible search rules**: keywords, exclude-words, price range, condition, location,
-  radius, seller rating, category, brand, and arbitrary extra filters.
+  radius, category — plus mileage and year of registration for cars, asked of
+  AutoScout24 server-side and re-checked locally. Every filter that depends on a
+  value the ad may not state keeps the ad when it is unknown: a markup change must
+  not empty a paid rule while the health checks stay green.
 - **A rule from one sentence**: *"Tesla Model 3 unter 25.000 €, 100 km um Worms, keine
   Unfallwagen"* becomes a finished proposal to confirm — the eight-question wizard is
   still one tap away. Deterministic German parsing first (`app/services/rule_nlp.py`,

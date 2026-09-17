@@ -43,7 +43,7 @@ from app.config.settings import settings
 from app.database.models import SearchRule, User
 from app.database.models.enums import Condition
 from app.services import entitlements as ent
-from app.services.parsing import parse_price_range
+from app.services.parsing import parse_price_range, parse_vehicle_bounds
 from app.services.repositories import SearchRuleRepository
 
 router = Router(name="edit_rule")
@@ -197,6 +197,12 @@ async def cb_edit_field(
     elif field == "minscore":
         await state.set_state(EditWizard.min_score)
         await cb.message.answer(t("edit.ask_minscore", lang), reply_markup=cancel_keyboard(lang))
+    elif field == "vehicle":
+        await state.set_state(EditWizard.vehicle)
+        await cb.message.answer(
+            t("edit.ask_vehicle", lang, clear=CLEAR_MARKER),
+            reply_markup=cancel_keyboard(lang),
+        )
     elif field == "condition":
         await state.set_state(EditWizard.condition)
         await cb.message.answer(ASK_CONDITION, reply_markup=condition_keyboard(lang))
@@ -277,6 +283,28 @@ async def edit_price(
         await state.clear()
         return
     rule.min_price, rule.max_price = parsed
+    await _finish(message, session, state, rule, lang)
+
+
+@router.message(EditWizard.vehicle, F.text)
+async def edit_vehicle(
+    message: Message, user: User, session: AsyncSession, lang: str, state: FSMContext
+) -> None:
+    raw = (message.text or "").strip()
+    if raw == CLEAR_MARKER:
+        bounds: tuple[int | None, int | None] | None = (None, None)
+    else:
+        bounds = parse_vehicle_bounds(raw)
+    if bounds is None:
+        await message.answer(
+            t("edit.vehicle_invalid", lang), reply_markup=cancel_keyboard(lang)
+        )
+        return
+    rule = await _load_rule(session, state, user)
+    if rule is None:
+        await state.clear()
+        return
+    rule.max_mileage_km, rule.min_year = bounds
     await _finish(message, session, state, rule, lang)
 
 
