@@ -9,6 +9,7 @@ from app.bot.handlers import (
     broadcast,
     edit_rule,
     flips,
+    legal,
     listings,
     menu,
     photo_eval,
@@ -34,6 +35,7 @@ def build_router() -> Router:
     root.include_router(flips.router)
     root.include_router(photo_eval.router)
     root.include_router(privacy.router)
+    root.include_router(legal.router)
     root.include_router(quick_search.router)
     root.include_router(start.router)
     root.include_router(rules.router)

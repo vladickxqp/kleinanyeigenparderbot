@@ -245,6 +245,31 @@ class Settings(BaseSettings):
     referral_enabled: bool = True
     referral_reward_days: int = 7
 
+    # --- Legal (operator details; see app/services/legal.py) ----------------
+    # Selling a digital service to consumers in the EU needs an imprint, terms,
+    # and a withdrawal notice. None of it can be invented here: every field is
+    # empty by default, and the bot says a page is unavailable rather than
+    # showing a half-filled one. /status nags the admins until they are set.
+    #: Who operates this bot: name or company, exactly as it is registered.
+    legal_operator: str = ""
+    #: Postal address, one line per line break ("Musterstr. 1\n67547 Worms").
+    legal_address: str = ""
+    #: Contact that a customer can actually reach — required by §5 DDG.
+    legal_email: str = ""
+    legal_phone: str = ""
+    #: Only if they exist: commercial register entry and VAT id.
+    legal_register: str = ""
+    legal_vat_id: str = ""
+    #: Links to the pages a purchase has to point at.
+    legal_terms_url: str = ""
+    legal_privacy_url: str = ""
+    #: The withdrawal notice shown before a purchase. Empty = not configured;
+    #: the wording belongs to the operator, not to this repository.
+    legal_withdrawal: str = ""
+    #: Bumped by the operator whenever the texts above change in substance, so
+    #: a payment can record which version the customer was shown.
+    legal_version: str = ""
+
     # --- Resale / negotiation (all configurable) ----------------------------
     #: Marketplace fees deducted in the net-profit estimate (percent).
     resale_fee_percent: float = 13.0

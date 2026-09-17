@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.keyboards import language_keyboard, main_menu_keyboard
 from app.bot.texts import t
+from app.config.settings import settings
 from app.database.models import Listing, SearchRule, User
 
 router = Router(name="start")
@@ -101,7 +102,7 @@ async def cmd_status(message: Message, user: User, session: AsyncSession, lang: 
             "<code>docker compose ps</code> prüfen!"
         )
 
-    await message.answer(
+    text = (
         "📊 <b>System-Status</b>\n\n"
         f"{worker_line}\n"
         f"🔄 Suchläufe heute (alle Nutzer): <b>{status.runs_today}</b>\n"
@@ -110,3 +111,15 @@ async def cmd_status(message: Message, user: User, session: AsyncSession, lang: 
         f"🆕 Deine neuen Angebote (24h): <b>{new_24h}</b>\n\n"
         "ℹ️ Suchläufe ohne Karten = es gab nichts wirklich Neues."
     )
+    # Only the admins, and only while something is actually missing: going live
+    # without an imprint and a withdrawal notice is the one mistake nobody
+    # notices by looking at the product.
+    if user.telegram_id in settings.admin_ids and settings.premium_enabled:
+        from app.services import legal
+
+        gaps = legal.missing(for_sale=True)
+        if gaps:
+            text += "\n\n" + t(
+                "legal.admin_incomplete", lang, fields=", ".join(gaps)
+            )
+    await message.answer(text)

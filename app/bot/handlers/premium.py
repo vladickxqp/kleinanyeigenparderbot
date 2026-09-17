@@ -169,7 +169,25 @@ def _premium_text(user: User, sub, billing: str = "", lang: str = "de",
     if settings.referral_enabled:
         footer.append(t("premium.referral_hint", lang))
     parts.append("\n".join(footer))
-    return "\n\n".join(parts)
+    text = "\n\n".join(parts)
+    # Before the buy button, not after it: a withdrawal notice a customer only
+    # finds once they have paid has not been given.
+    if not user.is_paid_tier:
+        text += _legal_note(lang)
+    return text
+
+
+def _legal_note(lang: str) -> str:
+    """Point at the withdrawal notice before the buy button, not after.
+
+    Shown only once the operator has configured one: a purchase hint that
+    links to an empty page is worse than none.
+    """
+    from app.services import legal as legal_svc
+
+    if not legal_svc.is_complete(for_sale=True):
+        return ""
+    return t("legal.before_purchase", lang)
 
 
 async def _premium_keyboard(

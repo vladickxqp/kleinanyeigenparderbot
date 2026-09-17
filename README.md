@@ -231,6 +231,31 @@ edited with live progress and a final report (sent / blocked / failed).
 
 ---
 
+## ⚖️ Before you sell anything
+
+Taking money from consumers in the EU needs an **imprint** (§5 DDG), **terms**
+and a **withdrawal notice** (§312g, §356 Abs. 5 BGB — for a digital service the
+right of withdrawal only expires once the customer has been told so *before*
+paying). None of that text lives in this repository: it names a real operator at
+a real address, and a wrong one is worse than a missing one.
+
+So every field is empty by default (`LEGAL_*` in `.env.example`) and the code
+refuses to fake it:
+
+- `/rechtliches` says the page does not exist yet instead of rendering headings
+  with nothing under them — which reads like a legal notice and carries none of
+  its content;
+- the purchase page shows the withdrawal hint only once a notice is configured,
+  because a hint pointing at an empty page is worse than no hint;
+- `/status` keeps telling the **admins** exactly which fields are missing, since
+  going live without them is the one mistake nobody spots by using the product.
+
+Get the wording from a generator or a lawyer, put it in `.env`, and bump
+`LEGAL_VERSION` whenever it changes in substance — otherwise a fingerprint of
+the texts is recorded, so it stays checkable which version a customer was shown.
+
+---
+
 ## 💎 Plans, trials and privacy
 
 Four levels, all as real Telegram Stars subscriptions. The ladder is

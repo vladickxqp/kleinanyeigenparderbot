@@ -1062,6 +1062,76 @@ _TEXTS: dict[str, dict[str, str]] = {
         "ru": "🔐 Твои данные: /privacy · Выгрузка: /meinedaten · Удалить: /loeschen",
         "uk": "🔐 Твої дані: /privacy · Вивантаження: /meinedaten · Видалити: /loeschen",
     },
+    # --- Imprint, terms, withdrawal (content comes from settings) ----------
+    "legal.title": {
+        "de": "⚖️ <b>Rechtliches</b>", "en": "⚖️ <b>Legal notice</b>",
+        "ru": "⚖️ <b>Правовая информация</b>", "uk": "⚖️ <b>Правова інформація</b>",
+    },
+    "legal.imprint_head": {
+        "de": "<b>Anbieter</b>", "en": "<b>Provider</b>",
+        "ru": "<b>Поставщик</b>", "uk": "<b>Постачальник</b>",
+    },
+    "legal.contact_head": {
+        "de": "<b>Kontakt</b>", "en": "<b>Contact</b>",
+        "ru": "<b>Контакт</b>", "uk": "<b>Контакт</b>",
+    },
+    "legal.register_head": {
+        "de": "<b>Register &amp; USt-IdNr.</b>", "en": "<b>Register &amp; VAT ID</b>",
+        "ru": "<b>Реестр и НДС-номер</b>", "uk": "<b>Реєстр і ПДВ-номер</b>",
+    },
+    "legal.withdrawal_head": {
+        "de": "<b>Widerrufsbelehrung</b>", "en": "<b>Right of withdrawal</b>",
+        "ru": "<b>Право на отказ</b>", "uk": "<b>Право на відмову</b>",
+    },
+    "legal.terms_link": {
+        "de": "📄 <a href=\"{url}\">AGB</a>", "en": "📄 <a href=\"{url}\">Terms</a>",
+        "ru": "📄 <a href=\"{url}\">Условия</a>",
+        "uk": "📄 <a href=\"{url}\">Умови</a>",
+    },
+    "legal.privacy_link": {
+        "de": "🔐 <a href=\"{url}\">Datenschutzerklärung</a>",
+        "en": "🔐 <a href=\"{url}\">Privacy policy</a>",
+        "ru": "🔐 <a href=\"{url}\">Политика конфиденциальности</a>",
+        "uk": "🔐 <a href=\"{url}\">Політика конфіденційності</a>",
+    },
+    "legal.unconfigured": {
+        "de": "⚖️ Für diesen Bot sind noch keine rechtlichen Angaben hinterlegt. "
+        "Frag beim Betreiber nach: /support",
+        "en": "⚖️ This bot has no legal details on file yet. Ask the operator: "
+        "/support",
+        "ru": "⚖️ Для этого бота ещё не указаны правовые данные. Спроси "
+        "оператора: /support",
+        "uk": "⚖️ Для цього бота ще не вказані правові дані. Запитай "
+        "оператора: /support",
+    },
+    "legal.before_purchase": {
+        "de": "\n\n⚖️ Mit dem Kauf stimmst du der sofortigen Ausführung zu. "
+        "Einzelheiten und Widerrufsbelehrung: /rechtliches",
+        "en": "\n\n⚖️ Buying means you agree to immediate performance. Details "
+        "and withdrawal notice: /rechtliches",
+        "ru": "\n\n⚖️ Покупка означает согласие на немедленное исполнение. "
+        "Подробности и право на отказ: /rechtliches",
+        "uk": "\n\n⚖️ Купівля означає згоду на негайне виконання. Подробиці "
+        "та право на відмову: /rechtliches",
+    },
+    "legal.admin_incomplete": {
+        "de": "⚖️ <b>Rechtliche Angaben unvollständig</b>\nFehlt: {fields}\n"
+        "Ohne Impressum und Widerrufsbelehrung darf kein zahlungspflichtiges "
+        "Angebot laufen. Werte in der .env setzen.",
+        "en": "⚖️ <b>Legal details incomplete</b>\nMissing: {fields}\n"
+        "A paid offer must not run without an imprint and a withdrawal notice. "
+        "Set the values in .env.",
+        "ru": "⚖️ <b>Правовые данные неполные</b>\nНе хватает: {fields}\n"
+        "Платное предложение не должно работать без выходных данных и права на "
+        "отказ. Задай значения в .env.",
+        "uk": "⚖️ <b>Правові дані неповні</b>\nБракує: {fields}\n"
+        "Платна пропозиція не повинна працювати без вихідних даних і права на "
+        "відмову. Задай значення в .env.",
+    },
+    "btn.legal": {
+        "de": "⚖️ Rechtliches", "en": "⚖️ Legal",
+        "ru": "⚖️ Правовое", "uk": "⚖️ Правове",
+    },
     "privacy.page": {
         "de": "🔐 <b>Deine Daten</b>\n\n"
         "<b>Was gespeichert wird</b>\n"
