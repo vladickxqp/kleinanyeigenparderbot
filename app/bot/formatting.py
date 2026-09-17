@@ -101,7 +101,11 @@ def format_deal_card(listing: Listing, lang: str = "de") -> str:
             )
         )
 
-    meta: list[str] = [f"🏷 {listing.site.value}"]
+    # Lazy: formatting is imported on the bot's lightweight paths too, and
+    # app.parsers pulls in the whole scraping stack behind it.
+    from app.parsers.registry import site_label
+
+    meta: list[str] = [f"🏷 {site_label(listing.site)}"]
     if listing.location:
         meta.append(f"📍 {escape(listing.location)}")
     if listing.is_auction:

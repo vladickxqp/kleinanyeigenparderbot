@@ -12,6 +12,8 @@ import { IconInbox, IconStar } from "./icons";
 export interface DealLike {
   id: number;
   site: string;
+  /** How the marketplace spells its own name — "AutoScout24", not a slug. */
+  site_label?: string;
   title: string;
   url: string;
   image_url: string | null;
@@ -224,7 +226,7 @@ export function DealHero({ deal }: { deal: DealLike }) {
           className="dh-meta"
           style={{ marginTop: 7, color: "rgba(255,255,255,.66)", fontSize: 12 }}
         >
-          {deal.site}
+          {deal.site_label || deal.site}
           {deal.location ? ` · ${deal.location}` : ""} · {since(deal.created_at)}
         </div>
       </div>

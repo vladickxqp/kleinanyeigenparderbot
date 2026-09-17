@@ -61,5 +61,21 @@ def get_parser(site: SiteName) -> BaseParser | None:
     return registry.get(site)
 
 
+def site_label(site: SiteName | str) -> str:
+    """The marketplace's own spelling of its name, for anything a user reads.
+
+    Title-casing the slug turns "autoscout24" into "Autoscout24" and
+    "ebay" into "Ebay" — every parser already carries how its site writes
+    itself, so ask it rather than guess.
+    """
+    if not isinstance(site, SiteName):
+        try:
+            site = SiteName(site)
+        except ValueError:
+            return str(site).title()
+    parser = registry.get(site)
+    return parser.label if parser is not None else site.value.title()
+
+
 def iter_parsers() -> Iterator[BaseParser]:
     return iter(registry)

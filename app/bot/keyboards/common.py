@@ -148,10 +148,16 @@ def sites_select_keyboard(
     available: list[str], selected: list[str], lang: str
 ) -> InlineKeyboardMarkup:
     """Multi-select keyboard for choosing which marketplaces to search."""
+    # Imported here, not at module level: the keyboards are used by the bot's
+    # lightweight paths too, and app.parsers pulls in the whole scraping stack.
+    from app.parsers.registry import site_label
+
     kb = InlineKeyboardBuilder()
     for site in available:
         mark = "☑️" if site in selected else "⬜️"
-        kb.button(text=f"{mark} {site.title()}", callback_data=f"wizsite:toggle:{site}")
+        kb.button(
+            text=f"{mark} {site_label(site)}", callback_data=f"wizsite:toggle:{site}"
+        )
     kb.adjust(2)
     kb.row(
         InlineKeyboardButton(

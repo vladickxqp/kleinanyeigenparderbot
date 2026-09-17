@@ -10,7 +10,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -151,6 +151,9 @@ class ListingOut(BaseModel):
     id: int
     site: str
     title: str
+    #: How the marketplace writes its own name ("AutoScout24"), so the card
+    #: does not print a database slug at the reader.
+    site_label: str = ""
     url: str
     image_url: str | None
     price: float | None
@@ -164,6 +167,14 @@ class ListingOut(BaseModel):
     discount_percent: float | None = None
     is_negotiable: bool = False
     shipping_cost: float | None = None
+
+    @model_validator(mode="after")
+    def _name_the_marketplace(self) -> "ListingOut":
+        if not self.site_label:
+            from app.parsers.registry import site_label
+
+            self.site_label = site_label(self.site)
+        return self
 
 
 class FlipOut(BaseModel):

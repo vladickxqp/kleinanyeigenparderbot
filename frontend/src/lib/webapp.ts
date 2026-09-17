@@ -135,6 +135,8 @@ export interface WaRule {
 export interface WaListing {
   id: number;
   site: string;
+  /** How the marketplace spells its own name — "AutoScout24", not a slug. */
+  site_label: string;
   title: string;
   url: string;
   image_url: string | null;

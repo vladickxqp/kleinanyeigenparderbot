@@ -30,6 +30,7 @@ from app.config.settings import settings
 from app.database.models import SearchRule, User
 from app.database.models.enums import SiteName
 from app.parsers import registry
+from app.parsers.registry import site_label
 from app.services.parsing import parse_price_range
 from app.services.repositories import SearchRuleRepository
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -577,7 +578,7 @@ def _render_rule(rule: SearchRule) -> str:
     else:
         price = "beliebig"
     excl = escape(", ".join(rule.exclude_keywords)) if rule.exclude_keywords else "—"
-    sites = ", ".join(s.title() for s in rule.sites) if rule.sites else "alle"
+    sites = ", ".join(site_label(s) for s in rule.sites) if rule.sites else "alle"
     ort = "überall"
     if rule.location:
         ort = escape(rule.location)
