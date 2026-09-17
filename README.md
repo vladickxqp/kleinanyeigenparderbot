@@ -1,8 +1,8 @@
 # 🛒 Kleinanzeigen Parser Bot
 
 An extensible, production-oriented **Telegram bot** that continuously hunts for the
-best deals across many online marketplaces (Kleinanzeigen, and — via pluggable
-parsers — eBay, Amazon, Idealo, and more). It parses listings, analyses prices,
+best deals across many online marketplaces (Kleinanzeigen and AutoScout24, and —
+via pluggable parsers — eBay, Idealo, and more). It parses listings, analyses prices,
 filters by your rules, deduplicates results and pushes beautifully formatted deal
 cards straight to Telegram.
 
@@ -310,8 +310,36 @@ is the reference for that case:
   timestamp semantics are confirmed against live data — a misread field there
   marks every listing stale and the site delivers nothing.
 
+**A site whose search cannot be asked what you want.** `app/parsers/sites/autoscout24.py`
+is the reference for the third case: the page ships its whole result list as JSON
+inside `__NEXT_DATA__`, which is far steadier than CSS selectors — but the search
+itself only speaks the site's own taxonomy.
+
+- **Check that the site's free-text parameter does anything at all.** AutoScout24
+  accepts `q=` and silently ignores it: "tesla model 3" and "zzzqqq" both answer
+  HTTP 200 with the entire German inventory, ~870.000 cars. A parser that trusted
+  it would flood every user with everything and look like it was working.
+- **Resolve the rule into the site's own ids, and skip the request when you
+  cannot.** A rule for "iPhone 15" names no car make, so it never leaves the
+  house. Read the taxonomy from the payload the page already sends and cache it
+  (`TAXONOMY_TTL_SECONDS`) — a make table baked into the source rots silently,
+  and refetching it per search doubles the request cost that the plans are
+  priced on.
+- **Do not re-check locally what the site already filtered.** Once the search
+  asked for BMW's "3er" group, every answer is one; requiring each ad to repeat
+  "3er" in its title drops all of them, because dealers write the engine instead.
+  Only the keywords the taxonomy did *not* consume are matched against the text.
+- **Match the seller's spelling, not yours.** Dealers type "BMW 320 d" where the
+  rule says "320d". The first live run of this parser returned 0 of 20 real hits
+  for exactly that reason — see `close_variant_spacing`.
+- **Say what the structured fields say, and nothing more.** The payload has no
+  posting date, so `posted_at` stays `None` and the site stays out of
+  `freshness.DATE_AWARE_SITES`; cars are collected rather than shipped, so
+  `shipping_available` is `None` instead of `False`.
+
 See `app/parsers/sites/kleinanzeigen.py` for a complete HTML reference
-implementation and `app/parsers/sites/vinted.py` for the JSON API variant.
+implementation, `app/parsers/sites/vinted.py` for the JSON API variant and
+`app/parsers/sites/autoscout24.py` for the embedded-payload variant.
 
 ---
 

@@ -10,6 +10,7 @@ class SiteName(str, enum.Enum):
 
     KLEINANZEIGEN = "kleinanzeigen"
     EBAY = "ebay"
+    AUTOSCOUT24 = "autoscout24"
     AMAZON = "amazon"
     IDEALO = "idealo"
     VINTED = "vinted"
