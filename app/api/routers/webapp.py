@@ -60,7 +60,15 @@ class LevelOut(BaseModel):
     quick_searches_per_day: int
     negotiations_per_month: int
     history_days: int
+    max_sites_per_rule: int
     features: list[str]
+
+
+class MarketplaceOut(BaseModel):
+    """One marketplace the picker may offer."""
+
+    slug: str
+    label: str
 
 
 class MeOut(BaseModel):
@@ -83,6 +91,8 @@ class MeOut(BaseModel):
     entitlements: LevelOut
     usage: list[QuotaOut]
     levels: list[LevelOut]
+    #: Every marketplace with a parser, in the order the cap keeps them.
+    marketplaces: list[MarketplaceOut]
 
 
 class CancelOut(BaseModel):
@@ -114,6 +124,12 @@ class RuleOut(BaseModel):
     category: str | None
     max_mileage_km: int | None = None
     min_year: int | None = None
+    #: What the owner picked (empty = every marketplace).
+    sites: list[str] = []
+    #: What the rule REALLY searches after the owner's level, and what
+    #: the level held back — so the app never claims more than it does.
+    searched_sites: list[str] = []
+    withheld_sites: list[str] = []
 
 
 class RuleIn(BaseModel):
@@ -131,6 +147,9 @@ class RuleIn(BaseModel):
     #: what a client may claim: everything from outside is bounded here.
     max_mileage_km: int | None = Field(default=None, ge=0, le=2_000_000)
     min_year: int | None = Field(default=None, ge=1950, le=2100)
+    #: Marketplace slugs; unknown ones are dropped and the owner's cap is
+    #: applied server-side, never by the client.
+    sites: list[str] = Field(default_factory=list, max_length=20)
 
     def apply_to(self, rule: SearchRule, user: User) -> None:
         """Copy the validated values onto a rule, honouring the user's tier."""
@@ -146,6 +165,13 @@ class RuleIn(BaseModel):
         rule.max_distance_km = self.max_distance_km
         rule.max_mileage_km = self.max_mileage_km
         rule.min_year = self.min_year
+        # The level decides how many marketplaces a rule may search; an
+        # empty list keeps meaning "every one we have".
+        from app.services import sites as site_access
+
+        rule.sites = [s.value for s in site_access.resolve(self.sites, user)]
+        if len(rule.sites) == len(site_access.available()):
+            rule.sites = []
         # The tier decides the floor, never the client.
         rule.interval_seconds = max(self.interval_seconds, user.min_interval_seconds)
         rule.exclude_keywords = [
@@ -294,6 +320,7 @@ def level_out(e: ent.Entitlements, lang: str) -> LevelOut:
         quick_searches_per_day=e.quick_searches_per_day,
         negotiations_per_month=e.negotiations_per_month,
         history_days=e.history_days,
+        max_sites_per_rule=e.max_sites_per_rule,
         features=[feature_label(f, lang) for f in sorted(e.features)],
     )
 
@@ -348,15 +375,42 @@ async def me(
         entitlements=level_out(user.entitlements, lang),
         usage=usage_out(await quota.snapshot(user), lang),
         levels=[level_out(e, lang) for e in ent.all_tiers()],
+        marketplaces=_marketplaces(),
     )
+
+
+def _marketplaces() -> list[MarketplaceOut]:
+    """The marketplaces that actually have a parser, in preferred order."""
+    from app.parsers.registry import site_label
+    from app.services import sites as site_access
+
+    return [
+        MarketplaceOut(slug=site.value, label=site_label(site))
+        for site in site_access.available()
+    ]
+
+
+def _rule_out(rule: SearchRule, user: User) -> RuleOut:
+    """A rule plus what the owner's level actually lets it search.
+
+    Resolved here rather than on the client: the app must never show a list of
+    marketplaces the search does not visit.
+    """
+    from app.services import sites as site_access
+
+    out = RuleOut.model_validate(rule)
+    out.searched_sites = [s.value for s in site_access.resolve(rule.sites, user)]
+    out.withheld_sites = [s.value for s in site_access.withheld(rule.sites, user)]
+    return out
 
 
 @router.get("/rules", response_model=list[RuleOut])
 async def rules(
     user: User = Depends(current_webapp_user),
     session: AsyncSession = Depends(get_session),
-) -> list[SearchRule]:
-    return list(await SearchRuleRepository(session).list_for_user(user.id))
+) -> list[RuleOut]:
+    rules = await SearchRuleRepository(session).list_for_user(user.id)
+    return [_rule_out(rule, user) for rule in rules]
 
 
 @router.post("/rules/{rule_id}/toggle", response_model=RuleOut)
@@ -364,14 +418,14 @@ async def toggle_rule(
     rule_id: int,
     user: User = Depends(current_webapp_user),
     session: AsyncSession = Depends(get_session),
-) -> SearchRule:
+) -> RuleOut:
     rule = await SearchRuleRepository(session).get(rule_id, user.id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Suche nicht gefunden")
     rule.is_active = not rule.is_active
     await session.commit()
     await session.refresh(rule)
-    return rule
+    return _rule_out(rule, user)
 
 
 @router.post("/rules", response_model=RuleOut, status_code=201)
@@ -379,7 +433,7 @@ async def create_rule(
     payload: RuleIn,
     user: User = Depends(current_webapp_user),
     session: AsyncSession = Depends(get_session),
-) -> SearchRule:
+) -> RuleOut:
     """Create a search from the Mini App, within the user's quota."""
     repo = SearchRuleRepository(session)
     if await repo.count_for_user(user.id) >= user.max_rules:
@@ -393,7 +447,7 @@ async def create_rule(
     await session.commit()
     await session.refresh(rule)
     logger.info("WEBAPP: {} created rule {}", user.telegram_id, rule.id)
-    return rule
+    return _rule_out(rule, user)
 
 
 @router.put("/rules/{rule_id}", response_model=RuleOut)
@@ -402,14 +456,14 @@ async def update_rule(
     payload: RuleIn,
     user: User = Depends(current_webapp_user),
     session: AsyncSession = Depends(get_session),
-) -> SearchRule:
+) -> RuleOut:
     rule = await SearchRuleRepository(session).get(rule_id, user.id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Suche nicht gefunden")
     payload.apply_to(rule, user)
     await session.commit()
     await session.refresh(rule)
-    return rule
+    return _rule_out(rule, user)
 
 
 @router.delete(

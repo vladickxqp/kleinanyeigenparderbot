@@ -211,7 +211,7 @@ async def _finish(
     # the only place the new value is ever shown back to the user.
     await message.answer(t("edit.saved", lang) + (f"\n{note}" if note else ""))
     await message.answer(
-        _render_rule(rule, lang), reply_markup=rule_actions_keyboard(rule, lang)
+        _render_rule(rule, lang, user), reply_markup=rule_actions_keyboard(rule, lang)
     )
 
 

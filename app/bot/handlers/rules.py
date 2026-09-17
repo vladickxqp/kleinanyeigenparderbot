@@ -36,6 +36,7 @@ from app.database.models.enums import Condition, SiteName
 from app.parsers import registry
 from app.parsers.registry import site_label
 from app.services import rule_nlp
+from app.services import sites as site_access
 from app.services.parsing import parse_price_range
 from app.services.repositories import SearchRuleRepository
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,7 +70,7 @@ async def cb_open_rule(
     if rule is None:
         await cb.answer(t("edit.not_found", lang), show_alert=True)
         return
-    text = _render_rule(rule, lang) + await _stats_line(session, rule.id, lang)
+    text = _render_rule(rule, lang, user) + await _stats_line(session, rule.id, lang)
     await cb.message.edit_text(text, reply_markup=rule_actions_keyboard(rule, lang))
     await cb.answer()
 
@@ -197,7 +198,7 @@ async def cb_toggle_rule(
     rule.is_active = not rule.is_active
     await session.flush()
     await cb.message.edit_text(
-        _render_rule(rule, lang), reply_markup=rule_actions_keyboard(rule, lang)
+        _render_rule(rule, lang, user), reply_markup=rule_actions_keyboard(rule, lang)
     )
     await cb.answer(
         t("rule.toggled_active" if rule.is_active else "rule.toggled_paused", lang)
@@ -305,7 +306,7 @@ async def cb_draft_adjust(cb: CallbackQuery, lang: str, state: FSMContext) -> No
         await cb.answer()
         return
     await _apply_draft(state, draft)
-    await _ask_sites(cb.message, lang, state)
+    await _ask_sites(cb.message, lang, state, user)
     await cb.answer()
 
 
@@ -529,34 +530,72 @@ async def cb_radius(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
     if km not in RADIUS_CHOICES:
         km = RADIUS_CHOICES[-1]
     await state.update_data(max_distance_km=km)
-    await _ask_sites(cb.message, lang, state)
+    await _ask_sites(cb.message, lang, state, user)
     await cb.answer()
 
 
 # --- Platform selection (multi-select) --------------------------------------
 @router.callback_query(RuleWizard.sites, F.data.startswith("wizsite:toggle:"))
-async def cb_site_toggle(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
+async def cb_site_toggle(
+    cb: CallbackQuery, user: User, lang: str, state: FSMContext
+) -> None:
     site = cb.data.split(":")[-1]
     data = await state.get_data()
     selected = list(data.get("sites", []))
+    cap = site_access.cap_for(user)
+
     if site in selected:
         selected.remove(site)
+    elif cap >= 0 and len(selected) >= cap:
+        # The cap is spent. Say what the extra platform costs instead of
+        # letting the box refuse to tick for no visible reason.
+        level = site_access.upgrade_level(user)
+        await cb.answer(
+            t("rule.sites_locked", lang, level=level) if level else "",
+            show_alert=bool(level),
+        )
+        return
     else:
         selected.append(site)
+
     await state.update_data(sites=selected)
     await cb.message.edit_reply_markup(
-        reply_markup=sites_select_keyboard(_available_sites(), selected, lang)
+        reply_markup=sites_select_keyboard(
+            _available_sites(), selected, lang, max_sites=cap
+        )
     )
     await cb.answer()
 
 
 @router.callback_query(RuleWizard.sites, F.data == "wizsite:all")
-async def cb_site_all(cb: CallbackQuery, lang: str, state: FSMContext) -> None:
-    await state.update_data(sites=[])
+async def cb_site_all(
+    cb: CallbackQuery, user: User, lang: str, state: FSMContext
+) -> None:
+    cap = site_access.cap_for(user)
+    if cap < 0:
+        # No cap: the empty list keeps meaning "every marketplace we have",
+        # including ones added after this rule was written.
+        await state.update_data(sites=[])
+        await cb.message.edit_reply_markup(
+            reply_markup=sites_select_keyboard(_available_sites(), [], lang)
+        )
+        await cb.answer(t("btn.all_platforms", lang))
+        return
+
+    # Capped: store what they actually get, so the rule never claims "all".
+    granted = [s.value for s in site_access.resolve(None, user)]
+    await state.update_data(sites=granted)
     await cb.message.edit_reply_markup(
-        reply_markup=sites_select_keyboard(_available_sites(), [], lang)
+        reply_markup=sites_select_keyboard(
+            _available_sites(), granted, lang, max_sites=cap
+        )
     )
-    await cb.answer(t("btn.all_platforms", lang))
+    level = site_access.upgrade_level(user)
+    names = ", ".join(site_label(s) for s in granted)
+    await cb.answer(
+        t("rule.sites_all_capped", lang, site=names, level=level) if level else names,
+        show_alert=bool(level),
+    )
 
 
 @router.callback_query(RuleWizard.sites, F.data == "wizsite:done")
@@ -614,7 +653,7 @@ async def cb_skip(
         await state.update_data(exclude=[])
         await _ask_location(cb.message, lang, state)
     elif current == RuleWizard.location.state:
-        await _ask_sites(cb.message, lang, state)
+        await _ask_sites(cb.message, lang, state, user)
     await cb.answer()
 
 
@@ -657,13 +696,24 @@ async def _ask_location(message: Message, lang: str, state: FSMContext) -> None:
     )
 
 
-async def _ask_sites(message: Message, lang: str, state: FSMContext) -> None:
+async def _ask_sites(
+    message: Message, lang: str, state: FSMContext, user: User | None = None
+) -> None:
     await state.set_state(RuleWizard.sites)
     data = await state.get_data()
     selected = list(data.get("sites", []))
+    cap = site_access.cap_for(user)
+    text = t("rule.ask_sites", lang)
+    level = site_access.upgrade_level(user)
+    if level:
+        # Said before the first tap, not after it: the cap is part of the
+        # question, not a surprise on the answer.
+        text += "\n\n" + t("rule.sites_capped", lang, level=level)
     await message.answer(
-        t("rule.ask_sites", lang),
-        reply_markup=sites_select_keyboard(_available_sites(), selected, lang),
+        text,
+        reply_markup=sites_select_keyboard(
+            _available_sites(), selected, lang, max_sites=cap
+        ),
     )
 
 
@@ -720,7 +770,9 @@ def _category_label(slug: str | None, lang: str | None = None) -> str:
     return t("rule.f_all", lang)
 
 
-def _render_rule(rule: SearchRule, lang: str | None = None) -> str:
+def _render_rule(
+    rule: SearchRule, lang: str | None = None, owner: User | None = None
+) -> str:
     # All user-entered values are HTML-escaped: a rule named "RTX <3000"
     # would otherwise break Telegram's HTML parser on every render.
     state = t("rule.state_active" if rule.is_active else "rule.state_paused", lang)
@@ -737,11 +789,15 @@ def _render_rule(rule: SearchRule, lang: str | None = None) -> str:
         if rule.exclude_keywords
         else t("rule.f_none", lang)
     )
-    sites = (
-        ", ".join(site_label(s) for s in rule.sites)
-        if rule.sites
-        else t("rule.f_all", lang)
-    )
+    # What the rule really searches, after the owner's level — plus what an
+    # upgrade would add. "alle" on a capped rule would simply be untrue.
+    searched = site_access.resolve(rule.sites, owner)
+    sites = ", ".join(site_label(s) for s in searched) or t("rule.f_all", lang)
+    missing = site_access.withheld(rule.sites, owner)
+    if missing:
+        level = site_access.upgrade_level(owner)
+        if level:
+            sites += t("rule.f_sites_more", lang, count=len(missing), level=level)
     ort = t("rule.f_everywhere", lang)
     if rule.location:
         ort = escape(rule.location)

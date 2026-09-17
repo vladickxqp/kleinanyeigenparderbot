@@ -200,6 +200,40 @@ _TEXTS: dict[str, dict[str, str]] = {
                             "uk": "🔨 Показувати аукціони"},
     "choice.auction.hide": {"de": "🚫 Auktionen ausblenden", "en": "🚫 Hide auctions",
                             "ru": "🚫 Скрыть аукционы", "uk": "🚫 Сховати аукціони"},
+    # --- How many marketplaces one rule may search -------------------------
+    "rule.sites_capped": {
+        "de": "🔒 In deinem Tarif sucht eine Regel auf <b>einer</b> Plattform. "
+        "Mit {level} durchsuchst du alle gleichzeitig — dieselbe Suche, "
+        "mehr Treffer. → /premium",
+        "en": "🔒 On your plan a search runs on <b>one</b> marketplace. With "
+        "{level} you search them all at once — same search, more hits. "
+        "→ /premium",
+        "ru": "🔒 На твоём тарифе поиск идёт по <b>одной</b> площадке. С {level} "
+        "ты ищешь сразу по всем — тот же поиск, больше находок. → /premium",
+        "uk": "🔒 На твоєму тарифі пошук іде по <b>одному</b> майданчику. З "
+        "{level} ти шукаєш одразу по всіх — той самий пошук, більше знахідок. "
+        "→ /premium",
+    },
+    "rule.sites_locked": {
+        "de": "🔒 Eine Plattform pro Suche in deinem Tarif. Mit {level} alle "
+        "gleichzeitig — /premium",
+        "en": "🔒 One marketplace per search on your plan. {level} searches "
+        "them all at once — /premium",
+        "ru": "🔒 Одна площадка на поиск в твоём тарифе. {level} ищет по всем "
+        "сразу — /premium",
+        "uk": "🔒 Один майданчик на пошук у твоєму тарифі. {level} шукає по "
+        "всіх одразу — /premium",
+    },
+    "rule.sites_all_capped": {
+        "de": "🔒 {site} ist gesetzt — mehr als eine Plattform gibt es ab {level}.",
+        "en": "🔒 {site} it is — more than one marketplace comes with {level}.",
+        "ru": "🔒 Выбрано: {site} — больше одной площадки доступно с {level}.",
+        "uk": "🔒 Обрано: {site} — більше одного майданчика доступно з {level}.",
+    },
+    "rule.f_sites_more": {
+        "de": " · +{count} mit {level}", "en": " · +{count} with {level}",
+        "ru": " · +{count} с {level}", "uk": " · +{count} з {level}",
+    },
     # --- Menu and action buttons -------------------------------------------
     "btn.premium": {"de": "💎 Premium", "en": "💎 Premium",
                     "ru": "💎 Премиум", "uk": "💎 Преміум"},
@@ -874,6 +908,12 @@ _TEXTS: dict[str, dict[str, str]] = {
         "en": "• Quick searches: {quick} · history: {history}",
         "ru": "• Быстрые поиски: {quick} · история: {history}",
         "uk": "• Швидкі пошуки: {quick} · історія: {history}",
+    },
+    "premium.compare_sites": {
+        "de": "• Marktplätze pro Suche: {sites}",
+        "en": "• Marketplaces per search: {sites}",
+        "ru": "• Площадок на поиск: {sites}",
+        "uk": "• Майданчиків на пошук: {sites}",
     },
     "premium.compare_adds": {
         "de": "• Neu ab hier: {features}",

@@ -21,6 +21,7 @@ from app.parsers import registry
 from app.parsers.schemas import ParsedListing, SearchQuery
 from app.config.settings import settings
 from app.services import ai
+from app.services import sites as site_access
 from app.services.deal_scorer import score_listing
 from app.services.dedup import filter_new_listings
 from app.services.freshness import is_fresh_enough
@@ -376,7 +377,12 @@ class SearchService:
     async def _collect(
         self, rule: SearchRule, query: SearchQuery
     ) -> list[ParsedListing]:
-        parsers = registry.resolve(rule.target_sites)
+        # The owner's level decides how many marketplaces one rule may search.
+        # Enforced here rather than only in the keyboard, so a rule written
+        # before the cap, one created from the Mini App, and one whose owner
+        # downgraded yesterday all go through the same resolution.
+        owner = await self.session.get(User, rule.user_id)
+        parsers = registry.resolve(site_access.resolve(rule.sites, owner))
         if not parsers:
             logger.warning("Rule {}: no parsers resolved", rule.id)
             return []

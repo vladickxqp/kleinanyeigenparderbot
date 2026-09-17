@@ -243,6 +243,7 @@ const EMPTY_RULE: RuleInput = {
   exclude_keywords: [],
   max_mileage_km: null,
   min_year: null,
+  sites: [],
 };
 
 function toInput(rule: WaRule): RuleInput {
@@ -257,6 +258,8 @@ function toInput(rule: WaRule): RuleInput {
     exclude_keywords: [],
     max_mileage_km: rule.max_mileage_km,
     min_year: rule.min_year,
+    // What it really searches today, not what it once asked for.
+    sites: rule.searched_sites,
   };
 }
 
@@ -292,6 +295,35 @@ function RuleForm({
   const [form, setForm] = useState<RuleInput>(initial.values);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The cap and the marketplace list both come from the server; the app
+  // never decides on its own what a level is allowed to search.
+  const { data: me } = useLoad<Me>(() => webapp.me(), []);
+  const marketplaces = me?.marketplaces ?? [];
+  const siteCap = me?.entitlements.max_sites_per_rule ?? -1;
+  const allowed = siteCap < 0 ? marketplaces.length : siteCap;
+  const picked =
+    form.sites.length > 0
+      ? form.sites
+      : marketplaces.slice(0, allowed).map((m) => m.slug);
+  const capReached = siteCap >= 0 && picked.length >= siteCap;
+
+  function toggleSite(slug: string) {
+    if (picked.includes(slug)) {
+      // Never leave a rule with nothing to search.
+      if (picked.length === 1) return;
+      set("sites", picked.filter((s) => s !== slug));
+      return;
+    }
+    if (capReached) {
+      setError(
+        `Eine Plattform pro Suche in deinem Tarif — mehr gibt es ab ${
+          me?.levels.find((l) => l.max_sites_per_rule !== siteCap)?.label ?? "Premium"
+        }.`,
+      );
+      return;
+    }
+    set("sites", [...picked, slug]);
+  }
 
   function set<K extends keyof RuleInput>(key: K, value: RuleInput[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -412,6 +444,40 @@ function RuleForm({
             </Field>
           </div>
 
+          {/* Which marketplaces this search visits. The cap and the list both
+              come from the server — see RuleOut.searched_sites. */}
+          {marketplaces.length > 1 && (
+            <Field label="Plattformen">
+              <div className="dh-pick">
+                {marketplaces.map((m) => {
+                  const on = picked.includes(m.slug);
+                  return (
+                    <button
+                      key={m.slug}
+                      type="button"
+                      data-on={on ? 1 : 0}
+                      data-locked={!on && capReached ? 1 : 0}
+                      onClick={() => {
+                        haptic();
+                        toggleSite(m.slug);
+                      }}
+                    >
+                      {!on && capReached ? "🔒" : on ? <IconCheck size={13} /> : null}
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {siteCap >= 0 && (
+                <span className="dh-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
+                  {siteCap === 1
+                    ? "Eine Plattform pro Suche in deinem Tarif."
+                    : `${siteCap} Plattformen pro Suche in deinem Tarif.`}
+                </span>
+              )}
+            </Field>
+          )}
+
           <Field label="Prüfen">
             <select
               className="dh-select"
@@ -464,6 +530,13 @@ function RuleRow({
     rule.location ? `${rule.location}${rule.max_distance_km ? ` +${rule.max_distance_km} km` : ""}` : null,
     rule.max_mileage_km ? `bis ${rule.max_mileage_km.toLocaleString("de-DE")} km` : null,
     rule.min_year ? `ab ${rule.min_year}` : null,
+    // Only when the rule does NOT search everything: naming all four on every
+    // card would be noise, naming none would hide that one is missing.
+    rule.withheld_sites.length > 0
+      ? `${rule.searched_sites.length} von ${
+          rule.searched_sites.length + rule.withheld_sites.length
+        } Plattformen`
+      : null,
     everyText(rule.interval_seconds),
   ].filter(Boolean) as string[];
 

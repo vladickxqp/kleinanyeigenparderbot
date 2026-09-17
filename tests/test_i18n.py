@@ -264,7 +264,10 @@ def test_the_rule_card_and_edit_menu_have_no_german_left(lang):
     for name, rendered in _rule_screens(lang).items():
         prose = _QUOTED_MARKERS.sub(" ", rendered).lower()
         for word in RULE_TELLTALES:
-            assert word.lower() not in prose, f"{name}/{lang} still says '{word}'"
+            # Whole words only: "Auto" is German copy, "autoscout24" is a
+            # marketplace that happens to start with it.
+            found = re.search(rf"\b{re.escape(word.lower())}\b", prose)
+            assert not found, f"{name}/{lang} still says '{word}'"
 
 
 def test_the_rule_surfaces_really_change_with_the_language():

@@ -179,16 +179,29 @@ def listing_actions_keyboard(listing: Listing, lang: str) -> InlineKeyboardMarku
 
 
 def sites_select_keyboard(
-    available: list[str], selected: list[str], lang: str
+    available: list[str],
+    selected: list[str],
+    lang: str,
+    *,
+    max_sites: int = -1,
 ) -> InlineKeyboardMarkup:
-    """Multi-select keyboard for choosing which marketplaces to search."""
+    """Multi-select keyboard for choosing which marketplaces to search.
+
+    ``max_sites`` is the owner's cap (-1 = no cap). Once it is spent, the
+    remaining platforms carry a lock rather than an empty box: a checkbox that
+    silently refuses to tick is worse than one that explains itself.
+    """
     # Imported here, not at module level: the keyboards are used by the bot's
     # lightweight paths too, and app.parsers pulls in the whole scraping stack.
     from app.parsers.registry import site_label
 
+    spent = max_sites >= 0 and len(selected) >= max_sites
     kb = InlineKeyboardBuilder()
     for site in available:
-        mark = "☑️" if site in selected else "⬜️"
+        if site in selected:
+            mark = "☑️"
+        else:
+            mark = "🔒" if spent else "⬜️"
         kb.button(
             text=f"{mark} {site_label(site)}", callback_data=f"wizsite:toggle:{site}"
         )

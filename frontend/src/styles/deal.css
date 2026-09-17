@@ -560,3 +560,37 @@
   .dh-skel { animation: none; }
   .dh-seg button, .dh-btn, .dh-input { transition: none; }
 }
+
+/* Marketplace picker: a row of toggles, one per site. A locked one is dimmed
+   rather than hidden — the point is to show what the next level adds. */
+.dh-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dh-pick button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--dh-line);
+  border-radius: var(--dh-r-sm);
+  background: transparent;
+  color: var(--dh-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.dh-pick button[data-on="1"] {
+  background: var(--dh-fill);
+  border-color: var(--dh-ink);
+  color: var(--dh-ink);
+  font-weight: 500;
+}
+
+.dh-pick button[data-locked="1"] {
+  opacity: 0.45;
+}

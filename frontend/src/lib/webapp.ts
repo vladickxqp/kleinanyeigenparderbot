@@ -82,6 +82,7 @@ export interface WaLevel {
   quick_searches_per_day: number;
   negotiations_per_month: number;
   history_days: number;
+  max_sites_per_rule: number;
   features: string[];
 }
 
@@ -106,6 +107,8 @@ export interface Me {
   entitlements: WaLevel;
   usage: WaQuota[];
   levels: WaLevel[];
+  /** Every marketplace with a parser, in the order the cap keeps them. */
+  marketplaces: { slug: string; label: string }[];
 }
 
 /** What a cancellation did: stopped the renewal, or ended premium outright. */
@@ -133,6 +136,11 @@ export interface WaRule {
   /** Car bounds; null on both means this is not a car search. */
   max_mileage_km: number | null;
   min_year: number | null;
+  /** What the owner picked (empty = every marketplace). */
+  sites: string[];
+  /** What the rule really searches, and what the level held back. */
+  searched_sites: string[];
+  withheld_sites: string[];
 }
 
 export interface WaListing {
@@ -205,6 +213,7 @@ export interface RuleInput {
   exclude_keywords: string[];
   max_mileage_km: number | null;
   min_year: number | null;
+  sites: string[];
 }
 
 async function waVoid(path: string, init: RequestInit = {}): Promise<void> {

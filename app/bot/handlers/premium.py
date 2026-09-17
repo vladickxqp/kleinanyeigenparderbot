@@ -128,6 +128,8 @@ def _level_block(e: ent.Entitlements, current: bool, lang: str) -> list[str]:
         t("premium.compare_quick", lang,
           quick=ent.fmt_quota(e.quick_searches_per_day, lang=lang),
           history=ent.fmt_quota(e.history_days, " " + t("quota.unit.days", lang), lang=lang)),
+        t("premium.compare_sites", lang,
+          sites=ent.fmt_quota(e.max_sites_per_rule, lang=lang)),
     ]
 
 
