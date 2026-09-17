@@ -200,6 +200,151 @@ _TEXTS: dict[str, dict[str, str]] = {
                             "uk": "🔨 Показувати аукціони"},
     "choice.auction.hide": {"de": "🚫 Auktionen ausblenden", "en": "🚫 Hide auctions",
                             "ru": "🚫 Скрыть аукционы", "uk": "🚫 Сховати аукціони"},
+    # --- Menu and action buttons -------------------------------------------
+    "btn.premium": {"de": "💎 Premium", "en": "💎 Premium",
+                    "ru": "💎 Премиум", "uk": "💎 Преміум"},
+    "btn.support": {"de": "💬 Support", "en": "💬 Support",
+                    "ru": "💬 Поддержка", "uk": "💬 Підтримка"},
+    "btn.flips": {"de": "📦 Meine Flips", "en": "📦 My flips",
+                  "ru": "📦 Мои перепродажи", "uk": "📦 Мої перепродажі"},
+    "btn.open_app": {"de": "🌐 App öffnen", "en": "🌐 Open app",
+                     "ru": "🌐 Открыть приложение", "uk": "🌐 Відкрити застосунок"},
+    "btn.run_now": {"de": "▶️ Jetzt suchen", "en": "▶️ Search now",
+                    "ru": "▶️ Искать сейчас", "uk": "▶️ Шукати зараз"},
+    "btn.open_link": {"de": "🔗 Öffnen", "en": "🔗 Open",
+                      "ru": "🔗 Открыть", "uk": "🔗 Відкрити"},
+    "btn.track_price": {"de": "👁 Preis", "en": "👁 Price",
+                        "ru": "👁 Цена", "uk": "👁 Ціна"},
+    "btn.bought_flip": {
+        "de": "🛒 Gekauft — Flip tracken", "en": "🛒 Bought — track this flip",
+        "ru": "🛒 Куплено — отслеживать", "uk": "🛒 Куплено — відстежувати",
+    },
+    # --- Running a rule ----------------------------------------------------
+    "rule.toggled_active": {"de": "🟢 Aktiv", "en": "🟢 Active",
+                            "ru": "🟢 Активен", "uk": "🟢 Активний"},
+    "rule.toggled_paused": {"de": "⚪️ Pausiert", "en": "⚪️ Paused",
+                            "ru": "⚪️ На паузе", "uk": "⚪️ На паузі"},
+    "rule.deleted": {"de": "🗑 Gelöscht", "en": "🗑 Deleted",
+                     "ru": "🗑 Удалено", "uk": "🗑 Видалено"},
+    "rule.stats_head": {
+        "de": "📊 Letzte 7 Tage", "en": "📊 Last 7 days",
+        "ru": "📊 Последние 7 дней", "uk": "📊 Останні 7 днів",
+    },
+    "rule.stats_empty": {
+        "de": "noch keine Treffer", "en": "no hits yet",
+        "ru": "пока ничего", "uk": "поки нічого",
+    },
+    "rule.stats_offers": {
+        "de": "{count} Angebote", "en": "{count} listings",
+        "ru": "{count} объявлений", "uk": "{count} оголошень",
+    },
+    "rule.run_started": {"de": "🔍 Suche läuft…", "en": "🔍 Searching…",
+                         "ru": "🔍 Ищу…", "uk": "🔍 Шукаю…"},
+    "rule.run_working": {
+        "de": "🔍 Suche läuft, einen Moment…", "en": "🔍 Searching, one moment…",
+        "ru": "🔍 Ищу, один момент…", "uk": "🔍 Шукаю, один момент…",
+    },
+    "rule.run_failed": {
+        "de": "⚠️ Suche fehlgeschlagen:\n<code>{detail}</code>\n\n"
+        "Bitte diese Meldung an den Entwickler weitergeben.",
+        "en": "⚠️ Search failed:\n<code>{detail}</code>\n\n"
+        "Please pass this message on to the developer.",
+        "ru": "⚠️ Поиск не удался:\n<code>{detail}</code>\n\n"
+        "Передай это сообщение разработчику.",
+        "uk": "⚠️ Пошук не вдався:\n<code>{detail}</code>\n\n"
+        "Передай це повідомлення розробнику.",
+    },
+    "rule.run_done": {
+        "de": "✅ Fertig: <b>{found}</b> neue Treffer, {sent} Karte(n) gesendet.",
+        "en": "✅ Done: <b>{found}</b> new hits, {sent} card(s) sent.",
+        "ru": "✅ Готово: <b>{found}</b> новых находок, отправлено карточек: {sent}.",
+        "uk": "✅ Готово: <b>{found}</b> нових знахідок, надіслано карток: {sent}.",
+    },
+    "rule.run_empty": {
+        "de": "😕 Keine neuen Treffer. Entweder gibt es nichts Neues, oder die "
+        "Filter sind zu streng (Preis/Ausschlusswörter prüfen).",
+        "en": "😕 No new hits. Either nothing new turned up, or the filters are "
+        "too tight (check price and exclude words).",
+        "ru": "😕 Новых находок нет. Либо ничего нового, либо фильтры слишком "
+        "строгие (проверь цену и слова-исключения).",
+        "uk": "😕 Нових знахідок немає. Або нічого нового, або фільтри надто "
+        "суворі (перевір ціну та слова-винятки).",
+    },
+    "rule.run_capped": {
+        "de": "\n🔒 Tageslimit für Karten erreicht.",
+        "en": "\n🔒 Daily card limit reached.",
+        "ru": "\n🔒 Дневной лимит карточек исчерпан.",
+        "uk": "\n🔒 Денний ліміт карток вичерпано.",
+    },
+    "rule.run_capped_hint": {
+        "de": " Mehr davon: {hint}", "en": " More of them: {hint}",
+        "ru": " Больше: {hint}", "uk": " Більше: {hint}",
+    },
+    "rule.run_cooldown": {
+        "de": "⏳ Bitte {seconds}s warten (Schutz vor Sperren).",
+        "en": "⏳ Please wait {seconds}s (protects against being blocked).",
+        "ru": "⏳ Подожди {seconds} с (защита от блокировки).",
+        "uk": "⏳ Зачекай {seconds} с (захист від блокування).",
+    },
+    "rule.radius_active": {
+        "de": "\n📍 Umkreis aktiv: {place}", "en": "\n📍 Radius active: {place}",
+        "ru": "\n📍 Радиус активен: {place}", "uk": "\n📍 Радіус активний: {place}",
+    },
+    "rule.radius_unknown": {
+        "de": "\n⚠️ Ort <b>{place}</b> wurde nicht erkannt — es wurde "
+        "deutschlandweit gesucht! PLZ prüfen und Suche neu anlegen.",
+        "en": "\n⚠️ Location <b>{place}</b> was not recognised — the search ran "
+        "across all of Germany! Check the postcode and create the search again.",
+        "ru": "\n⚠️ Место <b>{place}</b> не распознано — поиск прошёл по всей "
+        "Германии! Проверь индекс и создай поиск заново.",
+        "uk": "\n⚠️ Місце <b>{place}</b> не розпізнано — пошук пройшов по всій "
+        "Німеччині! Перевір індекс і створи пошук заново.",
+    },
+    # --- The wizard's "how many hits does this get" preview ----------------
+    "rule.preview_testing": {
+        "de": "🔎 Kurzer Test, wie viele Treffer das gerade gibt…",
+        "en": "🔎 Quick check of how many hits this gets right now…",
+        "ru": "🔎 Быстрая проверка, сколько находок это даёт сейчас…",
+        "uk": "🔎 Швидка перевірка, скільки знахідок це дає зараз…",
+    },
+    "rule.preview_none": {
+        "de": "🔎 <b>0 Treffer</b> mit diesen Angaben.\n",
+        "en": "🔎 <b>0 hits</b> with these settings.\n",
+        "ru": "🔎 <b>0 находок</b> с этими настройками.\n",
+        "uk": "🔎 <b>0 знахідок</b> з цими налаштуваннями.\n",
+    },
+    "rule.preview_none_hint": {
+        "de": "oder die Suchbegriffe sind zu eng. Ändern geht später jederzeit.",
+        "en": "or the keywords are too narrow. You can change it any time later.",
+        "ru": "или ключевые слова слишком узкие. Изменить можно в любой момент.",
+        "uk": "або ключові слова надто вузькі. Змінити можна будь-коли.",
+    },
+    "rule.preview_found": {
+        "de": "🔎 <b>{count} Treffer</b> gerade online",
+        "en": "🔎 <b>{count} hits</b> online right now",
+        "ru": "🔎 <b>{count} находок</b> сейчас онлайн",
+        "uk": "🔎 <b>{count} знахідок</b> зараз онлайн",
+    },
+    "rule.preview_cheapest": {
+        "de": "\nGünstigstes: {amount}", "en": "\nCheapest: {amount}",
+        "ru": "\nСамое дешёвое: {amount}", "uk": "\nНайдешевше: {amount}",
+    },
+    "rule.tier_interval": {
+        "de": "⏱ In deinem Tarif ist das schnellste Intervall {minutes} min — "
+        "auf {minutes} min gesetzt.{hint}",
+        "en": "⏱ Your plan's fastest interval is {minutes} min — set to "
+        "{minutes} min.{hint}",
+        "ru": "⏱ В твоём тарифе самый быстрый интервал {minutes} мин — "
+        "установлено {minutes} мин.{hint}",
+        "uk": "⏱ У твоєму тарифі найшвидший інтервал {minutes} хв — "
+        "встановлено {minutes} хв.{hint}",
+    },
+    "rule.tier_interval_hint": {
+        "de": " {label} prüft ab {minutes} min — /premium",
+        "en": " {label} checks from {minutes} min — /premium",
+        "ru": " {label} проверяет от {minutes} мин — /premium",
+        "uk": " {label} перевіряє від {minutes} хв — /premium",
+    },
     # --- The three paid filters: what they can and cannot do ---------------
     "edit.ask_condition": {
         "de": "🏷 <b>Zustand</b>\n\n"

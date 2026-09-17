@@ -25,16 +25,16 @@ def main_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     kb.button(text=t("btn.stats", lang), callback_data="menu:stats")
     kb.button(text=t("btn.settings", lang), callback_data="menu:settings")
     kb.button(text=t("btn.help", lang), callback_data="menu:help")
-    kb.button(text="💎 Premium", callback_data="menu:premium")
+    kb.button(text=t("btn.premium", lang), callback_data="menu:premium")
     kb.button(text=t("btn.usage", lang), callback_data="menu:usage")
-    kb.button(text="💬 Support", callback_data="menu:support")
-    kb.button(text="📦 Meine Flips", callback_data="menu:flips")
+    kb.button(text=t("btn.support", lang), callback_data="menu:support")
+    kb.button(text=t("btn.flips", lang), callback_data="menu:flips")
     kb.adjust(2, 2, 2, 2, 2)
     if settings.webapp_url:
         # Only shown once a public HTTPS URL is configured (WEBAPP_URL).
         kb.row(
             InlineKeyboardButton(
-                text="🌐 App öffnen", web_app=WebAppInfo(url=settings.webapp_url)
+                text=t("btn.open_app", lang), web_app=WebAppInfo(url=settings.webapp_url)
             )
         )
     return kb.as_markup()
@@ -86,7 +86,7 @@ def rules_list_keyboard(rules: Sequence[SearchRule], lang: str) -> InlineKeyboar
 
 def rule_actions_keyboard(rule: SearchRule, lang: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="▶️ Jetzt suchen", callback_data=f"rule:run:{rule.id}")
+    kb.button(text=t("btn.run_now", lang), callback_data=f"rule:run:{rule.id}")
     kb.button(text=t("btn.edit", lang), callback_data=f"rule:edit:{rule.id}")
     kb.button(text=t("btn.toggle", lang), callback_data=f"rule:toggle:{rule.id}")
     kb.button(text=t("btn.delete", lang), callback_data=f"rule:delete:{rule.id}")
@@ -163,14 +163,15 @@ def rule_edit_keyboard(
 def listing_actions_keyboard(listing: Listing, lang: str) -> InlineKeyboardMarkup:
     """Buttons attached to a deal card: open, favorite, negotiate, ignore, track."""
     kb = InlineKeyboardBuilder()
-    kb.row(InlineKeyboardButton(text="🔗 Öffnen / Open", url=listing.url))
+    kb.row(InlineKeyboardButton(text=t("btn.open_link", lang), url=listing.url))
     kb.button(text="⭐", callback_data=f"listing:fav:{listing.id}")
     kb.button(text="🤝", callback_data=f"listing:nego:{listing.id}")
     kb.button(text="🙈", callback_data=f"listing:ignore:{listing.id}")
-    kb.button(text="👁 Preis", callback_data=f"listing:track:{listing.id}")
+    kb.button(text=t("btn.track_price", lang), callback_data=f"listing:track:{listing.id}")
     kb.row(
         InlineKeyboardButton(
-            text="🛒 Gekauft — Flip tracken", callback_data=f"listing:buy:{listing.id}"
+            text=t("btn.bought_flip", lang),
+            callback_data=f"listing:buy:{listing.id}",
         )
     )
     kb.adjust(1, 4, 1)

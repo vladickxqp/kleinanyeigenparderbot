@@ -69,12 +69,14 @@ async def cb_open_rule(
     if rule is None:
         await cb.answer(t("edit.not_found", lang), show_alert=True)
         return
-    text = _render_rule(rule, lang) + await _stats_line(session, rule.id)
+    text = _render_rule(rule, lang) + await _stats_line(session, rule.id, lang)
     await cb.message.edit_text(text, reply_markup=rule_actions_keyboard(rule, lang))
     await cb.answer()
 
 
-async def _stats_line(session: AsyncSession, rule_id: int) -> str:
+async def _stats_line(
+    session: AsyncSession, rule_id: int, lang: str | None = None
+) -> str:
     """Compact 7-day statistics block for the rule view (never raises)."""
     try:
         from app.services.repositories import ListingRepository
@@ -84,14 +86,16 @@ async def _stats_line(session: AsyncSession, rule_id: int) -> str:
         )
     except Exception:  # noqa: BLE001 - stats are decoration, not critical
         return ""
+    head = t("rule.stats_head", lang)
     if count == 0:
-        return "\n\n📊 Letzte 7 Tage: noch keine Treffer"
-    parts = [f"{count} Angebote"]
+        return f"\n\n{head}: " + t("rule.stats_empty", lang)
+    parts = [t("rule.stats_offers", lang, count=count)]
     if avg_price:
         parts.append(f"Ø {avg_price:,.0f} €".replace(",", "."))
     if min_price:
-        parts.append(f"ab {min_price:,.0f} €".replace(",", "."))
-    return "\n\n📊 Letzte 7 Tage: " + " · ".join(parts)
+        amount = f"{min_price:,.0f} €".replace(",", ".")
+        parts.append(t("val.price_from", lang, amount=amount))
+    return f"\n\n{head}: " + " · ".join(parts)
 
 
 @router.callback_query(F.data.startswith("rule:run:"))
@@ -108,10 +112,12 @@ async def cb_run_rule(
 
     wait = await manual_run_allowed(user.telegram_id, scope="manual")
     if wait:
-        await cb.answer(f"⏳ Bitte {wait}s warten (Schutz vor Sperren).", show_alert=True)
+        await cb.answer(
+            t("rule.run_cooldown", lang, seconds=wait), show_alert=True
+        )
         return
-    await cb.answer("🔍 Suche läuft…")
-    status = await cb.message.answer("🔍 Suche läuft, einen Moment…")
+    await cb.answer(t("rule.run_started", lang))
+    status = await cb.message.answer(t("rule.run_working", lang))
 
     from app.bot.notifier import send_listing_card
     from app.services.search_service import SearchService
@@ -123,11 +129,7 @@ async def cb_run_rule(
         from html import escape as _esc
 
         detail = _esc(f"{type(exc).__name__}: {exc}"[:350])
-        await status.edit_text(
-            "⚠️ Suche fehlgeschlagen:\n"
-            f"<code>{detail}</code>\n\n"
-            "Bitte diese Meldung an den Entwickler weitergeben."
-        )
+        await status.edit_text(t("rule.run_failed", lang, detail=detail))
         return
 
     sent = 0
@@ -146,27 +148,23 @@ async def cb_run_rule(
         else:
             capped = True
 
-    loc_note = await _location_note(rule)
+    loc_note = await _location_note(rule, lang)
     if capped:
         from app.services import quota as quota_svc
 
         hint = quota_svc.upgrade_hint(quota_svc.KIND_CARDS, user, lang)
-        loc_note += "\n🔒 Tageslimit für Karten erreicht." + (
-            f" Mehr davon: {hint}" if hint else ""
+        loc_note += t("rule.run_capped", lang) + (
+            t("rule.run_capped_hint", lang, hint=hint) if hint else ""
         )
     if notable:
         await status.edit_text(
-            f"✅ Fertig: <b>{len(notable)}</b> neue Treffer, {sent} Karte(n) gesendet."
-            + loc_note
+            t("rule.run_done", lang, found=len(notable), sent=sent) + loc_note
         )
     else:
-        await status.edit_text(
-            "😕 Keine neuen Treffer. Entweder gibt es nichts Neues, oder die "
-            "Filter sind zu streng (Preis/Ausschlusswörter prüfen)." + loc_note
-        )
+        await status.edit_text(t("rule.run_empty", lang) + loc_note)
 
 
-async def _location_note(rule: SearchRule) -> str:
+async def _location_note(rule: SearchRule, lang: str | None = None) -> str:
     """Tell the user whether the Kleinanzeigen radius filter is really active."""
     if not (rule.location or rule.zip_code):
         return ""
@@ -182,11 +180,8 @@ async def _location_note(rule: SearchRule) -> str:
     place = rule.location or rule.zip_code
     radius = f" ±{rule.max_distance_km} km" if rule.max_distance_km else ""
     if loc_id:
-        return f"\n📍 Umkreis aktiv: {place}{radius}"
-    return (
-        f"\n⚠️ Ort <b>{place}</b> wurde nicht erkannt — es wurde "
-        "deutschlandweit gesucht! PLZ prüfen und Suche neu anlegen."
-    )
+        return t("rule.radius_active", lang, place=f"{place}{radius}")
+    return t("rule.radius_unknown", lang, place=place)
 
 
 @router.callback_query(F.data.startswith("rule:toggle:"))
@@ -204,7 +199,9 @@ async def cb_toggle_rule(
     await cb.message.edit_text(
         _render_rule(rule, lang), reply_markup=rule_actions_keyboard(rule, lang)
     )
-    await cb.answer("🟢 Aktiv" if rule.is_active else "⚪️ Pausiert")
+    await cb.answer(
+        t("rule.toggled_active" if rule.is_active else "rule.toggled_paused", lang)
+    )
 
 
 @router.callback_query(F.data.startswith("rule:delete:"))
@@ -226,7 +223,7 @@ async def cb_delete_rule(
         await cb.message.edit_text(
             t("rule.none", lang), reply_markup=main_menu_keyboard(lang)
         )
-    await cb.answer("🗑 Gelöscht")
+    await cb.answer(t("rule.deleted", lang))
 
 
 # --- Creation wizard --------------------------------------------------------
@@ -288,7 +285,7 @@ async def cb_draft_save(
         await cb.answer()
         return
     seconds, tier_note = _clamp_interval_for_tier(
-        user, settings.scraper_default_interval_seconds
+        user, settings.scraper_default_interval_seconds, lang
     )
     await _apply_draft(state, draft)
     await _finalize(
@@ -449,11 +446,13 @@ async def wiz_exclude(
 ) -> None:
     excludes = [w.strip() for w in (message.text or "").split(",") if w.strip()]
     await state.update_data(exclude=excludes)
-    await _preview_matches(message, state)
+    await _preview_matches(message, state, lang)
     await _ask_location(message, lang, state)
 
 
-async def _preview_matches(message: Message, state: FSMContext) -> None:
+async def _preview_matches(
+    message: Message, state: FSMContext, lang: str | None = None
+) -> None:
     """Show how many offers the criteria hit right now.
 
     The wizard asks eight questions before the user sees a single result. One
@@ -477,7 +476,7 @@ async def _preview_matches(message: Message, state: FSMContext) -> None:
         exclude_keywords=list(data.get("exclude", [])),
         max_results=40,
     )
-    status = await message.answer("🔎 Kurzer Test, wie viele Treffer das gerade gibt…")
+    status = await message.answer(t("rule.preview_testing", lang))
     try:
         parsers = [p for p in registry if not p.requires_browser]
         results = await asyncio.gather(
@@ -495,19 +494,18 @@ async def _preview_matches(message: Message, state: FSMContext) -> None:
 
     if not parsed:
         await status.edit_text(
-            "🔎 <b>0 Treffer</b> mit diesen Angaben.\n"
-            "Das kann passen (dann kommen nur wirklich neue Anzeigen) — "
-            "oder die Suchbegriffe sind zu eng. Ändern geht später jederzeit."
+            t("rule.preview_none", lang) + t("rule.preview_none_hint", lang)
         )
         return
 
     prices = [p.price for p in parsed if p.price is not None]
     stats = compute_price_stats(prices)
-    line = f"🔎 <b>{len(parsed)} Treffer</b> gerade online"
+    line = t("rule.preview_found", lang, count=len(parsed))
     if stats.median:
         line += f" · Marktpreis ~ <b>{stats.median:,.0f} €</b>".replace(",", ".")
     if prices:
-        line += f"\nGünstigstes: {min(prices):,.0f} €".replace(",", ".")
+        cheapest = f"{min(prices):,.0f} €".replace(",", ".")
+        line += t("rule.preview_cheapest", lang, amount=cheapest)
     await status.edit_text(line + "\n\nWeiter geht's 👇")
 
 
@@ -583,7 +581,7 @@ async def cb_interval(
     # Only accept the offered choices; anything else falls back to the default.
     if seconds not in {s for s, _ in INTERVAL_CHOICES}:
         seconds = settings.scraper_default_interval_seconds
-    seconds, tier_note = _clamp_interval_for_tier(user, seconds)
+    seconds, tier_note = _clamp_interval_for_tier(user, seconds, lang)
     data = await state.get_data()
     await _finalize(
         cb.message,
@@ -621,7 +619,9 @@ async def cb_skip(
 
 
 # --- Helpers ----------------------------------------------------------------
-def _clamp_interval_for_tier(user: User, seconds: int) -> tuple[int, str | None]:
+def _clamp_interval_for_tier(
+    user: User, seconds: int, lang: str | None = None
+) -> tuple[int, str | None]:
     """Enforce the tier's minimum check interval (admins are exempt).
 
     Returns the effective interval and an optional user-facing note.
@@ -637,10 +637,12 @@ def _clamp_interval_for_tier(user: User, seconds: int) -> tuple[int, str | None]
     hint = ""
     if nxt is not None:
         n = ent.for_tier(nxt)
-        hint = f" {n.label} prüft ab {n.min_interval_seconds // 60} min — /premium"
-    return min_allowed, (
-        f"⏱ In deinem Tarif ist das schnellste Intervall "
-        f"{min_allowed // 60} min — auf {min_allowed // 60} min gesetzt.{hint}"
+        hint = t(
+            "rule.tier_interval_hint", lang,
+            label=n.label, minutes=n.min_interval_seconds // 60,
+        )
+    return min_allowed, t(
+        "rule.tier_interval", lang, minutes=min_allowed // 60, hint=hint
     )
 
 

@@ -287,3 +287,39 @@ def test_the_rule_card_keeps_its_values_in_every_language():
         assert "Worms" in card and "100" in card
         assert "100.000" in card  # the mileage bound, however "km" is spelled
         assert "2018" in card and "60" in card
+
+
+def test_no_handler_reads_a_language_it_was_never_given():
+    """A missed parameter is a NameError on a path no test happens to walk.
+
+    Translating a screen means threading `lang` through the helpers behind it,
+    and two of those were missed while the whole suite stayed green: the
+    wizard's result preview and the tier's interval note both read a `lang`
+    that was not in their signature. Nothing raised until a real user tapped
+    the button.
+    """
+    import ast
+    import pathlib
+
+    offenders: list[str] = []
+    for path in sorted(pathlib.Path("app/bot").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            names = {a.arg for a in node.args.args} | {
+                a.arg for a in node.args.kwonlyargs
+            }
+            reads = any(
+                isinstance(n, ast.Name) and n.id == "lang"
+                and isinstance(n.ctx, ast.Load)
+                for n in ast.walk(node)
+            )
+            assigns = any(
+                isinstance(n, ast.Name) and n.id == "lang"
+                and isinstance(n.ctx, ast.Store)
+                for n in ast.walk(node)
+            )
+            if reads and "lang" not in names and not assigns:
+                offenders.append(f"{path.as_posix()}:{node.lineno} {node.name}")
+    assert offenders == []

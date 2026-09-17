@@ -393,7 +393,7 @@ async def edit_interval(
         return
     tier_note = None
     if seconds in {s for s, _ in INTERVAL_CHOICES}:
-        seconds, tier_note = _clamp_interval_for_tier(user, seconds)
+        seconds, tier_note = _clamp_interval_for_tier(user, seconds, lang)
         rule.interval_seconds = seconds
     await _finish(cb.message, session, state, rule, lang)
     if tier_note:
@@ -404,7 +404,8 @@ async def edit_interval(
 
 # --- Paid filters ---------------------------------------------------------------
 async def _load_for_power_edit(
-    cb: CallbackQuery, user: User, session: AsyncSession, state: FSMContext
+    cb: CallbackQuery, user: User, session: AsyncSession, state: FSMContext,
+    lang: str | None = None,
 ) -> SearchRule | None:
     """Load the rule for a paid-filter edit, or end the interaction."""
     if not _has_rule_power(user):
@@ -422,7 +423,7 @@ async def _load_for_power_edit(
 async def edit_condition(
     cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
 ) -> None:
-    rule = await _load_for_power_edit(cb, user, session, state)
+    rule = await _load_for_power_edit(cb, user, session, state, lang)
     if rule is None:
         return
     slug = cb.data.split(":")[-1]
@@ -445,7 +446,7 @@ async def edit_condition(
 async def edit_shipping(
     cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
 ) -> None:
-    rule = await _load_for_power_edit(cb, user, session, state)
+    rule = await _load_for_power_edit(cb, user, session, state, lang)
     if rule is None:
         return
     slug = cb.data.split(":")[-1]
@@ -465,7 +466,7 @@ async def edit_shipping(
 async def edit_auctions(
     cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
 ) -> None:
-    rule = await _load_for_power_edit(cb, user, session, state)
+    rule = await _load_for_power_edit(cb, user, session, state, lang)
     if rule is None:
         return
     slug = cb.data.split(":")[-1]
