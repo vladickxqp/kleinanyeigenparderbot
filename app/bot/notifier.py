@@ -12,13 +12,18 @@ is the worst possible answer from a deal bot.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from html import escape
 
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramForbiddenError,
+    TelegramRetryAfter,
+)
 from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -112,6 +117,12 @@ async def notify_user_about_listings(
                         listing.notified = True
                         withheld.append(listing)
                         continue
+
+                if sent:
+                    # Pace the batch instead of finding out the hard way: one
+                    # message per second into a chat is what Telegram allows,
+                    # and a 429 here costs the whole batch, not one card.
+                    await asyncio.sleep(PER_CHAT_PACE_SECONDS)
 
                 error = await _deliver(bot, user_telegram_id, listing, lang)
                 if error is None:
@@ -497,12 +508,27 @@ async def _send_one(bot: Bot, chat_id: int, listing: Listing, lang: str) -> bool
     return error is None
 
 
+#: Telegram allows roughly one message per second into a single chat. A batch
+#: that ignores this gets a 429, and the rescue sweep then retries the whole
+#: batch five minutes later — straight into the next 429. Pacing costs a
+#: fraction of a second per card and breaks that loop before it starts.
+PER_CHAT_PACE_SECONDS = 1.1
+#: A flood wait longer than this is not worth holding a worker task for; the
+#: card goes back to the rescue sweep instead.
+MAX_FLOOD_WAIT_SECONDS = 30
+
+
 async def _deliver(bot: Bot, chat_id: int, listing: Listing, lang: str) -> str | None:
     """Put one card on the wire. None on success, else the error for the audit row.
 
     The duplicate guard lives in the callers: it claims its Redis key on the
     first call, so asking it twice for the same ad would report a duplicate and
     drop a card that was never sent.
+
+    A flood wait is waited out once rather than reported as a failure: it is
+    Telegram asking us to slow down, not a card that cannot be delivered, and
+    recording it as an error would refund the quota and hand the same card back
+    to the rescue sweep to try again at the same speed.
     """
     caption = format_deal_card(listing, lang)
     resale = format_resale_line(listing, lang)
@@ -510,29 +536,39 @@ async def _deliver(bot: Bot, chat_id: int, listing: Listing, lang: str) -> str |
         caption = f"{caption}\n\n{resale}"
     markup = listing_actions_keyboard(listing, lang)
 
-    try:
-        if listing.image_url:
-            try:
-                await bot.send_photo(
-                    chat_id, listing.image_url, caption=caption, reply_markup=markup
-                )
-                await _count_sent()
-                return None
-            except TelegramBadRequest:
-                # Image URL rejected by Telegram; fall back to text.
-                pass
-        await bot.send_message(
-            chat_id, caption, reply_markup=markup, disable_web_page_preview=False
-        )
-        await _count_sent()
-        return None
-    except TelegramForbiddenError as exc:
-        logger.info("User {} blocked the bot", chat_id)
-        await _deactivate(chat_id)
-        return _error_text(exc)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to send card to {}: {}", chat_id, exc)
-        return _error_text(exc)
+    for attempt in (1, 2):
+        try:
+            if listing.image_url:
+                try:
+                    await bot.send_photo(
+                        chat_id, listing.image_url, caption=caption, reply_markup=markup
+                    )
+                    await _count_sent()
+                    return None
+                except TelegramBadRequest:
+                    # Image URL rejected by Telegram; fall back to text.
+                    pass
+            await bot.send_message(
+                chat_id, caption, reply_markup=markup, disable_web_page_preview=False
+            )
+            await _count_sent()
+            return None
+        except TelegramRetryAfter as exc:
+            wait = int(getattr(exc, "retry_after", 0) or 0)
+            if attempt == 2 or wait > MAX_FLOOD_WAIT_SECONDS:
+                logger.warning("Flood wait {}s for {} — leaving it to the sweep",
+                               wait, chat_id)
+                return _error_text(exc)
+            logger.info("Flood wait {}s for {}, retrying once", wait, chat_id)
+            await asyncio.sleep(wait + 1)
+        except TelegramForbiddenError as exc:
+            logger.info("User {} blocked the bot", chat_id)
+            await _deactivate(chat_id)
+            return _error_text(exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to send card to {}: {}", chat_id, exc)
+            return _error_text(exc)
+    return None  # pragma: no cover - the loop always returns
 
 
 def _error_text(exc: BaseException) -> str:

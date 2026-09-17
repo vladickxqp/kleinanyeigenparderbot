@@ -95,10 +95,20 @@ class FakeBot:
     async def _close(self) -> None:
         return None
 
+    #: How many times the next card should be answered with a flood wait.
+    flood: int = 0
+
     async def send_message(self, chat_id, text, **kwargs):  # noqa: ANN001
         if kwargs.get("reply_markup") is None:
             self.notices.append(text)
             return None
+        if self.flood:
+            from aiogram.exceptions import TelegramRetryAfter
+
+            self.flood -= 1
+            raise TelegramRetryAfter(
+                method=None, message="Flood control exceeded", retry_after=1
+            )
         if self.fail:
             raise RuntimeError("Telegram sagt nein")
         self.cards.append(text)
@@ -175,6 +185,9 @@ def _silence_infrastructure(monkeypatch) -> None:
     monkeypatch.setattr(quiet, "is_quiet_now", never_quiet)
     monkeypatch.setattr(notifier, "_duplicate_send", no_duplicate)
     monkeypatch.setattr(notifier, "_count_sent", no_counter)
+    # Telegram's one-message-per-second pacing is real; waiting it out in a
+    # test only makes the suite slow.
+    monkeypatch.setattr(notifier, "PER_CHAT_PACE_SECONDS", 0)
 
 
 def _install_cooldown(monkeypatch) -> list[str]:
@@ -314,6 +327,98 @@ def test_teaser_can_be_switched_off(sqlite_db, monkeypatch):
 
         assert await notifier.notify_user_about_listings(43, [listing_id], "de") == 0
         assert bot.notices == [] and bot.cards == []
+        await db.dispose_engine()
+
+    asyncio.run(scenario())
+
+
+def test_a_flood_wait_is_waited_out_not_counted_as_a_failure(sqlite_db, monkeypatch):
+    """Telegram asking us to slow down is not a card that cannot be delivered.
+
+    Reporting it as an error refunds the quota and hands the same card back to
+    the rescue sweep, which retries the whole batch at the same speed — into
+    the next flood wait. The user sees their deals arrive late, on repeat.
+    """
+    fake = FakeQuota(limit=10)
+    fake.install(monkeypatch)
+    _silence_infrastructure(monkeypatch)
+    _install_cooldown(monkeypatch)
+    bot = _install_bot(monkeypatch)
+    bot.flood = 1  # the first attempt is refused, the retry goes through
+
+    slept: list[float] = []
+
+    async def no_wait(seconds):  # noqa: ANN001
+        slept.append(seconds)
+
+    monkeypatch.setattr(notifier.asyncio, "sleep", no_wait)
+
+    async def scenario() -> None:
+        await _tables()
+        maker = db.get_sessionmaker()
+        async with maker() as session:
+            user = User(telegram_id=45, subscription=SubscriptionTier.PRO)
+            session.add(user)
+            await session.flush()
+            rule = SearchRule(user_id=user.id, name="gpu", keywords="rtx")
+            session.add(rule)
+            await session.flush()
+            row = _listing(rule.id, "a", "RTX 4090 Founders Edition")
+            session.add(row)
+            await session.commit()
+            listing_id = row.id
+
+        assert await notifier.notify_user_about_listings(45, [listing_id], "de") == 1
+        assert len(bot.cards) == 1
+        # It waited, and it waited longer than Telegram asked for.
+        assert slept and max(slept) >= 1
+
+        async with maker() as session:
+            rows = (await session.execute(select(Notification))).scalars().all()
+            assert [r.is_sent for r in rows] == [True]
+            assert rows[0].error is None
+            assert (await session.get(Listing, listing_id)).notified is True
+        # The user is billed once, for the card that really arrived.
+        assert fake.used[quota.KIND_CARDS] == 1
+        assert fake.released == []
+        await db.dispose_engine()
+
+    asyncio.run(scenario())
+
+
+def test_a_hopeless_flood_wait_goes_back_to_the_sweep(sqlite_db, monkeypatch):
+    fake = FakeQuota(limit=10)
+    fake.install(monkeypatch)
+    _silence_infrastructure(monkeypatch)
+    _install_cooldown(monkeypatch)
+    bot = _install_bot(monkeypatch)
+    bot.flood = 5  # refused again and again
+
+    async def no_wait(seconds):  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(notifier.asyncio, "sleep", no_wait)
+
+    async def scenario() -> None:
+        await _tables()
+        maker = db.get_sessionmaker()
+        async with maker() as session:
+            user = User(telegram_id=46, subscription=SubscriptionTier.PRO)
+            session.add(user)
+            await session.flush()
+            rule = SearchRule(user_id=user.id, name="gpu", keywords="rtx")
+            session.add(rule)
+            await session.flush()
+            row = _listing(rule.id, "a", "RTX 4090 Founders Edition")
+            session.add(row)
+            await session.commit()
+            listing_id = row.id
+
+        assert await notifier.notify_user_about_listings(46, [listing_id], "de") == 0
+        async with maker() as session:
+            # Not delivered, not billed, and left for the sweep to pick up.
+            assert (await session.get(Listing, listing_id)).notified is False
+        assert fake.released == [quota.KIND_CARDS]
         await db.dispose_engine()
 
     asyncio.run(scenario())
