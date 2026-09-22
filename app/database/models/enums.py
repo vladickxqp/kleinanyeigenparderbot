@@ -8,12 +8,19 @@ import enum
 class SiteName(str, enum.Enum):
     """Supported marketplace identifiers. Extend when adding a parser."""
 
+    # --- Have a parser ---------------------------------------------------
     KLEINANZEIGEN = "kleinanzeigen"
-    EBAY = "ebay"
+    EBAY = "ebay"            # refuses every scrape (403); off by default
     AUTOSCOUT24 = "autoscout24"
-    AMAZON = "amazon"
     IDEALO = "idealo"
-    VINTED = "vinted"
+    VINTED = "vinted"        # catalog endpoint moved; off by default
+
+    # --- Reserved names, NO parser behind them ----------------------------
+    # Nothing scrapes these. They are kept rather than deleted because a
+    # stored row carrying one would fail to load, and this enum is a column
+    # value — not because anybody plans them. The registry decides what users
+    # can pick, so none of them ever reaches the UI.
+    AMAZON = "amazon"
     MEDIAMARKT = "mediamarkt"
     SATURN = "saturn"
     OTTO = "otto"
