@@ -29,6 +29,12 @@ cards straight to Telegram.
   works with `AI_ENABLED=false`); the optional model pass may only fill fields the
   rules could not, never overwrite one they did, and every value it returns is
   re-validated through the same coercers. Switch: `NL_RULES_ENABLED`.
+- **Open a find**: tapping a deal in the Mini App shows the full description (the
+  defect is usually there, not in the title, and the words that gave it away are
+  named), this ad's own price over time as a chart, and what comparable ads cost.
+  Comparable means the same KIND — broken against broken, spare part against spare
+  part — and where the bot has watched enough ads disappear it compares against
+  what they actually SOLD for rather than what sellers are asking.
 - **Price intelligence**: price history, average/min/max, discount %, anomaly detection
   ("possible seller mistake"), optional AI scoring (0–100) and resale/ROI mode.
 - **Deduplication**: never send the same offer twice, even across different parsers.

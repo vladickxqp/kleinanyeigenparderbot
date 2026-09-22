@@ -153,6 +153,25 @@ def guess_condition(title: str, description: str | None = None) -> Condition:
     return Condition.USED
 
 
+def defect_markers(title: str, description: str | None = None) -> list[str]:
+    """The words that made this ad look defective, in the order they appear.
+
+    :func:`guess_condition` answers *whether*; a reader wants to know *why* —
+    "defekt" in the description is worth seeing before writing to a seller.
+    Negated markers are left out, so "nicht defekt" never shows up as evidence
+    of a defect.
+    """
+    text = f"{title} {description or ''}".lower()
+    found: list[str] = []
+    for match in _DEFECTIVE_RE.finditer(text):
+        if _is_negated(text, match.start(), match.end()):
+            continue
+        word = match.group(0).strip()
+        if word and word not in found:
+            found.append(word)
+    return found
+
+
 def matches_condition(
     wanted: Condition, title: str, description: str | None = None
 ) -> bool:

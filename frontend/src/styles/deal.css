@@ -594,3 +594,50 @@
 .dh-pick button[data-locked="1"] {
   opacity: 0.45;
 }
+
+/* A row that opens the detail view is a button, and a button brings its own
+   look: without this it would sit narrower, centred and in the browser font
+   while the rows around it do not. Same row, one element further. */
+button.dh-row {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ---------- Detail sheet ---------- */
+.dh-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--dh-bg);
+  overflow-y: auto;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.dh-sheet-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px;
+  background: var(--dh-bg);
+  border-bottom: 1px solid var(--dh-hairline);
+}
+
+.dh-defect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--dh-q-steal) 12%, transparent);
+  color: var(--dh-q-steal);
+  font-size: 13.5px;
+  font-weight: 500;
+}

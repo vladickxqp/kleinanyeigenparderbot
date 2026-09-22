@@ -164,6 +164,36 @@ export interface WaListing {
   shipping_cost: number | null;
 }
 
+export interface WaPricePoint {
+  at: string;
+  price: number;
+}
+
+/** What comparable ads cost. `usable` is false below the minimum sample. */
+export interface WaComparison {
+  usable: boolean;
+  count: number;
+  median: number | null;
+  minimum: number | null;
+  maximum: number | null;
+  discount_percent: number | null;
+}
+
+/** One listing with the context its deal score was computed from. */
+export interface WaListingDetail {
+  listing: WaListing;
+  description: string | null;
+  defect_markers: string[];
+  is_defective: boolean;
+  is_part: boolean;
+  history: WaPricePoint[];
+  price_fell: number | null;
+  compared_with: number;
+  asking: WaComparison | null;
+  sold: WaComparison | null;
+  reference: "sold" | "asking" | null;
+}
+
 export interface WaFlip {
   id: number;
   title: string;
@@ -236,6 +266,7 @@ export const webapp = {
   deleteRule: (id: number) => waVoid(`/rules/${id}`, { method: "DELETE" }),
   listings: (favorites = false) =>
     wa<WaListing[]>(`/listings?limit=40${favorites ? "&favorites=true" : ""}`),
+  listingDetail: (id: number) => wa<WaListingDetail>(`/listings/${id}`),
   flips: () => wa<WaFlips>("/flips"),
   payments: () => wa<WaPayment[]>("/payments"),
   /** Cancels the caller's own subscription — no id, nothing to address. */

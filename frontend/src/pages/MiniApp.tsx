@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { ListingDetail } from "../components/ListingDetail";
 import {
   DealHero,
   DealRow,
@@ -181,6 +182,10 @@ function Figure({ label, value, sub, small }: { label: string; value: string; su
 // --- Deals -----------------------------------------------------------------------------
 function DealsTab() {
   const [favs, setFavs] = useState(false);
+  // Which find is open. The row leads here rather than straight out to the
+  // marketplace: the description, the price history and what comparable ads
+  // actually sold for are the reason to open a find at all.
+  const [openId, setOpenId] = useState<number | null>(null);
   const { data, error, loading } = useLoad<WaListing[]>(() => webapp.listings(favs), [favs]);
   const deals = (data ?? []) as unknown as DealLike[];
   const [hero, ...rest] = deals;
@@ -223,9 +228,12 @@ function DealsTab() {
       {!loading && list.length > 0 && (
         <div className="dh-group">
           {list.map((d) => (
-            <DealRow key={d.id} deal={d} />
+            <DealRow key={d.id} deal={d} onOpen={(id) => { haptic(); setOpenId(id); }} />
           ))}
         </div>
+      )}
+      {openId != null && (
+        <ListingDetail id={openId} onClose={() => setOpenId(null)} />
       )}
     </Section>
   );

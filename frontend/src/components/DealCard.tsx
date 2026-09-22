@@ -116,16 +116,27 @@ function Meta({ deal }: { deal: DealLike }) {
 export function DealRow({
   deal,
   onFavorite,
+  onOpen,
   busy = false,
 }: {
   deal: DealLike;
   onFavorite?: (id: number) => void;
+  /** Tapping the row opens the bot's own detail view instead of the ad. */
+  onOpen?: (id: number) => void;
   busy?: boolean;
 }) {
   const off = discountOf(deal);
+  // With a detail view the row leads there, not straight out to the
+  // marketplace: the description, the price history and what comparable ads
+  // actually sold for are the reason to open a find at all. The ad itself is
+  // one tap further, from inside the detail.
+  const Wrapper = onOpen ? "button" : "a";
+  const wrapperProps = onOpen
+    ? ({ type: "button", onClick: () => onOpen(deal.id) } as const)
+    : ({ href: deal.url, target: "_blank", rel: "noreferrer" } as const);
   return (
     <div style={{ position: "relative" }}>
-      <a href={deal.url} target="_blank" rel="noreferrer" className="dh-row dh-row-tap">
+      <Wrapper {...(wrapperProps as any)} className="dh-row dh-row-tap">
         <div className="dh-deal">
           <div className="dh-thumb">
             <Photo src={deal.image_url} alt={deal.title} />
@@ -145,7 +156,7 @@ export function DealRow({
             <Meta deal={deal} />
           </div>
         </div>
-      </a>
+      </Wrapper>
 
       {onFavorite && (
         <button

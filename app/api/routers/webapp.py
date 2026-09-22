@@ -222,6 +222,43 @@ class ListingOut(BaseModel):
         return self
 
 
+class PricePointOut(BaseModel):
+    at: datetime
+    price: float
+
+
+class ComparisonOut(BaseModel):
+    """What comparable ads cost. ``usable`` is false below the minimum."""
+
+    usable: bool
+    count: int
+    median: float | None
+    minimum: float | None
+    maximum: float | None
+    discount_percent: float | None
+
+
+class ListingDetailOut(BaseModel):
+    """One listing with the context its deal score was computed from."""
+
+    listing: ListingOut
+    description: str | None
+    #: Words in the ad text that say it is broken, e.g. ["defekt"].
+    defect_markers: list[str]
+    is_defective: bool
+    is_part: bool
+    #: This ad's own price over time, oldest first.
+    history: list[PricePointOut]
+    #: How much it came down since it was first seen, if it did.
+    price_fell: float | None
+    #: How many comparable ads of the SAME kind the comparison used.
+    compared_with: int
+    asking: ComparisonOut | None
+    sold: ComparisonOut | None
+    #: Which of the two the app should lead with — sold when there is enough.
+    reference: str | None
+
+
 class FlipOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -513,6 +550,65 @@ async def listings(
         stmt.order_by(Listing.created_at.desc()).limit(limit)
     )
     return list(result.scalars().all())
+
+
+def _comparison_out(comparison) -> ComparisonOut | None:  # noqa: ANN001
+    if comparison is None:
+        return None
+    stats = comparison.stats
+    return ComparisonOut(
+        usable=comparison.usable,
+        count=stats.count,
+        median=stats.median,
+        minimum=stats.minimum,
+        maximum=stats.maximum,
+        discount_percent=comparison.discount_percent,
+    )
+
+
+@router.get("/listings/{listing_id}", response_model=ListingDetailOut)
+async def listing_detail_view(
+    listing_id: int,
+    user: User = Depends(current_webapp_user),
+    session: AsyncSession = Depends(get_session),
+) -> ListingDetailOut:
+    """Everything worth knowing about one of the caller's own listings.
+
+    Scoped through the rule's owner, like every other endpoint here: a listing
+    id from somebody else's search must not resolve.
+    """
+    from app.services import listing_detail as detail_svc
+
+    row = (
+        await session.execute(
+            select(Listing)
+            .join(SearchRule, SearchRule.id == Listing.rule_id)
+            .where(Listing.id == listing_id, SearchRule.user_id == user.id)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Angebot nicht gefunden")
+
+    detail = await detail_svc.build(session, row)
+    reference = None
+    if detail.best_reference is detail.sold and detail.sold is not None:
+        reference = "sold"
+    elif detail.best_reference is detail.asking and detail.asking is not None:
+        reference = "asking"
+
+    return ListingDetailOut(
+        listing=ListingOut.model_validate(row),
+        description=row.description,
+        defect_markers=detail.defect_markers,
+        is_defective=detail.is_defective,
+        is_part=detail.is_part,
+        history=[PricePointOut(at=p.at, price=p.price) for p in detail.history],
+        price_fell=detail.price_fell,
+        compared_with=detail.compared_with,
+        asking=_comparison_out(detail.asking),
+        sold=_comparison_out(detail.sold),
+        reference=reference,
+    )
 
 
 @router.get("/flips", response_model=FlipsOut)
