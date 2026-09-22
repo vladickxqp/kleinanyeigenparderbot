@@ -20,7 +20,7 @@ from app.database.models import Listing, PriceHistory, SearchRule, User
 from app.parsers import registry
 from app.parsers.schemas import ParsedListing, SearchQuery
 from app.config.settings import settings
-from app.services import ai
+from app.services import ai, health
 from app.services import sites as site_access
 from app.services.deal_scorer import score_listing
 from app.services.dedup import filter_new_listings
@@ -386,6 +386,28 @@ class SearchService:
         if not parsers:
             logger.warning("Rule {}: no parsers resolved", rule.id)
             return []
+
+        # A site that is down is not searched, it is probed: one request per
+        # probe interval across the whole fleet, enough to notice when it is
+        # back. Every rule run hitting it would only spend budget the working
+        # sites could have used — and a rule with nothing left still counts
+        # as run, so the owner sees "checked 3 min ago" rather than silence.
+        down = await health.down_sites()
+        if down:
+            kept = []
+            for parser in parsers:
+                if parser.site.value not in down or await health.should_probe(
+                    parser.site.value
+                ):
+                    kept.append(parser)
+            if len(kept) < len(parsers):
+                logger.debug(
+                    "Rule {}: skipping {} site(s) that are down", rule.id,
+                    len(parsers) - len(kept),
+                )
+            parsers = kept
+            if not parsers:
+                return []
 
         results = await asyncio.gather(
             *(p.collect(query) for p in parsers), return_exceptions=True

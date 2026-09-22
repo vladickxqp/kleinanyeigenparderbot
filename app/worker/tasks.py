@@ -112,13 +112,16 @@ async def _dispatch_due_searches() -> int:
     import random
 
     from app.services import health
+    from app.services import sites as site_access
 
     now = time.time()
     dispatched = 0
     over_budget = 0
-    # A suspected block widens every interval for a while: a ban would hit
-    # exactly the paying users who were sold speed.
-    backoff = await health.block_multiplier()
+    # A suspected block widens the intervals of rules that touch THAT site: a
+    # ban would hit exactly the paying users who were sold speed. Read once
+    # per tick and applied per rule — a marketplace that blocks the bot must
+    # not slow the ones that answer.
+    backed_off = await health.backed_off_sites()
     async with session_scope() as session:
         rules = await SearchRuleRepository(session).list_active()
         # Oldest due first, so a capped tick never starves the same rules.
@@ -143,6 +146,9 @@ async def _dispatch_due_searches() -> int:
             floor = settings.scraper_hard_min_interval_seconds
             if owner is not None:
                 floor = max(floor, owner.min_interval_seconds)
+            backoff = health.multiplier_for(
+                site_access.resolve(rule.sites, owner), backed_off
+            )
             interval = max(rule.interval_seconds, floor) * backoff
             # Jitter keeps many rules of the same interval from lining up.
             _redis.set(_next_run_key(rule.id), now + interval + random.uniform(0, 5))

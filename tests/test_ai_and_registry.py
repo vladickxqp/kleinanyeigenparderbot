@@ -12,13 +12,18 @@ from app.services.ai import AIScore, _parse_response
 def test_registry_has_registered_parsers():
     sites = registry.available_sites
     assert SiteName.KLEINANZEIGEN in sites
-    assert SiteName.EBAY in sites
+    assert SiteName.AUTOSCOUT24 in sites
     assert SiteName.IDEALO in sites
+    # eBay refuses every scrape with a 403 and is off unless EBAY_ENABLED says
+    # otherwise — a parser that never delivers must not join every rule.
+    assert SiteName.EBAY not in sites
 
 
 def test_registry_resolve_all_when_empty():
     assert len(registry.resolve([])) == len(registry)
-    assert len(registry.resolve([SiteName.EBAY])) == 1
+    assert len(registry.resolve([SiteName.AUTOSCOUT24])) == 1
+    # An unregistered site resolves to nothing, not to a crash.
+    assert registry.resolve([SiteName.EBAY]) == []
 
 
 def test_flagged_parser_stays_out_of_the_all_sites_fallback():

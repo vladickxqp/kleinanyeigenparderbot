@@ -28,6 +28,14 @@ from app.config.settings import settings
 ALERT_QUEUE = "health:alerts"
 #: A parser is reported after this many consecutive failures.
 FAIL_THRESHOLD = 3
+#: After this many consecutive failures a site is not "having a bad minute",
+#: it is down: every further run would only spend request budget on a page
+#: that never answers. The site leaves the rotation and is probed instead.
+DOWN_THRESHOLD = 12
+#: How often a site that is down gets one real request to see whether it is
+#: back. Every rule run would be the old behaviour; never would be a site
+#: that stays dead after the marketplace fixed whatever it was.
+PROBE_INTERVAL_SECONDS = 30 * 60
 #: Default dedup window: the same alert key fires at most once per 6 hours.
 DEDUP_TTL_SECONDS = 6 * 3600
 #: The retention sweep runs nightly. Missing one run can be a reboot; missing
@@ -63,11 +71,18 @@ async def report(key: str, message: str, dedup_ttl: int = DEDUP_TTL_SECONDS) -> 
 
 
 async def record_parser_result(site: str, ok: bool) -> None:
-    """Track consecutive parser failures; alert once the threshold is hit.
+    """Track consecutive parser failures; escalate in two steps.
 
-    On the threshold the dispatcher is also told to back off: every interval
-    is widened for a while, because a ban would hit exactly the paying users
-    who were sold speed.
+    At :data:`FAIL_THRESHOLD` the site is backed off: its intervals widen for a
+    while, because a ban would hit exactly the paying users who were sold
+    speed. At :data:`DOWN_THRESHOLD` it is taken out of the rotation entirely
+    and probed on a slow cadence — a page that has refused twelve times in a
+    row is not going to answer the thirteenth rule run either, and every
+    request sent there was budget the working sites could have used.
+
+    Both are per site. A marketplace that blocks the bot must never slow the
+    marketplaces that do not: that used to be the case, and it meant one dead
+    parser could stretch every paying user's interval on every site at once.
     """
     try:
         async with _redis() as r:
@@ -75,25 +90,41 @@ async def record_parser_result(site: str, ok: bool) -> None:
             if ok:
                 await r.delete(fail_key)
                 await r.delete(f"health:sent:parser:{site}")
+                was_down = await r.delete(f"health:down:{site}")
+                await r.delete(f"health:backoff:{site}")
+                if was_down:
+                    await r.delete(f"health:sent:down:{site}")
+                    await report(
+                        f"recovered:{site}",
+                        f"✅ Parser <b>{site}</b> antwortet wieder — die Seite "
+                        "ist zurück in der Rotation.",
+                        dedup_ttl=3600,
+                    )
                 return
             count = await r.incr(fail_key)
-            await r.expire(fail_key, 3600)
+            # No expiry refresh here: a site that fails every few minutes for
+            # a day would otherwise carry a counter that never resets, and a
+            # counter that never resets tells nobody anything.
+            await r.expire(fail_key, 6 * 3600)
         if count == FAIL_THRESHOLD:
             await start_block_backoff(site)
             await report(
                 f"parser:{site}",
                 f"⚠️ Parser <b>{site}</b> ist {FAIL_THRESHOLD}× in Folge "
                 "fehlgeschlagen.\nMögliche Ursachen: Seite blockiert den Bot, "
-                "Layout geändert, Netzwerkproblem. Alle Intervalle wurden "
-                f"vorübergehend ×{settings.block_backoff_multiplier:g} gestreckt. "
+                "Layout geändert, Netzwerkproblem. Suchen auf <b>{site}</b> "
+                f"laufen vorübergehend ×{settings.block_backoff_multiplier:g} "
+                "langsamer; andere Seiten sind nicht betroffen. "
                 "Details: <code>docker compose logs worker</code>",
             )
+        elif count >= DOWN_THRESHOLD:
+            await mark_site_down(site)
     except Exception as exc:  # noqa: BLE001
         logger.debug("health.record_parser_result failed: {}", exc)
 
 
 async def start_block_backoff(site: str) -> None:
-    """Widen every interval for a while after a suspected block."""
+    """Widen this site's intervals for a while after a suspected block."""
     if not settings.block_backoff_enabled:
         return
     try:
@@ -103,17 +134,94 @@ async def start_block_backoff(site: str) -> None:
         logger.debug("health.start_block_backoff failed: {}", exc)
 
 
-async def block_multiplier() -> float:
-    """Interval multiplier the dispatcher applies (1.0 = normal operation)."""
+async def backed_off_sites() -> set[str]:
+    """Sites currently under block backoff (empty on any Redis trouble)."""
     if not settings.block_backoff_enabled:
-        return 1.0
+        return set()
     try:
         async with _redis() as r:
             keys = await r.keys("health:backoff:*")
-            return settings.block_backoff_multiplier if keys else 1.0
     except Exception as exc:  # noqa: BLE001
-        logger.debug("health.block_multiplier failed: {}", exc)
+        logger.debug("health.backed_off_sites failed: {}", exc)
+        return set()
+    return {str(key).rsplit(":", 1)[-1] for key in keys}
+
+
+def multiplier_for(sites, backed_off: set[str]) -> float:  # noqa: ANN001
+    """Interval multiplier for a rule that searches ``sites``.
+
+    Only a rule that actually touches a backed-off site slows down; the
+    old fleet-wide multiplier let one blocked marketplace stretch every
+    interval everywhere.
+    """
+    if not backed_off:
         return 1.0
+    touched = {getattr(site, "value", site) for site in sites}
+    return settings.block_backoff_multiplier if touched & backed_off else 1.0
+
+
+async def block_multiplier(sites=None) -> float:  # noqa: ANN001
+    """Interval multiplier the dispatcher applies (1.0 = normal operation).
+
+    With ``sites`` the answer is specific to those marketplaces; without, it
+    is the old fleet-wide answer, kept for callers that have no rule in hand.
+    """
+    backed_off = await backed_off_sites()
+    if sites is None:
+        return settings.block_backoff_multiplier if backed_off else 1.0
+    return multiplier_for(sites, backed_off)
+
+
+# --- Sites that are down ---------------------------------------------------------
+async def mark_site_down(site: str) -> None:
+    """Take a site out of the rotation; the admins hear about it once a day."""
+    try:
+        async with _redis() as r:
+            # A generous expiry as a safety net only: recovery is detected by
+            # the probe, not by waiting this out.
+            await r.set(f"health:down:{site}", str(int(_time.time())), ex=7 * 86400)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("health.mark_site_down failed: {}", exc)
+        return
+    await report(
+        f"down:{site}",
+        f"🔴 Parser <b>{site}</b> ist seit {DOWN_THRESHOLD} Läufen tot und wurde "
+        "aus der Rotation genommen. Alle "
+        f"{PROBE_INTERVAL_SECONDS // 60} min geht eine Testanfrage raus; "
+        "antwortet die Seite wieder, kommt sie automatisch zurück.\n"
+        "Bis dahin kostet sie kein Anfrage-Budget mehr.",
+        dedup_ttl=24 * 3600,
+    )
+
+
+async def down_sites() -> set[str]:
+    """Sites taken out of the rotation (empty on any Redis trouble)."""
+    try:
+        async with _redis() as r:
+            keys = await r.keys("health:down:*")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("health.down_sites failed: {}", exc)
+        return set()
+    return {str(key).rsplit(":", 1)[-1] for key in keys}
+
+
+async def should_probe(site: str) -> bool:
+    """Whether this run may send one request to a site that is down.
+
+    True at most once per :data:`PROBE_INTERVAL_SECONDS` across the whole
+    fleet — the probe is what brings a recovered site back, so it must
+    happen; every run doing it would be the old behaviour.
+    """
+    try:
+        async with _redis() as r:
+            return bool(
+                await r.set(f"health:probe:{site}", "1", nx=True, ex=PROBE_INTERVAL_SECONDS)
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("health.should_probe failed: {}", exc)
+        # Without Redis nobody can coordinate the probe; failing open here
+        # means the site is simply searched, as before.
+        return True
 
 
 async def pop_alerts(limit: int = 10) -> list[str]:

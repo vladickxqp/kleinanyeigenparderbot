@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 from bs4 import BeautifulSoup, Tag
 from loguru import logger
 
+from app.config.settings import settings
 from app.database.models.enums import Condition, SiteName
 from app.parsers.base import BaseParser
 from app.parsers.registry import register_parser
@@ -40,9 +41,14 @@ CONDITION_IDS: dict[Condition, int] = {
 }
 
 
-@register_parser
 class EbayParser(BaseParser):
-    """Extracts offers from ebay.de search results."""
+    """Extracts offers from ebay.de search results.
+
+    Registered at the bottom of the module, behind ``settings.ebay_enabled``:
+    eBay refuses every scrape with HTTP 403, and a parser that never delivers
+    must not sit in the picker or spend a request per run on every "all
+    sites" rule.
+    """
 
     site = SiteName.EBAY
     label = "eBay"
@@ -158,3 +164,10 @@ class EbayParser(BaseParser):
         if not match:
             return None
         return float(match.group(1).replace(",", "."))
+
+
+# Off by default: see settings.ebay_enabled. A rule with no sites chosen
+# resolves to EVERY registered parser, which is how a dead marketplace reaches
+# all existing users on the next deploy.
+if settings.ebay_enabled:
+    register_parser(EbayParser)

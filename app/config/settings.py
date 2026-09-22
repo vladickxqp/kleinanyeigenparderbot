@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     #: and a rule with an empty site list runs on EVERY registered parser — so
     #: the parser stays unregistered until this is switched on deliberately.
     vinted_enabled: bool = False
+    #: eBay answers every scrape with HTTP 403, with browser headers and
+    #: without, from every address this was tried from. Off by default: a
+    #: marketplace that never delivers still sits in the picker, joins every
+    #: "all sites" rule and spends a request per run on a page that refuses.
+    #: Flip it on only after a live search from your own server returns cards.
+    ebay_enabled: bool = False
     #: AutoScout24 serves its result list as structured JSON inside the page,
     #: verified live. Cars are the highest-value category here, so this one is
     #: on by default.

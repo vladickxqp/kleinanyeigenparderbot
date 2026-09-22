@@ -310,6 +310,13 @@ ledger is kept but loses its personal link.
 3. Register the class — `@register_parser` for a verified parser, or the flagged
    form below while the extraction is still a guess.
 
+**A site that fails is handled per site, never per fleet.** Three failures in a
+row back that site off (its rules run ×`BLOCK_BACKOFF_MULTIPLIER` slower for a
+while); twelve in a row take it out of the rotation, where it costs no request
+budget and gets one probe every 30 minutes until it answers again. A blocked
+marketplace must never slow the marketplaces that work — it used to, and one
+dead parser stretched every paying user's interval on every site at once.
+
 **Register behind a flag until the parser has seen a live response.** A
 `SearchRule` stores `sites=[]` by default and the registry resolves that to
 *every* registered parser, so an unconditional `@register_parser` puts a new

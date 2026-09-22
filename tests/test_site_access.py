@@ -50,15 +50,15 @@ def test_free_gets_one_marketplace_even_when_the_rule_says_all():
 
 
 def test_the_cap_keeps_the_user_s_own_first_choice():
-    # They tapped eBay first, so eBay is the one they keep — not the one a
+    # They tapped AutoScout24 first, so that is the one they keep — not the one a
     # preferred order would have picked for them.
-    granted = site_access.resolve(["ebay", "kleinanzeigen"], _user(FREE))
-    assert granted == [SiteName.EBAY]
+    granted = site_access.resolve(["autoscout24", "kleinanzeigen"], _user(FREE))
+    assert granted == [SiteName.AUTOSCOUT24]
 
 
 def test_an_explicit_choice_within_the_cap_is_left_alone():
-    assert site_access.resolve(["ebay"], _user(FREE)) == [SiteName.EBAY]
-    assert site_access.withheld(["ebay"], _user(FREE)) == []
+    assert site_access.resolve(["autoscout24"], _user(FREE)) == [SiteName.AUTOSCOUT24]
+    assert site_access.withheld(["autoscout24"], _user(FREE)) == []
 
 
 def test_unknown_and_duplicate_slugs_are_dropped():
@@ -88,11 +88,11 @@ def test_a_level_that_lifts_the_cap_can_be_named():
 
 def test_a_downgrade_does_not_rewrite_what_the_rule_stored():
     """An upgrade must give back exactly the marketplaces they picked."""
-    chosen = ["ebay", "kleinanzeigen"]
-    assert site_access.resolve(chosen, _user(FREE)) == [SiteName.EBAY]
+    chosen = ["autoscout24", "kleinanzeigen"]
+    assert site_access.resolve(chosen, _user(FREE)) == [SiteName.AUTOSCOUT24]
     # Same stored list, paid again: both are back.
     assert site_access.resolve(chosen, _user(PRO)) == [
-        SiteName.EBAY,
+        SiteName.AUTOSCOUT24,
         SiteName.KLEINANZEIGEN,
     ]
 
