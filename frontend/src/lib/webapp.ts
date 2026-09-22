@@ -192,6 +192,10 @@ export interface WaListingDetail {
   asking: WaComparison | null;
   sold: WaComparison | null;
   reference: "sold" | "asking" | null;
+  /** Whether this ad names its seller well enough to block them at all. */
+  can_block_seller: boolean;
+  seller_name: string | null;
+  seller_blocked: boolean;
 }
 
 export interface WaFlip {
@@ -267,6 +271,10 @@ export const webapp = {
   listings: (favorites = false) =>
     wa<WaListing[]>(`/listings?limit=40${favorites ? "&favorites=true" : ""}`),
   listingDetail: (id: number) => wa<WaListingDetail>(`/listings/${id}`),
+  blockSeller: (id: number) =>
+    wa<{ site: string; seller_key: string; label: string | null }>(
+      `/listings/${id}/block-seller`, { method: "POST" },
+    ),
   flips: () => wa<WaFlips>("/flips"),
   payments: () => wa<WaPayment[]>("/payments"),
   /** Cancels the caller's own subscription — no id, nothing to address. */

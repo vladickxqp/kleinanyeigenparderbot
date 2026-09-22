@@ -65,6 +65,9 @@ class Listing(Base, PKMixin, TimestampMixin):
     )
     location: Mapped[str | None] = mapped_column(String(128), nullable=True)
     seller_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    #: The marketplace's own seller id, where it has one — what a block
+    #: is keyed on, because a dealer can rename itself.
+    seller_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     seller_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_auction: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     #: "VB" — the seller marked the price as negotiable.

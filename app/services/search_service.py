@@ -21,7 +21,7 @@ from app.database.models.enums import SellerType
 from app.parsers import registry
 from app.parsers.schemas import ParsedListing, SearchQuery
 from app.config.settings import settings
-from app.services import ai, health
+from app.services import ai, blocked_sellers, health
 from app.services import sites as site_access
 from app.services.deal_scorer import score_listing
 from app.services.dedup import filter_new_listings, repost_key
@@ -111,6 +111,21 @@ class SearchService:
         parsed = await self._collect(rule, query)
         if not parsed:
             return []
+
+        # Blocked sellers leave before anything else looks at them: their
+        # prices must not reach the market statistics either, or a dealer the
+        # user silenced would still be shaping what counts as a good deal.
+        blocked = await blocked_sellers.blocked_keys(self.session, rule.user_id)
+        if blocked:
+            before = len(parsed)
+            parsed = blocked_sellers.drop_blocked(parsed, blocked)
+            if len(parsed) < before:
+                logger.debug(
+                    "Rule {}: {} ad(s) from blocked sellers dropped",
+                    rule.id, before - len(parsed),
+                )
+            if not parsed:
+                return []
 
         # Drop accessories, wanted-ads and off-topic hits BEFORE price stats,
         # so a 15€ phone case never looks like a "steal" next to real phones.
@@ -496,6 +511,7 @@ class SearchService:
             condition=item.condition,
             location=_clip(item.location, 128),
             seller_name=_clip(item.seller_name, 128),
+            seller_id=_clip(item.seller_id, 64),
             seller_rating=item.seller_rating,
             is_auction=item.is_auction,
             is_negotiable=item.is_negotiable,

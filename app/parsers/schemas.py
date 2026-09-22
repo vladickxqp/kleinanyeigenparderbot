@@ -124,6 +124,9 @@ class ParsedListing(BaseModel):
     location: str | None = None
     condition: Condition = Condition.ANY
     seller_name: str | None = None
+    #: The marketplace's own id for the seller, where it has one. Preferred
+    #: over the name for blocking: a dealer can rename itself, the id stays.
+    seller_id: str | None = None
     seller_rating: float | None = None
     #: Private or dealer, when the marketplace says so. None means it does
     #: not — and a filter must read that as "unknown", never as "dealer".

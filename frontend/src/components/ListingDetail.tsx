@@ -77,6 +77,19 @@ export function ListingDetail({ id, onClose }: { id: number; onClose: () => void
 
 function Body({ data }: { data: WaListingDetail }) {
   const { listing } = data;
+  const [blocked, setBlocked] = useState(data.seller_blocked);
+  const [blocking, setBlocking] = useState(false);
+
+  async function blockSeller() {
+    if (!window.confirm(`Keine Angebote von „${data.seller_name}" mehr anzeigen?`)) return;
+    setBlocking(true);
+    try {
+      await webapp.blockSeller(listing.id);
+      setBlocked(true);
+    } finally {
+      setBlocking(false);
+    }
+  }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 12 }}>
       {listing.image_url && (
@@ -148,6 +161,21 @@ function Body({ data }: { data: WaListingDetail }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Offered only where the marketplace actually names a seller: a block
+          that silently matches nothing is worse than no button. */}
+      {data.can_block_seller && (
+        <button
+          type="button"
+          className="dh-btn dh-btn-quiet"
+          disabled={blocked || blocking}
+          onClick={blockSeller}
+        >
+          {blocked
+            ? `„${data.seller_name}" ist gesperrt`
+            : `Keine Angebote von „${data.seller_name}" mehr`}
+        </button>
       )}
 
       <a

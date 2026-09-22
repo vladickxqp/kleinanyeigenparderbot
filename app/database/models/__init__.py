@@ -1,5 +1,6 @@
 """ORM models. Importing this package registers all models on ``Base.metadata``."""
 
+from app.database.models.blocked_seller import BlockedSeller
 from app.database.models.broadcast import Broadcast, BroadcastAudience, BroadcastStatus
 from app.database.models.coupon import Coupon, CouponRedemption
 from app.database.models.enums import (
@@ -21,6 +22,7 @@ from app.database.models.subscription import PlanType, Subscription, Subscriptio
 from app.database.models.user import User
 
 __all__ = [
+    "BlockedSeller",
     "Broadcast",
     "BroadcastAudience",
     "BroadcastStatus",

@@ -44,6 +44,13 @@ cards straight to Telegram.
   premium, `/settier`, `/promote`, `/newcoupon`. The panel shows, the bot acts; a
   second place to change the same things would only be a second place to get them
   wrong.
+- **Block a seller**, not just one of their ads: 🙈 hides a listing, this silences
+  the dealer behind two hundred of them. Keyed on the marketplace's own seller id
+  where it has one, because a dealer can rename itself and a block that follows
+  the name would quietly stop working. Offered only where a seller is actually
+  named (AutoScout24 today) — a button that silently matches nothing is worse than
+  no button. Their ads leave before the price statistics, so a silenced dealer
+  stops shaping what counts as a good deal.
 - **Repost suppression**: the same offer under a new ad id is not a new find.
   Deleting and re-posting is how sellers climb a result list — the card is
   withheld (`REPOST_WINDOW_DAYS`), while the row is still stored, because two

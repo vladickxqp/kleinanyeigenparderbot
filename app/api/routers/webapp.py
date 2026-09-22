@@ -21,7 +21,7 @@ from app.database.models import Listing, SearchRule, User
 from app.database.session import get_session
 from app.services import entitlements as ent
 from app.services import flips as flip_svc
-from app.services import premium, quota
+from app.services import blocked_sellers, premium, quota
 from app.services.repositories import SearchRuleRepository
 from app.services.roles import effective_role
 
@@ -257,6 +257,11 @@ class ListingDetailOut(BaseModel):
     sold: ComparisonOut | None
     #: Which of the two the app should lead with — sold when there is enough.
     reference: str | None
+    #: Whether this ad names its seller well enough to block them at all.
+    can_block_seller: bool
+    seller_name: str | None
+    #: True when this seller is already on the user's block list.
+    seller_blocked: bool
 
 
 class FlipOut(BaseModel):
@@ -608,7 +613,86 @@ async def listing_detail_view(
         asking=_comparison_out(detail.asking),
         sold=_comparison_out(detail.sold),
         reference=reference,
+        can_block_seller=blocked_sellers.can_block(row.seller_id, row.seller_name),
+        seller_name=row.seller_name,
+        seller_blocked=(
+            (row.site.value, blocked_sellers.seller_key(row.seller_id, row.seller_name))
+            in await blocked_sellers.blocked_keys(session, user.id)
+        ),
     )
+
+
+class BlockedSellerOut(BaseModel):
+    site: str
+    seller_key: str
+    label: str | None
+
+
+@router.post("/listings/{listing_id}/block-seller", response_model=BlockedSellerOut)
+async def block_seller(
+    listing_id: int,
+    user: User = Depends(current_webapp_user),
+    session: AsyncSession = Depends(get_session),
+) -> BlockedSellerOut:
+    """Never show this seller's ads to this user again.
+
+    Addressed by listing, not by seller key: the client must not be able to
+    name a seller it never saw, and the listing is scoped to its owner.
+    """
+    row = (
+        await session.execute(
+            select(Listing)
+            .join(SearchRule, SearchRule.id == Listing.rule_id)
+            .where(Listing.id == listing_id, SearchRule.user_id == user.id)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Angebot nicht gefunden")
+
+    blocked = await blocked_sellers.block(
+        session, user.id, row.site,
+        seller_id=row.seller_id, seller_name=row.seller_name,
+    )
+    if blocked is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Diese Plattform nennt keinen Verkäufer — Sperren nicht möglich.",
+        )
+    await session.commit()
+    return BlockedSellerOut(
+        site=getattr(blocked.site, "value", blocked.site),
+        seller_key=blocked.seller_key,
+        label=blocked.label,
+    )
+
+
+@router.get("/blocked-sellers", response_model=list[BlockedSellerOut])
+async def blocked_seller_list(
+    user: User = Depends(current_webapp_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[BlockedSellerOut]:
+    rows = await blocked_sellers.listed(session, user.id)
+    return [
+        BlockedSellerOut(
+            site=getattr(r.site, "value", r.site), seller_key=r.seller_key, label=r.label
+        )
+        for r in rows
+    ]
+
+
+@router.delete(
+    "/blocked-sellers/{site}/{seller_key}",
+    status_code=204, response_class=Response, response_model=None,
+)
+async def unblock_seller(
+    site: str,
+    seller_key: str,
+    user: User = Depends(current_webapp_user),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    await blocked_sellers.unblock(session, user.id, site, seller_key)
+    await session.commit()
+    return Response(status_code=204)
 
 
 @router.get("/flips", response_model=FlipsOut)

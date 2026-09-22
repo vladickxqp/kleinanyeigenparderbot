@@ -382,6 +382,7 @@ def parse_listing(raw: dict[str, Any]) -> ParsedListing | None:
         location=place or None,
         condition=_listing_condition(vehicle),
         seller_name=(seller.get("companyName") or None),
+        seller_id=(str(seller["id"]) if seller.get("id") else None),
         seller_type=_seller_type(seller),
         # Cars are collected, never shipped, and AutoScout24 runs no auctions:
         # filtering on either would empty every rule that sets it.
