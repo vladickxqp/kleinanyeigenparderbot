@@ -93,6 +93,52 @@ _TEXTS: dict[str, dict[str, str]] = {
     "rule.f_all": {"de": "alle", "en": "all", "ru": "все", "uk": "усі"},
     "rule.f_none": {"de": "—", "en": "—", "ru": "—", "uk": "—"},
     # --- Values a filter can hold -----------------------------------------
+    "val.seller.any": {"de": "egal", "en": "any", "ru": "любой", "uk": "будь-який"},
+    "val.seller.private": {
+        "de": "nur privat", "en": "private only",
+        "ru": "только частные", "uk": "лише приватні",
+    },
+    "val.seller.dealer": {
+        "de": "nur Händler", "en": "dealers only",
+        "ru": "только дилеры", "uk": "лише дилери",
+    },
+    "choice.seller.any": {"de": "🔀 Egal", "en": "🔀 Any",
+                          "ru": "🔀 Любой", "uk": "🔀 Будь-який"},
+    "choice.seller.private": {
+        "de": "🧍 Nur Privatverkäufer", "en": "🧍 Private sellers only",
+        "ru": "🧍 Только частные лица", "uk": "🧍 Лише приватні особи",
+    },
+    "choice.seller.dealer": {
+        "de": "🏢 Nur Händler", "en": "🏢 Dealers only",
+        "ru": "🏢 Только дилеры", "uk": "🏢 Лише дилери",
+    },
+    "btn.edit_seller": {"de": "🧍 Verkäufer: {value}", "en": "🧍 Seller: {value}",
+                        "ru": "🧍 Продавец: {value}", "uk": "🧍 Продавець: {value}"},
+    "rule.f_seller": {"de": "Verkäufer", "en": "Seller",
+                      "ru": "Продавец", "uk": "Продавець"},
+    "edit.ask_seller": {
+        "de": "🧍 <b>Verkäufer</b>\n\n"
+        "Ein Händler kalkuliert Marge und Gewährleistung, ein Privatverkäufer "
+        "will die Sache loswerden — dort liegen die Schnäppchen.\n"
+        "Greift dort, wo der Marktplatz es sagt (AutoScout24). Seiten, die "
+        "schweigen, werden nicht gefiltert — sonst wäre deine Regel dort "
+        "schlagartig leer.",
+        "en": "🧍 <b>Seller</b>\n\n"
+        "A dealer prices in margin and warranty; a private seller wants the "
+        "thing gone — that is where the bargains are.\n"
+        "Works where the marketplace says so (AutoScout24). Sites that stay "
+        "silent are not filtered, or your rule would simply be empty there.",
+        "ru": "🧍 <b>Продавец</b>\n\n"
+        "Дилер закладывает маржу и гарантию, частник просто хочет избавиться "
+        "от вещи — там и выгода.\n"
+        "Работает там, где площадка это указывает (AutoScout24). Площадки, "
+        "которые молчат, не фильтруются — иначе правило там опустело бы.",
+        "uk": "🧍 <b>Продавець</b>\n\n"
+        "Дилер закладає маржу й гарантію, приватна особа просто хоче "
+        "позбутися речі — там і вигода.\n"
+        "Працює там, де майданчик це зазначає (AutoScout24). Майданчики, які "
+        "мовчать, не фільтруються — інакше правило там спорожніло б.",
+    },
     "val.cond.any": {"de": "egal", "en": "any", "ru": "любое", "uk": "будь-який"},
     "val.cond.new": {"de": "neu", "en": "new", "ru": "новое", "uk": "новий"},
     "val.cond.used": {"de": "gebraucht", "en": "used", "ru": "б/у", "uk": "вживаний"},

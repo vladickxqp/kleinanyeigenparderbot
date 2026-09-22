@@ -136,6 +136,7 @@ export interface WaRule {
   /** Car bounds; null on both means this is not a car search. */
   max_mileage_km: number | null;
   min_year: number | null;
+  seller_type: string;
   /** What the owner picked (empty = every marketplace). */
   sites: string[];
   /** What the rule really searches, and what the level held back. */
@@ -214,6 +215,7 @@ export interface RuleInput {
   max_mileage_km: number | null;
   min_year: number | null;
   sites: string[];
+  seller_type: string;
 }
 
 async function waVoid(path: string, init: RequestInit = {}): Promise<void> {

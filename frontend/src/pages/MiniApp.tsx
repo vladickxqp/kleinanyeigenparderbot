@@ -244,6 +244,7 @@ const EMPTY_RULE: RuleInput = {
   max_mileage_km: null,
   min_year: null,
   sites: [],
+  seller_type: "any",
 };
 
 function toInput(rule: WaRule): RuleInput {
@@ -260,6 +261,7 @@ function toInput(rule: WaRule): RuleInput {
     min_year: rule.min_year,
     // What it really searches today, not what it once asked for.
     sites: rule.searched_sites,
+    seller_type: rule.seller_type,
   };
 }
 
@@ -477,6 +479,18 @@ function RuleForm({
               )}
             </Field>
           )}
+
+          <Field label="Verkäufer">
+            <select
+              className="dh-select"
+              value={form.seller_type}
+              onChange={(e) => set("seller_type", e.target.value)}
+            >
+              <option value="any">egal</option>
+              <option value="private">nur Privatverkäufer</option>
+              <option value="dealer">nur Händler</option>
+            </select>
+          </Field>
 
           <Field label="Prüfen">
             <select

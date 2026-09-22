@@ -14,7 +14,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.bot.texts import t
 from app.config.settings import settings
 from app.database.models import Listing, SearchRule
-from app.database.models.enums import Condition
+from app.database.models.enums import Condition, SellerType
 
 
 def main_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
@@ -143,7 +143,12 @@ def rule_edit_keyboard(
                    value=auction_short(rule.exclude_auctions, lang)),
             callback_data=f"edit:auctions:{rid}",
         )
-        kb.adjust(2, 2, 2, 2, 1, 2, 1)
+        kb.button(
+            text=t("btn.edit_seller", lang,
+                   value=seller_short(rule.seller_type, lang)),
+            callback_data=f"edit:seller:{rid}",
+        )
+        kb.adjust(2, 2, 2, 2, 1, 2, 2)
     else:
         kb.adjust(2, 2, 2, 2, 1)
         kb.row(
@@ -326,6 +331,36 @@ def shipping_short(value: bool | None, lang: str | None = None) -> str:
 
 def auction_short(exclude_auctions: bool | None, lang: str | None = None) -> str:
     return t("val.auction.off" if exclude_auctions else "val.auction.on", lang)
+
+
+SELLER_VALUES: dict[str, SellerType] = {
+    "any": SellerType.ANY,
+    "private": SellerType.PRIVATE,
+    "dealer": SellerType.DEALER,
+}
+SELLER_CHOICES: list[tuple[str, str]] = [
+    (slug, f"choice.seller.{slug}") for slug in ("any", "private", "dealer")
+]
+
+
+def seller_short(value: SellerType | None, lang: str | None = None) -> str:
+    """Label for the current seller filter (None = never set = any)."""
+    slug = value.value if value is not None else "any"
+    if slug not in SELLER_VALUES:
+        return slug
+    return t(f"val.seller.{slug}", lang)
+
+
+def seller_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Pick whether a rule wants private sellers, dealers or both."""
+    kb = InlineKeyboardBuilder()
+    for slug, key in SELLER_CHOICES:
+        kb.button(text=t(key, lang), callback_data=f"wizseller:{slug}")
+    kb.adjust(1)
+    kb.row(
+        InlineKeyboardButton(text=t("btn.cancel", lang), callback_data="wizard:cancel")
+    )
+    return kb.as_markup()
 
 
 def vehicle_short(

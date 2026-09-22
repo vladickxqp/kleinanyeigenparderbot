@@ -124,6 +124,7 @@ class RuleOut(BaseModel):
     category: str | None
     max_mileage_km: int | None = None
     min_year: int | None = None
+    seller_type: str = "any"
     #: What the owner picked (empty = every marketplace).
     sites: list[str] = []
     #: What the rule REALLY searches after the owner's level, and what
@@ -150,6 +151,8 @@ class RuleIn(BaseModel):
     #: Marketplace slugs; unknown ones are dropped and the owner's cap is
     #: applied server-side, never by the client.
     sites: list[str] = Field(default_factory=list, max_length=20)
+    #: "any" | "private" | "dealer"; anything else is refused below.
+    seller_type: str = "any"
 
     def apply_to(self, rule: SearchRule, user: User) -> None:
         """Copy the validated values onto a rule, honouring the user's tier."""
@@ -165,6 +168,14 @@ class RuleIn(BaseModel):
         rule.max_distance_km = self.max_distance_km
         rule.max_mileage_km = self.max_mileage_km
         rule.min_year = self.min_year
+        # An unknown value means "no preference", never a filter the
+        # client invented.
+        from app.database.models.enums import SellerType
+
+        try:
+            rule.seller_type = SellerType(self.seller_type)
+        except ValueError:
+            rule.seller_type = SellerType.ANY
         # The level decides how many marketplaces a rule may search; an
         # empty list keeps meaning "every one we have".
         from app.services import sites as site_access

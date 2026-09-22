@@ -21,7 +21,7 @@ from sqlalchemy import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, PKMixin, TimestampMixin
-from app.database.models.enums import Condition, SiteName
+from app.database.models.enums import Condition, SellerType, SiteName
 
 #: A list-of-strings column: native ARRAY on Postgres, JSON on SQLite (tests).
 StringList = ARRAY(String).with_variant(JSON, "sqlite")
@@ -54,6 +54,15 @@ class SearchRule(Base, PKMixin, TimestampMixin):
     condition: Mapped[Condition] = mapped_column(
         Enum(Condition, native_enum=False, length=16),
         default=Condition.ANY,
+        nullable=False,
+    )
+
+    #: Private seller, dealer, or either. A dealer prices to a margin, a
+    #: private seller prices to be rid of the thing — which is where the
+    #: bargains are. Only ads whose seller the marketplace NAMES are judged.
+    seller_type: Mapped[SellerType] = mapped_column(
+        Enum(SellerType, native_enum=False, length=16),
+        default=SellerType.ANY,
         nullable=False,
     )
 

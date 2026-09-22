@@ -23,6 +23,7 @@ from app.bot.keyboards import (
     CONDITION_CHOICES,
     INTERVAL_CHOICES,
     RADIUS_CHOICES,
+    SELLER_VALUES,
     SHIPPING_VALUES,
     auction_short,
     auctions_keyboard,
@@ -35,13 +36,15 @@ from app.bot.keyboards import (
     rule_actions_keyboard,
     rule_edit_keyboard,
     shipping_keyboard,
+    seller_keyboard,
+    seller_short,
     shipping_short,
 )
 from app.bot.states import EditWizard
 from app.bot.texts import t
 from app.config.settings import settings
 from app.database.models import SearchRule, User
-from app.database.models.enums import Condition
+from app.database.models.enums import Condition, SellerType
 from app.services import entitlements as ent
 from app.services.parsing import parse_price_range, parse_vehicle_bounds
 from app.services.repositories import SearchRuleRepository
@@ -52,7 +55,9 @@ router = Router(name="edit_rule")
 CLEAR_MARKER = "-"
 
 #: Edit-menu fields that need the paid "rule_power" capability.
-POWER_FIELDS: frozenset[str] = frozenset({"condition", "shipping", "auctions"})
+POWER_FIELDS: frozenset[str] = frozenset(
+    {"condition", "shipping", "auctions", "seller"}
+)
 
 #: Longest rule id we pass on to the database. Callback data is user-controlled
 #: and a 40-digit number would blow up the BIGINT column, not return "not found".
@@ -177,6 +182,11 @@ async def cb_edit_field(
         await state.set_state(EditWizard.shipping)
         await cb.message.answer(
             t("edit.ask_shipping", lang), reply_markup=shipping_keyboard(lang)
+        )
+    elif field == "seller":
+        await state.set_state(EditWizard.seller)
+        await cb.message.answer(
+            t("edit.ask_seller", lang), reply_markup=seller_keyboard(lang)
         )
     elif field == "auctions":
         await state.set_state(EditWizard.auctions)
@@ -458,6 +468,25 @@ async def edit_shipping(
         cb.message, session, state, rule, lang,
         note=t("btn.edit_shipping", lang,
                value=shipping_short(rule.shipping_available, lang)),
+    )
+    await cb.answer()
+
+
+@router.callback_query(EditWizard.seller, F.data.startswith("wizseller:"))
+async def edit_seller(
+    cb: CallbackQuery, user: User, session: AsyncSession, lang: str, state: FSMContext
+) -> None:
+    rule = await _load_for_power_edit(cb, user, session, state, lang)
+    if rule is None:
+        return
+    slug = cb.data.split(":")[-1]
+    if slug not in SELLER_VALUES:
+        await cb.answer()
+        return
+    rule.seller_type = SELLER_VALUES[slug]
+    await _finish(
+        cb.message, session, state, rule, lang,
+        note=t("btn.edit_seller", lang, value=seller_short(rule.seller_type, lang)),
     )
     await cb.answer()
 

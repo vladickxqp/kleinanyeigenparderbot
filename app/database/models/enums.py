@@ -68,6 +68,19 @@ class SubscriptionTier(str, enum.Enum):
         }[self.canonical]
 
 
+class SellerType(str, enum.Enum):
+    """Who is selling — the single biggest predictor of a bargain.
+
+    A dealer prices to a margin and a warranty; a private seller prices to be
+    rid of the thing. ``ANY`` is the default because most marketplaces do not
+    say, and a filter must never drop an ad whose seller is simply unknown.
+    """
+
+    ANY = "any"
+    PRIVATE = "private"
+    DEALER = "dealer"
+
+
 class Condition(str, enum.Enum):
     """Item condition filter values."""
 

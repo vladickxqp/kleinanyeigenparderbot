@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import Listing, PriceHistory, SearchRule, User
+from app.database.models.enums import SellerType
 from app.parsers import registry
 from app.parsers.schemas import ParsedListing, SearchQuery
 from app.config.settings import settings
@@ -340,6 +341,9 @@ class SearchService:
             shipping_available=rule.shipping_available,
             max_mileage_km=rule.max_mileage_km,
             min_year=rule.min_year,
+            # Column defaults only apply on INSERT; a rule built in memory
+            # (a preview, a test) carries None and must still mean "any".
+            seller_type=rule.seller_type or SellerType.ANY,
         )
 
     async def _market_history(

@@ -32,7 +32,7 @@ from urllib.parse import urlencode
 from loguru import logger
 
 from app.config.settings import settings
-from app.database.models.enums import Condition, SiteName
+from app.database.models.enums import Condition, SellerType, SiteName
 from app.parsers.base import BaseParser
 from app.parsers.registry import register_parser
 from app.parsers.schemas import ParsedListing, SearchQuery
@@ -265,6 +265,11 @@ def build_search_url(
         params["kmto"] = int(query.max_mileage_km)
     if query.min_year is not None:
         params["fregfrom"] = int(query.min_year)
+    # Verified live: custtype=P really does return private sellers only.
+    if query.seller_type is SellerType.PRIVATE:
+        params["custtype"] = "P"
+    elif query.seller_type is SellerType.DEALER:
+        params["custtype"] = "D"
     # The damage filter is applied server-side where possible, but never relied
     # on: the flag is missing on some cards, and an unknown value must not
     # decide anything on its own (see _listing_condition).
@@ -318,6 +323,20 @@ def condition_matches(wanted: Condition, offered: Condition) -> bool:
     return offered is wanted
 
 
+def _seller_type(seller: dict[str, Any]) -> SellerType | None:
+    """Map AutoScout24's own wording; anything else stays unknown.
+
+    A value this parser does not recognise must not become "dealer" — a
+    renamed type would otherwise quietly empty every "private only" rule.
+    """
+    raw = str(seller.get("type") or "").strip().lower()
+    if raw in {"privateseller", "private"}:
+        return SellerType.PRIVATE
+    if raw == "dealer":
+        return SellerType.DEALER
+    return None
+
+
 def parse_listing(raw: dict[str, Any]) -> ParsedListing | None:
     """One entry of the payload's ``listings`` array, or None if unusable."""
     listing_id = raw.get("id")
@@ -363,6 +382,7 @@ def parse_listing(raw: dict[str, Any]) -> ParsedListing | None:
         location=place or None,
         condition=_listing_condition(vehicle),
         seller_name=(seller.get("companyName") or None),
+        seller_type=_seller_type(seller),
         # Cars are collected, never shipped, and AutoScout24 runs no auctions:
         # filtering on either would empty every rule that sets it.
         shipping_available=None,
@@ -497,6 +517,8 @@ class AutoScout24Parser(BaseParser):
         if not mentions(leftover, item.title, item.description):
             return False
         if not condition_matches(query.condition, item.condition):
+            return False
+        if not query.matches_seller(item.seller_type):
             return False
         if not query.matches_vehicle(item.mileage_km, item.registration_year):
             return False

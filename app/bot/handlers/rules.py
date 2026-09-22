@@ -24,6 +24,7 @@ from app.bot.keyboards import (
     rule_actions_keyboard,
     rules_list_keyboard,
     sentence_keyboard,
+    seller_short,
     sites_select_keyboard,
     skip_cancel_keyboard,
     vehicle_short,
@@ -32,7 +33,7 @@ from app.bot.states import RuleWizard
 from app.bot.texts import t
 from app.config.settings import settings
 from app.database.models import SearchRule, User
-from app.database.models.enums import Condition, SiteName
+from app.database.models.enums import Condition, SellerType, SiteName
 from app.parsers import registry
 from app.parsers.registry import site_label
 from app.services import rule_nlp
@@ -815,6 +816,11 @@ def _render_rule(
     ]
     # Only for a rule that actually set them: on a phone hunt the line would
     # be noise, and the card is already long.
+    if rule.seller_type is not None and rule.seller_type is not SellerType.ANY:
+        lines.append(
+            f"🧍 {t('rule.f_seller', lang)}: "
+            f"{seller_short(rule.seller_type, lang)}"
+        )
     if rule.max_mileage_km is not None or rule.min_year is not None:
         bounds = vehicle_short(rule.max_mileage_km, rule.min_year, lang)
         lines.append(f"🚗 {t('rule.f_vehicle', lang)}: {bounds}")

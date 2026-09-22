@@ -40,6 +40,7 @@ class EditWizard(StatesGroup):
     condition = State()
     shipping = State()
     auctions = State()
+    seller = State()
     #: Kilometres and first registration in one step — a car hunter sets both
     #: or neither, and the menu is long enough already.
     vehicle = State()

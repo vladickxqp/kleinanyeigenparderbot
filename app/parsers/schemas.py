@@ -13,7 +13,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
-from app.database.models.enums import Condition, SiteName
+from app.database.models.enums import Condition, SellerType, SiteName
 
 
 class SearchQuery(BaseModel):
@@ -36,7 +36,21 @@ class SearchQuery(BaseModel):
     #: the value — see :meth:`matches_vehicle`.
     max_mileage_km: int | None = None
     min_year: int | None = None
+    #: Who may be selling. Like every other filter here, it only judges an ad
+    #: whose seller the marketplace actually names.
+    seller_type: SellerType = SellerType.ANY
     max_results: int = 40
+
+    def matches_seller(self, seller: "SellerType | None") -> bool:
+        """Whether an ad survives the private/dealer filter.
+
+        Unknown keeps the ad. Most marketplaces never say who is selling, and
+        reading silence as "dealer" would empty a "private only" rule on every
+        one of them at once.
+        """
+        if self.seller_type is SellerType.ANY or seller in (None, SellerType.ANY):
+            return True
+        return seller is self.seller_type
 
     @property
     def wants_vehicle_filter(self) -> bool:
@@ -111,6 +125,9 @@ class ParsedListing(BaseModel):
     condition: Condition = Condition.ANY
     seller_name: str | None = None
     seller_rating: float | None = None
+    #: Private or dealer, when the marketplace says so. None means it does
+    #: not — and a filter must read that as "unknown", never as "dealer".
+    seller_type: SellerType | None = None
     is_auction: bool = False
     #: Asking price marked "VB" (Verhandlungsbasis) — negotiable.
     is_negotiable: bool = False
