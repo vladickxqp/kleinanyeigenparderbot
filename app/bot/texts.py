@@ -618,6 +618,20 @@ _TEXTS: dict[str, dict[str, str]] = {
         "uk": "✅ Пошук <b>{name}</b> створено та активовано!",
     },
     # --- The short path: one sentence instead of eight questions -------------
+    "start.first_rule": {
+        "de": "✅ Sprache gespeichert.\n\nJetzt das Wichtigste — deine erste Suche. "
+        "Schreib in einem Satz, wonach ich Ausschau halten soll:\n\n"
+        "<i>Tesla Model 3 unter 25.000 €, 100 km um Worms, keine Unfallwagen</i>",
+        "en": "✅ Language saved.\n\nNow the part that matters — your first search. "
+        "Tell me in one sentence what to look out for:\n\n"
+        "<i>Tesla Model 3 under €25,000, within 100 km of Worms, no salvage</i>",
+        "ru": "✅ Язык сохранён.\n\nТеперь главное — твой первый поиск. "
+        "Напиши одним предложением, что искать:\n\n"
+        "<i>Tesla Model 3 до 25 000 €, 100 км вокруг Вормса, без аварийных</i>",
+        "uk": "✅ Мову збережено.\n\nТепер головне — твій перший пошук. "
+        "Напиши одним реченням, що шукати:\n\n"
+        "<i>Tesla Model 3 до 25 000 €, 100 км навколо Вормса, без аварійних</i>",
+    },
     "rule.ask_sentence": {
         "de": "✍️ Beschreib in einem Satz, was du suchst.\n\n"
         "<i>Tesla Model 3 unter 25.000 €, 100 km um Worms, keine Unfallwagen</i>",

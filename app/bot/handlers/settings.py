@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -105,14 +106,47 @@ async def cb_set_quiet(cb: CallbackQuery, user: User, lang: str) -> None:
     await _render_quiet(cb, user, lang)
 
 
+async def wants_first_rule(session: AsyncSession, user: User) -> bool:
+    """Whether the language screen should hand straight over to a first search.
+
+    Not "is this a new user" but "has this user nothing to search yet": a
+    returning user who never got past the menu is in exactly the same place.
+    Only when the sentence path is on — the eight-question wizard is the thing
+    people give up on, not what to greet them with.
+    """
+    from app.services import rule_nlp
+    from app.services.repositories import SearchRuleRepository
+
+    if not rule_nlp.is_enabled():
+        return False
+    return await SearchRuleRepository(session).count_for_user(user.id) == 0
+
+
 @router.callback_query(F.data.startswith("lang:"))
-async def cb_set_language(cb: CallbackQuery, user: User, session: AsyncSession) -> None:
+async def cb_set_language(
+    cb: CallbackQuery, user: User, session: AsyncSession, state: FSMContext
+) -> None:
     new_lang = cb.data.split(":")[-1]
     if new_lang not in SUPPORTED_LANGUAGES:
         await cb.answer("Unsupported", show_alert=True)
         return
     user.language_code = new_lang
     await session.flush()
+
+    if await wants_first_rule(session, user):
+        # The old flow ended at the main menu, and the main menu is where most
+        # people stopped. The first thing after the language is the first
+        # search, in one sentence — the menu is one tap away if they prefer.
+        from app.bot.keyboards import sentence_keyboard
+        from app.bot.states import RuleWizard
+
+        await state.set_state(RuleWizard.sentence)
+        await cb.message.edit_text(
+            t("start.first_rule", new_lang), reply_markup=sentence_keyboard(new_lang)
+        )
+        await cb.answer()
+        return
+
     await cb.message.edit_text(
         t("settings.language_set", new_lang), reply_markup=main_menu_keyboard(new_lang)
     )
