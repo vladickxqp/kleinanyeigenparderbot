@@ -169,6 +169,24 @@ class ListingRepository:
         )
         return {(site, ext) for site, ext in result.all()}
 
+    async def recent_repost_keys(self, rule_id: int, since) -> set[str]:  # noqa: ANN001
+        """Soft keys of offers already DELIVERED for this rule since ``since``.
+
+        Computed from the stored rows rather than from a column: the key is
+        title plus price, both of which are already there, and a column would
+        need a migration to answer a question this cheap.
+        """
+        from app.services.dedup import repost_key
+
+        result = await self.session.execute(
+            select(Listing.site, Listing.title, Listing.price).where(
+                Listing.rule_id == rule_id,
+                Listing.notified.is_(True),
+                Listing.created_at >= since,
+            )
+        )
+        return {repost_key(site, title, price) for site, title, price in result.all()}
+
     async def rule_stats(
         self, rule_id: int, days: int = 7
     ) -> tuple[int, float | None, float | None]:

@@ -168,10 +168,11 @@ class ParsedListing(BaseModel):
         Same offer, new ad id — the classic Kleinanzeigen repost. Used as a
         secondary signal, never as identity.
         """
-        norm_title = re.sub(r"[^a-z0-9]+", "", self.title.lower())
-        price_bucket = int(self.price) if self.price is not None else -1
-        raw = f"{self.site.value}|{norm_title}|{price_bucket}"
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+        # One definition, shared with the stored rows: keying them differently
+        # would make repost suppression silently miss everything.
+        from app.services.dedup import repost_key
+
+        return repost_key(self.site, self.title, self.price)
 
     @property
     def total_price(self) -> float | None:

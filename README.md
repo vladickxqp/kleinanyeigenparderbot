@@ -38,8 +38,17 @@ cards straight to Telegram.
 - **Price intelligence**: price history, average/min/max, discount %, anomaly detection
   ("possible seller mistake"), optional AI scoring (0–100) and resale/ROI mode.
 - **Deduplication**: never send the same offer twice, even across different parsers.
-- **Web admin panel** (React + Tailwind, later phase): dashboard, charts, logs, users,
-  parsers, task queue, settings — everything configurable via the web.
+- **Web admin panel** (React + Tailwind): dashboard, charts, users, listings, parsers
+  and the effective settings — **read-only**. Administration happens in the bot,
+  where the admin already is: `/admin` for the dashboard, `/grant` and `/revoke` for
+  premium, `/settier`, `/promote`, `/newcoupon`. The panel shows, the bot acts; a
+  second place to change the same things would only be a second place to get them
+  wrong.
+- **Repost suppression**: the same offer under a new ad id is not a new find.
+  Deleting and re-posting is how sellers climb a result list — the card is
+  withheld (`REPOST_WINDOW_DAYS`), while the row is still stored, because two
+  sellers really can offer the same thing at the same price and identity stays
+  the ad id.
 - **Ops**: Docker Compose one-command startup, Celery workers, Redis cache/queue,
   Postgres, Prometheus + Grafana monitoring, structured logging (loguru).
 

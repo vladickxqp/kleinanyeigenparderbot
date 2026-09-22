@@ -243,6 +243,15 @@ class Settings(BaseSettings):
     block_backoff_multiplier: float = 3.0
     #: Show "found X min after posting" on every card.
     card_show_latency: bool = True
+    #: Suppress a second card for an offer already delivered under another ad
+    #: id. Sellers delete and re-post to climb the result list; without this
+    #: the same thing arrives again and again and eats the daily card quota.
+    repost_suppression_enabled: bool = True
+    #: How far back a delivered offer blocks an identical one. A repost happens
+    #: within days; beyond that the same title and price is plausibly a
+    #: different seller with a genuinely different item.
+    repost_window_days: int = 14
+
     #: Free trial (activatable exactly once per user): which tier, how long.
     trial_enabled: bool = True
     trial_days: int = 3

@@ -24,7 +24,7 @@ from app.config.settings import settings
 from app.services import ai, health
 from app.services import sites as site_access
 from app.services.deal_scorer import score_listing
-from app.services.dedup import filter_new_listings
+from app.services.dedup import filter_new_listings, repost_key
 from app.services.freshness import is_fresh_enough
 from app.services.price_analysis import PriceStats, compute_price_stats
 from app.services.flips import get_flip_min, passes_flip_mode
@@ -224,6 +224,31 @@ class SearchService:
             for row in skipped:
                 row.notified = True  # baseline: never deliver these later
             notable = notable[:FIRST_RUN_MAX_NOTIFICATIONS]
+
+        # Repost suppression: the same offer under a new ad id. A seller who
+        # deletes and re-posts to climb the result list would otherwise be
+        # delivered again — and again — each time eating a card from the daily
+        # quota. The row is kept (site + id really is a different ad, and its
+        # price still belongs in the statistics); only the card is withheld.
+        if notable and getattr(settings, "repost_suppression_enabled", True):
+            window = timedelta(days=int(getattr(settings, "repost_window_days", 14)))
+            seen_offers = await self.listings.recent_repost_keys(
+                rule.id, started_at - window
+            )
+            if seen_offers:
+                kept: list[Listing] = []
+                for row in notable:
+                    key = repost_key(row.site, row.title, row.price)
+                    if key in seen_offers:
+                        row.notified = True  # settled: never re-queued
+                        continue
+                    kept.append(row)
+                if len(kept) < len(notable):
+                    logger.info(
+                        "Rule {}: {} repost(s) not delivered again",
+                        rule.id, len(notable) - len(kept),
+                    )
+                notable = kept
 
         # Cross-rule dedup: if another rule of the same user already delivered
         # this exact ad, do not send it a second time.
