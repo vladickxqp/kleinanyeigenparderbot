@@ -10,6 +10,7 @@ from __future__ import annotations
 from html import escape
 
 from app.bot.texts import t
+from app.config.settings import settings
 from app.database.models import Listing
 from app.database.models.enums import DealVerdict
 
@@ -80,13 +81,17 @@ def format_deal_card(listing: Listing, lang: str = "de") -> str:
         )
 
     if listing.estimated_market_price:
-        lines.append(
-            t(
-                "card.market_price",
-                lang,
-                amount=_money(listing.estimated_market_price),
-            )
+        line = t(
+            "card.market_price", lang,
+            amount=_money(listing.estimated_market_price),
         )
+        # While the estimate rests on a handful of ads, say so on the card
+        # itself. The number is the same shape either way; the confidence is
+        # not, and the reader is the one deciding whether to drive across town.
+        sample = listing.market_sample
+        if sample is not None and sample < settings.min_confident_comparables:
+            line += " " + t("card.market_thin", lang, count=sample)
+        lines.append(line)
     if listing.discount_percent and listing.discount_percent > 0:
         saving = None
         if listing.estimated_market_price and listing.price is not None:

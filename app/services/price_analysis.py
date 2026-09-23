@@ -25,6 +25,25 @@ class PriceStats:
     def has_data(self) -> bool:
         return self.count > 0 and self.median is not None
 
+    @property
+    def confidence(self) -> float:
+        """0…1 — how much of a market this sample actually is.
+
+        A median over one price IS that price, and a rule on its first run has
+        exactly that. Without this the strongest claim the product makes
+        ("KRACHER") came out of a single comparison looking identical to one
+        drawn from fifty.
+        """
+        from app.config.settings import settings
+
+        needed = max(1, int(getattr(settings, "min_confident_comparables", 5)))
+        return min(1.0, self.count / needed) if self.count else 0.0
+
+    @property
+    def is_thin(self) -> bool:
+        """True while there is not yet enough to state a verdict confidently."""
+        return self.confidence < 1.0
+
     def discount_percent(self, price: float) -> float | None:
         """How far below the median a given price sits, as a percentage."""
         if not self.has_data or self.median in (None, 0):
@@ -32,8 +51,13 @@ class PriceStats:
         return round((1 - price / self.median) * 100, 1)
 
     def is_anomaly(self, price: float, z_threshold: float = 2.0) -> bool:
-        """True if ``price`` is suspiciously low vs. the sample distribution."""
-        if not self.has_data or self.average is None:
+        """True if ``price`` is suspiciously low vs. the sample distribution.
+
+        Requires a real distribution. Calling a price an outlier of two other
+        prices is not statistics, and it is how a fresh rule used to announce
+        a steal on its very first run.
+        """
+        if not self.has_data or self.average is None or self.is_thin:
             return False
         if self.stdev in (None, 0):
             # No spread: treat >35% under median as anomalous.

@@ -243,6 +243,12 @@ class Settings(BaseSettings):
     block_backoff_multiplier: float = 3.0
     #: Show "found X min after posting" on every card.
     card_show_latency: bool = True
+    #: How many comparable prices a verdict needs before it is stated with
+    #: confidence. Below this the score is shrunk towards neutral and nothing
+    #: can be called a steal: an outlier needs a distribution to be an outlier
+    #: of, and a median over one price is that price.
+    min_confident_comparables: int = 5
+
     #: Suppress a second card for an offer already delivered under another ad
     #: id. Sellers delete and re-post to climb the result list; without this
     #: the same thing arrives again and again and eats the daily card quota.

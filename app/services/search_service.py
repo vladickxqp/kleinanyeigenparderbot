@@ -522,6 +522,7 @@ class SearchService:
             deal_verdict=deal.verdict,
             estimated_market_price=deal.estimated_market_price,
             discount_percent=deal.discount_percent,
+            market_sample=stats.count,
         )
 
 

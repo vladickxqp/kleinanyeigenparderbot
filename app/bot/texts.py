@@ -843,6 +843,10 @@ _TEXTS: dict[str, dict[str, str]] = {
                         "uk": "📉 <b>ЦІНА ВПАЛА:</b> {before} → {now} (−{saved})"},
     "card.market_price": {"de": "📈 Marktpreis ~ {amount}", "en": "📈 Market price ~ {amount}",
                           "ru": "📈 Рыночная цена ~ {amount}", "uk": "📈 Ринкова ціна ~ {amount}"},
+    "card.market_thin": {
+        "de": "(erst {count} Vergleiche)", "en": "(only {count} comparisons yet)",
+        "ru": "(пока {count} сравнений)", "uk": "(поки {count} порівнянь)",
+    },
     "card.below_market": {"de": "💰 {percent}% unter Markt{saving}",
                           "en": "💰 {percent}% below market{saving}",
                           "ru": "💰 На {percent}% ниже рынка{saving}",

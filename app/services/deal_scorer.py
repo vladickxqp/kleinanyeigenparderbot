@@ -42,6 +42,11 @@ class DealScorer:
         anomaly = stats.is_anomaly(price)
 
         score = self._score_from_discount(discount, anomaly)
+        # Shrink towards neutral while the sample is thin. A 40 % discount off
+        # a median computed from ONE other ad is not a 90-point deal, it is a
+        # guess — and the old scorer stated it as confidently as one drawn
+        # from fifty comparisons.
+        score = self._apply_confidence(score, stats.confidence)
         verdict = self._verdict_from_score(score, anomaly)
 
         return DealResult(
@@ -62,6 +67,18 @@ class DealScorer:
         if anomaly:
             base += 15
         return int(max(0, min(100, round(base))))
+
+    @staticmethod
+    def _apply_confidence(score: int, confidence: float) -> int:
+        """Pull a score towards 50 in proportion to how little is known.
+
+        Full confidence leaves it untouched. With a single comparable the
+        score barely leaves neutral, which is the honest answer: the market
+        is unknown, not generous.
+        """
+        if confidence >= 1.0:
+            return score
+        return int(round(50 + (score - 50) * max(0.0, confidence)))
 
     @staticmethod
     def _verdict_from_score(score: int, anomaly: bool) -> DealVerdict:

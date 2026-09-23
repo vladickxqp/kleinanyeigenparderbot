@@ -84,6 +84,10 @@ class Listing(Base, PKMixin, TimestampMixin):
     )
     estimated_market_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     discount_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: How many comparable prices the estimate rests on. A median over
+    #: three ads and one over fifty are not the same claim, and the card
+    #: used to present them identically.
+    market_sample: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     #: When the ad went online on the marketplace (None = unknown/promoted).
     posted_at: Mapped[datetime | None] = mapped_column(

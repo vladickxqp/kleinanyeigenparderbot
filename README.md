@@ -35,6 +35,11 @@ cards straight to Telegram.
   Comparable means the same KIND — broken against broken, spare part against spare
   part — and where the bot has watched enough ads disappear it compares against
   what they actually SOLD for rather than what sellers are asking.
+- **A verdict knows how much it knows**: below `MIN_CONFIDENT_COMPARABLES` the
+  score is pulled towards neutral and nothing may be called a steal — an outlier
+  needs a distribution to be an outlier of, and a median over one ad is that ad.
+  The card names the basis while it is thin ("erst 2 Vergleiche"), and every row
+  stores the sample its score rested on, so a verdict stays checkable afterwards.
 - **Price intelligence**: price history, average/min/max, discount %, anomaly detection
   ("possible seller mistake"), optional AI scoring (0–100) and resale/ROI mode.
 - **Deduplication**: never send the same offer twice, even across different parsers.
