@@ -44,11 +44,9 @@ PRICE_DROP_MIN_PERCENT = 1.0
 #: Below this many stored prices a rule is treated as "cold" and an item is
 #: not compared against a sample that contains itself.
 MIN_STORED_FOR_SELF_COMPARISON = 10
-#: Below this many whole-unit prices the part exclusion is dropped again: a
-#: rule whose hits are parts almost end to end ("iPhone 12 Ersatzdisplay")
-#: would otherwise be left with no market sample at all.
-MIN_WHOLE_UNIT_PRICES = 3
-#: ...and this many part prices before parts get a market of their own.
+#: How many part prices it takes before parts get a market of their own.
+#: Below it a part gets no verdict at all rather than one borrowed from
+#: whole devices — see :func:`split_part_prices`.
 MIN_PART_PRICES = 3
 
 
@@ -77,6 +75,15 @@ def split_part_prices(
     without changing what it contains. Parts get their own sample instead, so
     a display is judged against other displays rather than silently against
     whole devices.
+
+    The two groups are never merged to reach a minimum size. An earlier version
+    poured the parts back in whenever fewer than three whole units were found,
+    and that is the common shape of a phone search: two whole devices among six
+    spare displays. The median then landed in the part cluster and every whole
+    device was measured against 40 € fragments — scored OVERPRICED and silently
+    dropped, which is the failure the user never gets to see. A thin sample is
+    the honest answer there, and the confidence shrinkage in the scorer already
+    states it as thin.
     """
     whole: list[float] = []
     parts: list[float] = []
@@ -84,9 +91,9 @@ def split_part_prices(
         if item.price is None:
             continue
         (parts if is_part_listing(item.title) else whole).append(item.price)
-    if len(whole) < MIN_WHOLE_UNIT_PRICES:
-        # Nothing whole left to compare against: then the parts ARE the market.
-        return whole + parts, []
+    if not whole:
+        # A parts-only rule ("iPhone 12 Ersatzdisplay"): the parts ARE the market.
+        return parts, []
     return whole, parts
 
 
@@ -181,8 +188,14 @@ class SearchService:
         for item in fresh:
             if vehicles:
                 item_stats = similar_market_stats(item, parsed, stats)
-            elif part_stats is not None and is_part_listing(item.title):
-                item_stats = part_stats
+            elif is_part_listing(item.title):
+                # A loose display is judged against other displays or not at
+                # all. Borrowing the whole-device market would hand every
+                # fragment a 90 % discount and make the cheapest scrap in the
+                # batch the find of the week.
+                item_stats = (
+                    part_stats if part_stats is not None else compute_price_stats([])
+                )
             elif (
                 exclude_self
                 and item.price in batch_prices  # a part price is not in there
