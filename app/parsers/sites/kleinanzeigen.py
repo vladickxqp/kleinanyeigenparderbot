@@ -2,18 +2,29 @@
 
 This is the reference implementation. It builds an SEO search URL, fetches the
 result page with the polite base-class HTTP client and extracts listings from the
-``article.aditem`` cards. HTML structure on classifieds sites changes over time —
-the selectors below are defensive and degrade gracefully (a missing field yields
+result cards. HTML structure on classifieds sites changes over time — the
+selectors below are defensive and degrade gracefully (a missing field yields
 ``None`` rather than an exception).
+
+Two layouts are read. The classic one names every field with a stable class
+(``article.aditem``, ``.aditem-main--middle--price-shipping--price`` …). The
+2026 layout is built from utility classes (``flex``, ``text-title3``) that carry
+no meaning and change with every restyle, so for it nothing is looked up by
+class: the card is ``article[data-adid]``, the title is the heading's link, and
+price, date, location, shipping and vehicle tags are recognised by what they
+SAY — "250 € VB", "Heute, 12:05", "Versand möglich", "55.000 km". Both paths
+are exercised by fixtures in ``tests/test_kleinanzeigen_parser.py`` and
+``tests/test_kleinanzeigen_layout_2026.py``.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timedelta
 from urllib.parse import quote_plus, urljoin
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 from loguru import logger
 
 from app.config.clock import local_now
@@ -393,29 +404,49 @@ class KleinanzeigenParser(BaseParser):
     # --- HTML extraction ----------------------------------------------------
     #: Markup that only a real result page has. If none of it is present and
     #: no cards were found, we were served something else (captcha, error,
-    #: layout change) — not an honest "nothing matched".
+    #: layout change) — not an honest "nothing matched". Both layouts are
+    #: listed: the 2026 page keeps ``body#srchrslt`` and the price inputs even
+    #: when the ``ul`` lost its id.
     _RESULT_PAGE_MARKERS = (
         "#srchrslt-adtable",
+        "#srp-results",
+        "body#srchrslt",
+        "body#srp",
+        "[id^='srchrslt-brwse']",
         ".srp-pagination",
         "#srchrslt-content",
+        "a[href*='seite:2']",
         ".messagebox--alert",   # site's own "keine Anzeigen gefunden" box
     )
+    #: A result card in any layout. ``data-adid`` outlived every restyle;
+    #: the ``aditem`` class did not, and the ``srp`` page uses ``li``.
+    _CARD_SELECTOR = "article[data-adid], li[data-adid], article.aditem"
 
     def _parse_results(self, html: str, query: SearchQuery) -> list[ParsedListing]:
         soup = BeautifulSoup(html, "lxml")
-        cards = soup.select("article.aditem")
+        cards = soup.select(self._CARD_SELECTOR)
         if not cards and not any(
             soup.select_one(marker) for marker in self._RESULT_PAGE_MARKERS
         ):
             self.mark_suspected_block()
         results: list[ParsedListing] = []
+        seen: set[str] = set()
         for card in cards:
+            # The ``srp`` page's <li> items are not closed, so the parser nests
+            # every card inside the one before it. Cut the nested cards out of
+            # this one before reading it, or its text would carry the whole
+            # rest of the page — and "Versand möglich" three ads down would
+            # become this ad's shipping. The cut-out cards keep their own
+            # subtree and are read in their own turn.
+            for nested in card.select("[data-adid]"):
+                nested.extract()
             try:
                 parsed = self._parse_card(card)
             except Exception as exc:  # noqa: BLE001 - skip malformed card
                 logger.debug("[kleinanzeigen] skipped a card: {}", exc)
                 continue
-            if parsed is not None:
+            if parsed is not None and parsed.external_id not in seen:
+                seen.add(parsed.external_id)
                 results.append(parsed)
         return results
 
@@ -427,45 +458,36 @@ class KleinanzeigenParser(BaseParser):
             return None
 
         # --- Link + title ---
-        link = card.select_one("a.ellipsis") or card.select_one("h2 a")
-        if link is None:
+        link = self._title_link(card)
+        title = self._title(card, link)
+        if not title:
             return None
-        title = link.get_text(strip=True)
-        href = link.get("href", "")
-        url = urljoin(BASE_URL, href) if isinstance(href, str) else BASE_URL
+        href = card.get("data-href") or (link.get("href", "") if link is not None else "")
+        url = urljoin(BASE_URL, href) if isinstance(href, str) and href else BASE_URL
 
         # --- Price ---
-        price_el = card.select_one(".aditem-main--middle--price-shipping--price")
-        price = self._parse_price(price_el.get_text() if price_el else None)
+        price_text = self._price_text(card)
+        price = self._parse_price(price_text)
 
         # --- Shipping hint ---
-        # Two different absences: the price/shipping BLOCK is missing (the site
-        # changed its markup — we know nothing), or the block is there without
-        # the "Versand möglich" line, which is the site's way of saying the
-        # seller does not ship. That difference decides whether a "shipping
-        # only" rule keeps working or silently returns nothing.
-        shipping_box = card.select_one(".aditem-main--middle--price-shipping")
-        shipping_el = card.select_one(
-            ".aditem-main--middle--price-shipping--shipping"
-        )
-        shipping_text = shipping_el.get_text(strip=True).lower() if shipping_el else ""
-        offers_shipping = "versand" in shipping_text
-        shipping_known = shipping_box is not None
+        # Two different absences: the site said nothing (markup we do not
+        # know — unknown), or it said "Nur Abholung" / left the shipping line
+        # off its price block, which is its way of saying the seller does not
+        # ship. That difference decides whether a "shipping only" rule keeps
+        # working or silently returns nothing.
+        offers_shipping, shipping_known = self._shipping(card)
 
         # --- Location ---
-        loc_el = card.select_one(".aditem-main--top--left")
-        location = loc_el.get_text(strip=True) if loc_el else None
+        location = self._location(card)
 
         # --- Description ---
-        desc_el = card.select_one(".aditem-main--middle--description")
-        description = desc_el.get_text(strip=True) if desc_el else None
+        description = self._description(card, link)
 
-        # --- Attribute tags (verified live 2026-07): vehicle cards carry
-        # "74.000 km" and "EZ 12/2020" as simpletag spans. Prepending them to
-        # the description surfaces them on the deal card and keeps them
+        # --- Attribute tags (verified live 2026-07 / 2026-09): vehicle cards
+        # carry "74.000 km" and "EZ 12/2020". Prepending them to the
+        # description surfaces them on the deal card and keeps them
         # searchable — without any schema change.
-        tags = [t.get_text(strip=True) for t in card.select("span.simpletag")]
-        tags = [tag for tag in tags if tag]
+        tags = self._tags(card)
         mileage_km, registration_year = self._parse_vehicle_tags(tags)
         if tags:
             attr_line = " · ".join(tags[:4])
@@ -477,15 +499,12 @@ class KleinanzeigenParser(BaseParser):
         image_url = self._extract_image(card)
 
         # --- Posting date ("Heute, 08:01" / "Gestern, 21:08" / "04.07.2026").
-        # Promoted TOP ads have an empty date container -> posted_at stays None
-        # and the freshness filter treats them as old.
-        date_el = card.select_one(".aditem-main--top--right")
-        posted_at = self._parse_posted_date(
-            date_el.get_text(strip=True) if date_el else None
-        )
+        # Promoted TOP/PRO ads show no date -> posted_at stays None and the
+        # freshness filter treats them as old.
+        posted_at = self._parse_posted_date(self._date_text(card))
 
         # --- Auction / negotiable detection from price text ---
-        raw_price_text = price_el.get_text(strip=True).lower() if price_el else ""
+        raw_price_text = (price_text or "").strip().lower()
         is_auction = "gebot" in raw_price_text  # "X € VB" is not an auction
         # "VB" = Verhandlungsbasis: the asking price is soft, which is exactly
         # what a flipper wants to know before writing to the seller.
@@ -581,8 +600,13 @@ class KleinanzeigenParser(BaseParser):
             return None
         return float(match.group(1).replace(",", "."))
 
-    @staticmethod
-    def _extract_image(card: Tag) -> str | None:
+    @classmethod
+    def _extract_image(cls, card: Tag) -> str | None:
+        # The 2026 card embeds an ImageObject whose contentUrl is the large
+        # rendition; the <img> itself is a thumbnail.
+        content_url = cls._json_ld(card).get("contentUrl")
+        if isinstance(content_url, str) and content_url.startswith("http"):
+            return content_url
         img = card.select_one("img")
         if img is None:
             return None
@@ -596,3 +620,205 @@ class KleinanzeigenParser(BaseParser):
             if first.startswith("http"):
                 return first
         return None
+
+    # --- Field lookup across both layouts ------------------------------------
+    # Classic layout first (a stable class), then the 2026 layout by what the
+    # text says. Nothing below matches a utility class.
+
+    #: "250 €", "1.150 € VB", "VB", "Zu verschenken" — the whole text of a
+    #: price element, nothing else. Anchored so a description sentence
+    #: mentioning a price never becomes THE price.
+    _PRICE_RE = re.compile(
+        r"^(?:\d[\d.]*(?:,\d{1,2})?\s*€(?:\s*VB)?|VB|Zu verschenken)$", re.I
+    )
+    _DATE_RE = re.compile(
+        r"^(?:heute|gestern),?\s*\d{1,2}:\d{2}$|^\d{2}\.\d{2}\.\d{4}$", re.I
+    )
+    _TAG_RE = re.compile(
+        r"^\d[\d.]*\s*km$|^EZ\s?\d{2}/\d{4}$|^EZ\s?\d{4}$|^Erstzulassung\b", re.I
+    )
+    _ZIP_CITY_RE = re.compile(r"^\d{5}\s+\S")
+    #: Longer than this and a text node is prose, not a field.
+    _SHORT_TEXT = 48
+
+    @classmethod
+    def _short_texts(
+        cls, card: Tag, *, skip_description: bool = False
+    ) -> list[tuple[str, Tag]]:
+        """Every short text node in the card with its parent element.
+
+        With ``skip_description`` the ad's own prose is left out, so a seller's
+        sentence never passes for a date, a shipping marker or a vehicle tag.
+        """
+        prose: list[Tag] = (
+            card.select(cls._DESCRIPTION_SELECTOR) if skip_description else []
+        )
+        found: list[tuple[str, Tag]] = []
+        for node in card.descendants:
+            if not isinstance(node, NavigableString) or isinstance(node, Comment):
+                continue
+            parent = node.parent
+            if parent is None or parent.name in ("script", "style"):
+                continue
+            if prose and any(parent is box or box in parent.parents for box in prose):
+                continue
+            text = re.sub(r"\s+", " ", str(node)).strip()
+            if text and len(text) <= cls._SHORT_TEXT:
+                found.append((text, parent))
+        return found
+
+    @staticmethod
+    def _json_ld(card: Tag) -> dict:
+        """The card's embedded schema.org object, or an empty dict."""
+        script = card.select_one("script[type='application/ld+json']")
+        if script is None:
+            return {}
+        try:
+            data = json.loads(script.get_text() or "{}")
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    @staticmethod
+    def _title_link(card: Tag) -> Tag | None:
+        for selector in ("a.ellipsis", "h2 a", "h3 a", ".adlist--item--boldtitle a"):
+            link = card.select_one(selector)
+            if link is not None and link.get_text(strip=True):
+                return link
+        # Whole-card links: the image link's only text is the photo count, so
+        # take the link that says the most and carries no image.
+        best: Tag | None = None
+        for link in card.select("a[href*='/s-anzeige/']"):
+            if link.select_one("img") is not None:
+                continue
+            text = link.get_text(strip=True)
+            if text and (best is None or len(text) > len(best.get_text(strip=True))):
+                best = link
+        return best
+
+    @classmethod
+    def _title(cls, card: Tag, link: Tag | None) -> str:
+        if link is not None:
+            return link.get_text(strip=True)
+        # 2026 cards whose whole surface is the link: the heading holds the
+        # title as plain text, and the embedded object repeats it.
+        for selector in ("h2", "h3", ".adlist--item--boldtitle"):
+            heading = card.select_one(selector)
+            if heading is not None and heading.get_text(strip=True):
+                return heading.get_text(" ", strip=True)
+        embedded = cls._json_ld(card).get("title")
+        return embedded.strip() if isinstance(embedded, str) else ""
+
+    @classmethod
+    def _price_text(cls, card: Tag) -> str | None:
+        for selector in (".aditem-main--middle--price-shipping--price", ".adlist--item--price"):
+            classic = card.select_one(selector)
+            if classic is not None:
+                return classic.get_text(strip=True)
+        for text, _parent in cls._short_texts(card):
+            if cls._PRICE_RE.match(text):
+                return text
+        return None
+
+    @classmethod
+    def _shipping(cls, card: Tag) -> tuple[bool, bool]:
+        """(offers shipping, the site said so either way).
+
+        Only the site's own markers count. The DESCRIPTION is left out: a
+        seller writing "kein Versand" or "Versandkosten 8 €" is prose, and
+        the tri-state filter must not drop an ad on a sentence it half-read.
+        """
+        box = card.select_one(".aditem-main--middle--price-shipping")
+        if box is not None:
+            line = card.select_one(".aditem-main--middle--price-shipping--shipping")
+            text = line.get_text(strip=True).lower() if line else ""
+            return "versand" in text, True
+        for text, _parent in cls._short_texts(card, skip_description=True):
+            low = text.lower()
+            if low == "versand möglich":
+                return True, True
+            if low == "nur abholung":
+                return False, True
+        return False, False
+
+    @classmethod
+    def _location(cls, card: Tag) -> str | None:
+        for selector in (".aditem-main--top--left", ".adlist--item--info--location"):
+            classic = card.select_one(selector)
+            if classic is not None:
+                return classic.get_text(strip=True) or None
+        # The 2026 card marks the place with a pin icon; the text sits next to it.
+        pin = card.select_one("svg[data-title='locationOutline']")
+        if pin is not None and pin.parent is not None:
+            text = pin.parent.get_text(" ", strip=True)
+            if text:
+                return text
+        for text, _parent in cls._short_texts(card):
+            if cls._ZIP_CITY_RE.match(text):
+                return text
+        return None
+
+    @classmethod
+    def _date_text(cls, card: Tag) -> str | None:
+        for selector in (".aditem-main--top--right", ".adlist--item--info--date"):
+            classic = card.select_one(selector)
+            if classic is not None:
+                return classic.get_text(strip=True) or None
+        for text, _parent in cls._short_texts(card, skip_description=True):
+            if cls._DATE_RE.match(text):
+                return text
+        return None
+
+    #: Elements that hold the ad's own prose; field lookups by text skip them.
+    _DESCRIPTION_SELECTOR = (
+        ".aditem-main--middle--description, .adlist--item--description, "
+        ".long-description, .description-preview"
+    )
+
+    @classmethod
+    def _description(cls, card: Tag, link: Tag | None) -> str | None:
+        classic = card.select_one(".aditem-main--middle--description")
+        if classic is not None:
+            return classic.get_text(strip=True) or None
+        # The srp page ships the full text behind a "..." button.
+        full = card.select_one(".adlist--item--description .long-description")
+        if full is not None:
+            for br in full.select("br"):
+                br.replace_with("\n")
+            text = "\n".join(
+                line.strip() for line in full.get_text().splitlines() if line.strip()
+            )
+            if text:
+                return text
+        preview = card.select_one(".adlist--item--description")
+        if preview is not None:
+            for button in preview.select("button"):
+                button.extract()
+            text = preview.get_text(" ", strip=True)
+            if text:
+                return text
+        # 2026 utility-class card: the paragraph right under the heading, and
+        # the embedded ImageObject's description — take whichever says more,
+        # because the defect is usually in the words the teaser cut off.
+        candidates: list[str] = []
+        heading = link.find_parent(["h2", "h3"]) if link is not None else card.select_one("h2, h3")
+        paragraph = heading.find_next_sibling("p") if heading is not None else None
+        if paragraph is not None:
+            candidates.append(paragraph.get_text(" ", strip=True))
+        embedded = cls._json_ld(card).get("description")
+        if isinstance(embedded, str):
+            candidates.append(re.sub(r"\s+", " ", embedded).strip())
+        candidates = [c for c in candidates if c]
+        return max(candidates, key=len) if candidates else None
+
+    @classmethod
+    def _tags(cls, card: Tag) -> list[str]:
+        classic = [t.get_text(strip=True) for t in card.select("span.simpletag")]
+        classic = [tag for tag in classic if tag]
+        if classic:
+            return classic
+        tags: list[str] = []
+        for text, _parent in cls._short_texts(card, skip_description=True):
+            if cls._TAG_RE.match(text) and text not in tags:
+                tags.append(text)
+        return tags
