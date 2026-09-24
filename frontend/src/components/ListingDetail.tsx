@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { PriceChart } from "./PriceChart";
-import { IconAlert, IconCancel } from "./icons";
+import { IconAlert, IconCancel, IconStar } from "./icons";
 import {
   WebAppError,
   eur,
@@ -18,7 +18,16 @@ import {
  * time, and what comparable ads of the SAME kind are asking — or, better,
  * actually sold for.
  */
-export function ListingDetail({ id, onClose }: { id: number; onClose: () => void }) {
+export function ListingDetail({
+  id,
+  onClose,
+  onChanged,
+}: {
+  id: number;
+  onClose: () => void;
+  /** Called after the sheet changed the find, so the list behind it reloads. */
+  onChanged?: () => void;
+}) {
   const [data, setData] = useState<WaListingDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,15 +79,27 @@ export function ListingDetail({ id, onClose }: { id: number; onClose: () => void
           Lädt…
         </div>
       )}
-      {data && <Body data={data} />}
+      {data && <Body data={data} onClose={onClose} onChanged={onChanged} />}
     </div>
   );
 }
 
-function Body({ data }: { data: WaListingDetail }) {
+function Body({
+  data,
+  onClose,
+  onChanged,
+}: {
+  data: WaListingDetail;
+  onClose: () => void;
+  onChanged?: () => void;
+}) {
   const { listing } = data;
   const [blocked, setBlocked] = useState(data.seller_blocked);
   const [blocking, setBlocking] = useState(false);
+  // The two switches the chat card has had all along. Starred stays in the
+  // sheet; hidden closes it, because there is nothing left to look at.
+  const [starred, setStarred] = useState(listing.is_favorite);
+  const [busy, setBusy] = useState(false);
 
   async function blockSeller() {
     if (!window.confirm(`Keine Angebote von „${data.seller_name}" mehr anzeigen?`)) return;
@@ -88,6 +109,29 @@ function Body({ data }: { data: WaListingDetail }) {
       setBlocked(true);
     } finally {
       setBlocking(false);
+    }
+  }
+
+  async function toggleStar() {
+    setBusy(true);
+    try {
+      const res = await webapp.favoriteListing(listing.id);
+      setStarred(res.is_favorite);
+      onChanged?.();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function hide() {
+    if (!window.confirm("Dieses Angebot dauerhaft ausblenden?")) return;
+    setBusy(true);
+    try {
+      await webapp.ignoreListing(listing.id);
+      onChanged?.();
+      onClose();
+    } finally {
+      setBusy(false);
     }
   }
   return (
@@ -162,6 +206,29 @@ function Body({ data }: { data: WaListingDetail }) {
           </div>
         </div>
       )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          type="button"
+          className="dh-btn dh-btn-quiet"
+          style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          disabled={busy}
+          onClick={toggleStar}
+          aria-pressed={starred}
+        >
+          <IconStar size={15} />
+          {starred ? "Gemerkt" : "Merken"}
+        </button>
+        <button
+          type="button"
+          className="dh-btn dh-btn-quiet"
+          style={{ flex: 1 }}
+          disabled={busy}
+          onClick={hide}
+        >
+          Ausblenden
+        </button>
+      </div>
 
       {/* Offered only where the marketplace actually names a seller: a block
           that silently matches nothing is worse than no button. */}

@@ -9,6 +9,7 @@ from app.bot.handlers import (
     broadcast,
     edit_rule,
     flips,
+    forwarding,
     legal,
     listings,
     menu,
@@ -16,6 +17,7 @@ from app.bot.handlers import (
     premium,
     privacy,
     quick_search,
+    reports,
     rules,
     settings,
     start,
@@ -31,6 +33,10 @@ def build_router() -> Router:
     root.include_router(broadcast.router)
     root.include_router(premium.router)
     root.include_router(usage.router)
+    # State-bound and prefix-bound handlers before anything that could catch
+    # a plain text message.
+    root.include_router(reports.router)
+    root.include_router(forwarding.router)
     root.include_router(support.router)
     root.include_router(flips.router)
     root.include_router(photo_eval.router)

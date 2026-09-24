@@ -56,6 +56,7 @@ async def _set_commands(bot: Bot) -> None:
             BotCommand(command="premium", description="Premium-Status & Upgrade"),
             BotCommand(command="usage", description="Verbrauch & Limits"),
             BotCommand(command="flips", description="Meine Flips & Gewinn"),
+            BotCommand(command="export", description="Alle Funde als CSV-Datei"),
             BotCommand(command="payments", description="Zahlungsverlauf & Abbuchungen"),
             BotCommand(command="support", description="Support kontaktieren"),
             BotCommand(command="status", description="System-Status prüfen"),

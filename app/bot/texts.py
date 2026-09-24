@@ -1021,6 +1021,238 @@ _TEXTS: dict[str, dict[str, str]] = {
         "ru": "Пересылка в каналы", "uk": "Пересилання в канали",
     },
 
+    # --- Feature gates ------------------------------------------------------
+    "feature.locked": {
+        "de": "🔒 {feature} gibt es ab <b>{level}</b> — /premium",
+        "en": "🔒 {feature} is available from <b>{level}</b> — /premium",
+        "ru": "🔒 {feature}: доступно начиная с <b>{level}</b> — /premium",
+        "uk": "🔒 {feature}: доступно починаючи з <b>{level}</b> — /premium",
+    },
+    "btn.report": {
+        "de": "📊 Marktbericht", "en": "📊 Market report",
+        "ru": "📊 Отчёт по рынку", "uk": "📊 Звіт по ринку",
+    },
+    "btn.export": {
+        "de": "📤 Export (CSV)", "en": "📤 Export (CSV)",
+        "ru": "📤 Экспорт (CSV)", "uk": "📤 Експорт (CSV)",
+    },
+
+    # --- Market report ------------------------------------------------------
+    "report.title": {
+        "de": "📊 <b>Marktbericht: {name}</b>", "en": "📊 <b>Market report: {name}</b>",
+        "ru": "📊 <b>Отчёт по рынку: {name}</b>", "uk": "📊 <b>Звіт по ринку: {name}</b>",
+    },
+    "report.window": {
+        "de": "Letzte {days} Tage", "en": "Last {days} days",
+        "ru": "Последние {days} дней", "uk": "Останні {days} днів",
+    },
+    "report.found": {
+        "de": "🔎 {count} Angebote gefunden", "en": "🔎 {count} offers found",
+        "ru": "🔎 Найдено объявлений: {count}", "uk": "🔎 Знайдено оголошень: {count}",
+    },
+    "report.sites": {
+        "de": "🏪 Nach Plattform: {sites}", "en": "🏪 By marketplace: {sites}",
+        "ru": "🏪 По площадкам: {sites}", "uk": "🏪 За майданчиками: {sites}",
+    },
+    "report.prices": {
+        "de": "💶 Verlangt: Median {median} · Spanne {low}–{high} · {count} Preise",
+        "en": "💶 Asking: median {median} · range {low}–{high} · {count} prices",
+        "ru": "💶 Просят: медиана {median} · диапазон {low}–{high} · цен: {count}",
+        "uk": "💶 Просять: медіана {median} · діапазон {low}–{high} · цін: {count}",
+    },
+    "report.trend_up": {
+        "de": "📈 Trend: <b>+{percent} %</b> gegenüber den {days} Tagen davor",
+        "en": "📈 Trend: <b>+{percent} %</b> against the {days} days before",
+        "ru": "📈 Тренд: <b>+{percent} %</b> к предыдущим {days} дням",
+        "uk": "📈 Тренд: <b>+{percent} %</b> до попередніх {days} днів",
+    },
+    "report.trend_down": {
+        "de": "📉 Trend: <b>−{percent} %</b> gegenüber den {days} Tagen davor",
+        "en": "📉 Trend: <b>−{percent} %</b> against the {days} days before",
+        "ru": "📉 Тренд: <b>−{percent} %</b> к предыдущим {days} дням",
+        "uk": "📉 Тренд: <b>−{percent} %</b> до попередніх {days} днів",
+    },
+    "report.trend_flat": {
+        "de": "➡️ Trend: stabil gegenüber den {days} Tagen davor",
+        "en": "➡️ Trend: stable against the {days} days before",
+        "ru": "➡️ Тренд: стабильно к предыдущим {days} дням",
+        "uk": "➡️ Тренд: стабільно до попередніх {days} днів",
+    },
+    "report.trend_none": {
+        "de": "➡️ Trend: noch kein Vergleichszeitraum",
+        "en": "➡️ Trend: no earlier period to compare with yet",
+        "ru": "➡️ Тренд: пока нет периода для сравнения",
+        "uk": "➡️ Тренд: поки немає періоду для порівняння",
+    },
+    "report.sold": {
+        "de": "✅ Tatsächlich verkauft: Median {median} ({count} beobachtete Verkäufe)",
+        "en": "✅ Actually sold: median {median} ({count} observed sales)",
+        "ru": "✅ Реально продано: медиана {median} (наблюдений продаж: {count})",
+        "uk": "✅ Реально продано: медіана {median} (спостережень продажів: {count})",
+    },
+    "report.sold_none": {
+        "de": "✅ Verkäufe: noch zu wenige beobachtet — je länger die Suche läuft, desto mehr",
+        "en": "✅ Sales: too few observed yet — the longer the search runs, the more",
+        "ru": "✅ Продажи: наблюдений пока мало — чем дольше работает поиск, тем больше",
+        "uk": "✅ Продажі: спостережень поки мало — що довше працює пошук, то більше",
+    },
+    "report.top": {
+        "de": "🏆 <b>Beste Funde</b>", "en": "🏆 <b>Best finds</b>",
+        "ru": "🏆 <b>Лучшие находки</b>", "uk": "🏆 <b>Найкращі знахідки</b>",
+    },
+    "report.empty": {
+        "de": "📊 <b>Marktbericht: {name}</b>\n\nNoch keine Funde in den letzten {days} Tagen — "
+              "es gibt nichts zu berichten. Sobald die Suche Treffer hat, steht hier der Markt.",
+        "en": "📊 <b>Market report: {name}</b>\n\nNo finds in the last {days} days — "
+              "nothing to report yet. As soon as the search has hits, the market shows up here.",
+        "ru": "📊 <b>Отчёт по рынку: {name}</b>\n\nЗа последние {days} дней находок нет — "
+              "отчитываться пока не о чем. Как только появятся совпадения, здесь будет рынок.",
+        "uk": "📊 <b>Звіт по ринку: {name}</b>\n\nЗа останні {days} днів знахідок немає — "
+              "звітувати поки нема про що. Щойно з'являться збіги, тут буде ринок.",
+    },
+
+    # --- Export -------------------------------------------------------------
+    "export.caption": {
+        "de": "📤 {count} Funde als CSV — öffnet sich in Excel, Numbers oder Google Tabellen.",
+        "en": "📤 {count} finds as CSV — opens in Excel, Numbers or Google Sheets.",
+        "ru": "📤 Находок в CSV: {count} — открывается в Excel, Numbers или Google Таблицах.",
+        "uk": "📤 Знахідок у CSV: {count} — відкривається в Excel, Numbers або Google Таблицях.",
+    },
+    "export.empty": {
+        "de": "Noch keine Funde zum Exportieren.", "en": "No finds to export yet.",
+        "ru": "Пока нечего экспортировать.", "uk": "Поки нема чого експортувати.",
+    },
+    "export.yes": {"de": "ja", "en": "yes", "ru": "да", "uk": "так"},
+    "export.no": {"de": "nein", "en": "no", "ru": "нет", "uk": "ні"},
+    "export.col.found_at": {"de": "Gefunden am", "en": "Found at", "ru": "Найдено", "uk": "Знайдено"},
+    "export.col.rule": {"de": "Suche", "en": "Search", "ru": "Поиск", "uk": "Пошук"},
+    "export.col.site": {"de": "Plattform", "en": "Marketplace", "ru": "Площадка", "uk": "Майданчик"},
+    "export.col.title": {"de": "Titel", "en": "Title", "ru": "Название", "uk": "Назва"},
+    "export.col.price": {"de": "Preis (€)", "en": "Price (€)", "ru": "Цена (€)", "uk": "Ціна (€)"},
+    "export.col.market": {
+        "de": "Marktpreis (€)", "en": "Market price (€)",
+        "ru": "Рыночная цена (€)", "uk": "Ринкова ціна (€)",
+    },
+    "export.col.discount": {
+        "de": "Unter Markt (%)", "en": "Below market (%)",
+        "ru": "Ниже рынка (%)", "uk": "Нижче ринку (%)",
+    },
+    "export.col.score": {"de": "Score", "en": "Score", "ru": "Оценка", "uk": "Оцінка"},
+    "export.col.verdict": {"de": "Urteil", "en": "Verdict", "ru": "Вердикт", "uk": "Вердикт"},
+    "export.col.location": {"de": "Ort", "en": "Location", "ru": "Место", "uk": "Місце"},
+    "export.col.seller": {"de": "Verkäufer", "en": "Seller", "ru": "Продавец", "uk": "Продавець"},
+    "export.col.favorite": {"de": "Favorit", "en": "Favourite", "ru": "Избранное", "uk": "Обране"},
+    "export.col.url": {"de": "Link", "en": "Link", "ru": "Ссылка", "uk": "Посилання"},
+
+    # --- Forwarding to channels ---------------------------------------------
+    "settings.forward": {
+        "de": "📣 Weiterleitung in Kanal", "en": "📣 Forward to a channel",
+        "ru": "📣 Пересылка в канал", "uk": "📣 Пересилання в канал",
+    },
+    "btn.forward_set": {
+        "de": "📣 Kanal festlegen", "en": "📣 Choose channel",
+        "ru": "📣 Выбрать канал", "uk": "📣 Обрати канал",
+    },
+    "btn.forward_off": {
+        "de": "🔕 Weiterleitung aus", "en": "🔕 Forwarding off",
+        "ru": "🔕 Выключить пересылку", "uk": "🔕 Вимкнути пересилання",
+    },
+    "forward.title": {
+        "de": "📣 <b>Weiterleitung in Kanäle</b>", "en": "📣 <b>Forwarding to channels</b>",
+        "ru": "📣 <b>Пересылка в каналы</b>", "uk": "📣 <b>Пересилання в канали</b>",
+    },
+    "forward.active": {
+        "de": "Aktiv: jeder Fund geht zusätzlich an <b>{target}</b>.",
+        "en": "Active: every find is also posted to <b>{target}</b>.",
+        "ru": "Включено: каждая находка дополнительно уходит в <b>{target}</b>.",
+        "uk": "Увімкнено: кожна знахідка додатково йде в <b>{target}</b>.",
+    },
+    "forward.inactive": {
+        "de": "Aus — Funde kommen nur hierher.",
+        "en": "Off — finds only come here.",
+        "ru": "Выключено — находки приходят только сюда.",
+        "uk": "Вимкнено — знахідки приходять лише сюди.",
+    },
+    "forward.howto": {
+        "de": "So geht es:\n"
+              "1. Bot als Administrator in deinen Kanal oder deine Gruppe aufnehmen "
+              "(im Kanal mit dem Recht „Beiträge veröffentlichen“).\n"
+              "2. „Kanal festlegen“ antippen und einen Beitrag aus dem Kanal hierher "
+              "weiterleiten — oder <code>@kanalname</code> senden.\n\n"
+              "Die Kopie enthält die Karte und den Link; die Knöpfe bleiben hier bei dir.",
+        "en": "How it works:\n"
+              "1. Add the bot to your channel or group as an administrator "
+              "(in a channel with the right to post messages).\n"
+              "2. Tap “Choose channel” and forward any post from the channel here — "
+              "or send <code>@channelname</code>.\n\n"
+              "The copy carries the card and the link; the buttons stay here with you.",
+        "ru": "Как это работает:\n"
+              "1. Добавь бота администратором в свой канал или группу "
+              "(в канале — с правом публиковать сообщения).\n"
+              "2. Нажми «Выбрать канал» и перешли сюда любой пост из канала — "
+              "или отправь <code>@названиеканала</code>.\n\n"
+              "Копия содержит карточку и ссылку; кнопки остаются здесь, у тебя.",
+        "uk": "Як це працює:\n"
+              "1. Додай бота адміністратором у свій канал або групу "
+              "(у каналі — з правом публікувати повідомлення).\n"
+              "2. Натисни «Обрати канал» і перешли сюди будь-який допис із каналу — "
+              "або надішли <code>@назваканалу</code>.\n\n"
+              "Копія містить картку і посилання; кнопки залишаються тут, у тебе.",
+    },
+    "forward.ask": {
+        "de": "Leite jetzt einen beliebigen Beitrag aus dem Kanal hierher weiter — "
+              "oder sende <code>@kanalname</code>.",
+        "en": "Now forward any post from the channel here — or send <code>@channelname</code>.",
+        "ru": "Перешли сюда любой пост из канала — или отправь <code>@названиеканала</code>.",
+        "uk": "Перешли сюди будь-який допис із каналу — або надішли <code>@назваканалу</code>.",
+    },
+    "forward.ok": {
+        "de": "✅ Weiterleitung aktiv: <b>{target}</b>. Ab jetzt landet jeder Fund auch dort.",
+        "en": "✅ Forwarding active: <b>{target}</b>. From now on every find lands there too.",
+        "ru": "✅ Пересылка включена: <b>{target}</b>. Теперь каждая находка попадает и туда.",
+        "uk": "✅ Пересилання увімкнено: <b>{target}</b>. Тепер кожна знахідка потрапляє й туди.",
+    },
+    "forward.not_found": {
+        "de": "❓ Diesen Kanal kenne ich nicht. Ist der Bot dort schon Administrator? "
+              "Dann einen Beitrag daraus weiterleiten oder <code>@kanalname</code> senden.",
+        "en": "❓ I do not know that channel. Is the bot an administrator there yet? "
+              "Then forward a post from it or send <code>@channelname</code>.",
+        "ru": "❓ Такой канал мне неизвестен. Бот там уже администратор? "
+              "Тогда перешли пост оттуда или отправь <code>@названиеканала</code>.",
+        "uk": "❓ Такий канал мені невідомий. Бот там уже адміністратор? "
+              "Тоді перешли допис звідти або надішли <code>@назваканалу</code>.",
+    },
+    "forward.not_admin": {
+        "de": "⛔ Der Bot ist dort kein Administrator mit dem Recht, Beiträge zu "
+              "veröffentlichen. Rechte vergeben und noch einmal versuchen.",
+        "en": "⛔ The bot is not an administrator there with the right to post. "
+              "Grant the right and try again.",
+        "ru": "⛔ Бот там не администратор с правом публиковать сообщения. "
+              "Выдай право и попробуй ещё раз.",
+        "uk": "⛔ Бот там не адміністратор із правом публікувати повідомлення. "
+              "Надай право і спробуй ще раз.",
+    },
+    "forward.private": {
+        "de": "Weiterleitung geht nur in Kanäle und Gruppen, nicht in private Chats.",
+        "en": "Forwarding only works into channels and groups, not private chats.",
+        "ru": "Пересылка работает только в каналы и группы, не в личные чаты.",
+        "uk": "Пересилання працює лише в канали та групи, не в приватні чати.",
+    },
+    "forward.off": {
+        "de": "🔕 Weiterleitung aus.", "en": "🔕 Forwarding off.",
+        "ru": "🔕 Пересылка выключена.", "uk": "🔕 Пересилання вимкнено.",
+    },
+    "forward.lost": {
+        "de": "📣 Weiterleitung deaktiviert: der Bot kann in <b>{target}</b> nicht mehr "
+              "posten. Rechte prüfen und in den Einstellungen neu festlegen.",
+        "en": "📣 Forwarding disabled: the bot can no longer post in <b>{target}</b>. "
+              "Check its rights and set the channel again in Settings.",
+        "ru": "📣 Пересылка отключена: бот больше не может публиковать в <b>{target}</b>. "
+              "Проверь права и задай канал заново в настройках.",
+        "uk": "📣 Пересилання вимкнено: бот більше не може публікувати в <b>{target}</b>. "
+              "Перевір права і задай канал знову в налаштуваннях.",
+    },
+
     # --- Usage (/usage) ----------------------------------------------------
     "usage.title": {
         "de": "📈 <b>Dein Verbrauch</b>",

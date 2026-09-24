@@ -23,6 +23,7 @@ def _settings_menu(lang: str):
     kb = InlineKeyboardBuilder()
     kb.button(text="🌐 Sprache / Language", callback_data="settings:lang")
     kb.button(text="🌙 Ruhezeiten", callback_data="settings:quiet")
+    kb.button(text=t("settings.forward", lang), callback_data="settings:forward")
     kb.row(InlineKeyboardButton(text=t("btn.back", lang), callback_data="menu:home"))
     kb.adjust(1)
     return kb.as_markup()

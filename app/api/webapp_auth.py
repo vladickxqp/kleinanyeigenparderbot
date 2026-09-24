@@ -22,12 +22,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.settings import settings
 from app.database.models import User
 from app.database.session import get_session
+from app.services import throttle
 from app.services.repositories import UserRepository
 
 #: initData older than this is refused (replay protection).
 #: Telegram re-issues initData whenever the Mini App opens, so a short window
 #: is enough — and it keeps a captured string from being replayable all day.
 MAX_AGE_SECONDS = 15 * 60
+#: Requests one Mini App user may make per window. A real session makes a
+#: handful per screen; this only stops a script with a valid initData from
+#: creating and deleting rules in a loop. Redis trouble lets traffic through.
+WEBAPP_REQUESTS_PER_WINDOW = 120
+WEBAPP_WINDOW_SECONDS = 60
 
 
 def validate_init_data(
@@ -97,4 +103,11 @@ async def current_webapp_user(
     await session.commit()
     if user.is_blocked:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Gesperrt.")
+    if await throttle.rate_limited(
+        f"webapp:{user.id}", WEBAPP_REQUESTS_PER_WINDOW, WEBAPP_WINDOW_SECONDS
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Zu viele Anfragen — bitte kurz warten.",
+        )
     return user

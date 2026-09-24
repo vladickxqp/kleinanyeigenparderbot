@@ -39,7 +39,7 @@ from app.database.models import (
     User,
 )
 from app.database.session import session_scope
-from app.services import quota
+from app.services import forwarding, quota
 from app.services.flips import estimated_net_profit
 from app.services.formatting_helpers import money
 
@@ -132,6 +132,10 @@ async def notify_user_about_listings(
                     # price drop re-opened it) must stop counting as withheld.
                     listing.withheld = False
                     sent += 1
+                    if user is not None:
+                        # The channel copy rides behind a successful delivery
+                        # and never replaces it.
+                        await forwarding.forward_card(bot, session, user, listing, lang)
                 else:
                     # The guard was claimed before the attempt; give it back so
                     # the rescue sweep can really retry this card.
@@ -192,6 +196,8 @@ async def send_listing_card(
     if error is None:
         listing.notified_at = datetime.now(timezone.utc)
         listing.withheld = False
+        if user is not None and session is not None:
+            await forwarding.forward_card(bot, session, user, listing, lang)
     else:
         await _release_send_guard(chat_id, listing)
         if user is not None and booked is not None:

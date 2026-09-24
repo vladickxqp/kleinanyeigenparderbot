@@ -275,6 +275,11 @@ export const webapp = {
     wa<{ site: string; seller_key: string; label: string | null }>(
       `/listings/${id}/block-seller`, { method: "POST" },
     ),
+  /** The same switch as ⭐ on the chat card. */
+  favoriteListing: (id: number) =>
+    wa<{ is_favorite: boolean }>(`/listings/${id}/favorite`, { method: "POST" }),
+  /** The 🙈 of the chat card: gone from the list for good. */
+  ignoreListing: (id: number) => waVoid(`/listings/${id}/ignore`, { method: "POST" }),
   flips: () => wa<WaFlips>("/flips"),
   payments: () => wa<WaPayment[]>("/payments"),
   /** Cancels the caller's own subscription — no id, nothing to address. */

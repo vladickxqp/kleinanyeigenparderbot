@@ -208,7 +208,11 @@ searches (create, edit, pause, delete), flips & profit, premium status with the
 exact charge dates and the full payment history — all inside Telegram, no
 login. Authentication is Telegram's signed `initData` (verified server-side in
 `app/api/webapp_auth.py`), so a user can only ever see their own data, and the
-check interval is clamped to their tier on the server.
+check interval is clamped to their tier on the server. One user gets 120
+requests a minute; beyond that the API answers 429 rather than serving a
+script that loops on a valid `initData` (Redis trouble lets traffic through).
+An opened find carries the chat card's two switches — star it, hide it — so
+the app is not a read-only window on what the bot decided.
 
 Same frontend, but **not the same bundle**: `src/App.tsx` loads the admin panel
 lazily, so `/app` no longer ships the dashboard's chart library to a phone
@@ -306,11 +310,32 @@ a shorter base interval and its own worker queue.
 | Photo valuations | 1/month | 5/month | 30/month | unlimited |
 | Quick searches | 3/day | 20/day | 100/day | unlimited |
 | History kept | 14 days | 90 days | 1 year | 3 years |
+| Market report | – | – | ✓ | ✓ |
+| CSV export | – | – | ✓ | ✓ |
+| Forwarding to a channel | – | – | – | ✓ |
 | Price | – | 350 ⭐ | 750 ⭐ | 1500 ⭐ |
 
 Every number in that table comes from settings; the bot renders it from
 `app/services/entitlements.py`, so changing a price or a quota is a
-configuration change. Usage is metered per user and shown in `/usage`. When a
+configuration change. The three feature rows are what a level's
+`*_FEATURES` list names, and each one is real:
+
+- **Market report** (`📊` on the rule page): the last 30 days of that search —
+  how many finds, asking median and range, the trend against the 30 days
+  before, what comparable ads actually sold for (only once there are as many
+  as a verdict needs), and the three best finds. Built from stored rows; no
+  request leaves the house for it.
+- **CSV export** (`📤` on the rule page, `/export` for everything): one row per
+  stored find, UTF-8 with BOM, semicolons, decimals in the reader's language —
+  the file Excel, Numbers and Google Sheets open without a dialog. Scraped
+  titles are neutralised so nothing in a sheet ever runs as a formula.
+- **Forwarding to a channel** (Settings → 📣): every card delivered to the
+  owner is also posted to a channel or group the bot administers — the card
+  and its link, without the owner-only buttons. A downgrade silences the
+  channel without forgetting it; a channel the bot loses is dropped and the
+  owner told once. The tap is gated on the level at that moment, not when the
+  button was drawn, so every user sees the buttons and a locked one answers
+  with the level that unlocks it. Usage is metered per user and shown in `/usage`. When a
 cap is reached the bot says so and names what is being withheld — silence is
 the worst failure mode for a deal bot.
 

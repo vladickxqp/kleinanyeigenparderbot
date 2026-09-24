@@ -40,6 +40,11 @@ class User(Base, PKMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    #: Channel or group every delivered deal card is copied to (Händler
+    #: feature). Kept across a downgrade; ``services.forwarding`` decides
+    #: whether it is currently in effect.
+    forward_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
     # Relationships. lazy="noload": nothing reads these collections directly
     # (repositories query explicitly), and eager selectin loading added two
     # extra queries to EVERY user lookup — i.e. to every Telegram update.

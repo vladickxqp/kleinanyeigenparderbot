@@ -186,7 +186,10 @@ function DealsTab() {
   // marketplace: the description, the price history and what comparable ads
   // actually sold for are the reason to open a find at all.
   const [openId, setOpenId] = useState<number | null>(null);
-  const { data, error, loading } = useLoad<WaListing[]>(() => webapp.listings(favs), [favs]);
+  // Bumped when the sheet changed a find (starred, hidden), so the list
+  // behind it reloads instead of showing what is no longer true.
+  const [tick, setTick] = useState(0);
+  const { data, error, loading } = useLoad<WaListing[]>(() => webapp.listings(favs), [favs, tick]);
   const deals = (data ?? []) as unknown as DealLike[];
   const [hero, ...rest] = deals;
   const list = favs ? deals : rest;
@@ -233,7 +236,11 @@ function DealsTab() {
         </div>
       )}
       {openId != null && (
-        <ListingDetail id={openId} onClose={() => setOpenId(null)} />
+        <ListingDetail
+          id={openId}
+          onClose={() => setOpenId(null)}
+          onChanged={() => setTick((n) => n + 1)}
+        />
       )}
     </Section>
   );

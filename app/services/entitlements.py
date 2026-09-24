@@ -127,6 +127,18 @@ def all_tiers() -> list[Entitlements]:
     ]
 
 
+def unlocks(feature: str) -> SubscriptionTier | None:
+    """The cheapest level whose feature list includes ``feature``.
+
+    What a locked button should say: not "no", but "from Profi". None when no
+    level has it — a flag that exists in code but in no configured list.
+    """
+    for e in all_tiers():
+        if e.has(feature):
+            return e.tier
+    return None
+
+
 def next_tier(tier: SubscriptionTier) -> SubscriptionTier | None:
     """The level a user would upgrade to (None at the top)."""
     order = [

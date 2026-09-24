@@ -88,10 +88,14 @@ def rule_actions_keyboard(rule: SearchRule, lang: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text=t("btn.run_now", lang), callback_data=f"rule:run:{rule.id}")
     kb.button(text=t("btn.edit", lang), callback_data=f"rule:edit:{rule.id}")
+    # Shown to everyone; the handler answers with the level that unlocks
+    # them. A paid feature nobody can find is not a feature.
+    kb.button(text=t("btn.report", lang), callback_data=f"rule:report:{rule.id}")
+    kb.button(text=t("btn.export", lang), callback_data=f"rule:export:{rule.id}")
     kb.button(text=t("btn.toggle", lang), callback_data=f"rule:toggle:{rule.id}")
     kb.button(text=t("btn.delete", lang), callback_data=f"rule:delete:{rule.id}")
     kb.button(text=t("btn.back", lang), callback_data="menu:rules")
-    kb.adjust(1, 1, 2, 1)
+    kb.adjust(1, 1, 2, 2, 1)
     return kb.as_markup()
 
 

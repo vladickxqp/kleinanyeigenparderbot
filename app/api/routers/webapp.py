@@ -622,6 +622,53 @@ async def listing_detail_view(
     )
 
 
+async def _owned_listing(session: AsyncSession, listing_id: int, user: User) -> Listing:
+    """One of the caller's own listings, or 404 — never somebody else's."""
+    row = (
+        await session.execute(
+            select(Listing)
+            .join(SearchRule, SearchRule.id == Listing.rule_id)
+            .where(Listing.id == listing_id, SearchRule.user_id == user.id)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Angebot nicht gefunden")
+    return row
+
+
+class FavoriteOut(BaseModel):
+    is_favorite: bool
+
+
+@router.post("/listings/{listing_id}/favorite", response_model=FavoriteOut)
+async def toggle_favorite(
+    listing_id: int,
+    user: User = Depends(current_webapp_user),
+    session: AsyncSession = Depends(get_session),
+) -> FavoriteOut:
+    """Star or un-star a find — the same switch as ⭐ on the chat card."""
+    row = await _owned_listing(session, listing_id, user)
+    row.is_favorite = not row.is_favorite
+    await session.commit()
+    return FavoriteOut(is_favorite=row.is_favorite)
+
+
+@router.post(
+    "/listings/{listing_id}/ignore",
+    status_code=204, response_class=Response, response_model=None,
+)
+async def ignore_listing(
+    listing_id: int,
+    user: User = Depends(current_webapp_user),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Hide a find for good — the 🙈 of the chat card, and just as final."""
+    row = await _owned_listing(session, listing_id, user)
+    row.is_ignored = True
+    await session.commit()
+    return Response(status_code=204)
+
+
 class BlockedSellerOut(BaseModel):
     site: str
     seller_key: str
